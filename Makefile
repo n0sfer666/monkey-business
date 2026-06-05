@@ -1,4 +1,5 @@
 IMAGE := monkey-business-test
+INTEG := monkey-business-integ
 ROOT  := $(shell pwd)
 RUN   := docker run --rm -v $(ROOT):/w -w /w $(IMAGE)
 
@@ -27,7 +28,8 @@ test-unit: test-build
 	@$(RUN) sh test/run-unit.sh
 
 test-integ:
-	@sh test/integ/run.sh
+	@docker build -q -t $(INTEG) -f Dockerfile.integ . >/dev/null
+	@docker run --rm --privileged -v $(ROOT):/w -w /w $(INTEG) sh test/integ/run.sh
 
 test: lint check test-unit
 
