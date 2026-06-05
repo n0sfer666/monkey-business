@@ -12,6 +12,10 @@ function geositeRegion(region) {
 	return GEOSITE_REGION[region] || region;
 }
 
+function isTrue(v) {
+	return v == true || v == "1" || v == 1;
+}
+
 function buildInbound(g) {
 	return {
 		tag: "tproxy-in",
@@ -23,11 +27,15 @@ function buildInbound(g) {
 	};
 }
 
-function buildStreamSettings(s) {
+function buildStreamSettings(s, opts) {
+	opts = opts || {};
 	let ss = { network: s.transport.type };
 	let t = s.transport;
-	if (t.type == "xhttp")
+	if (t.type == "xhttp") {
 		ss.xhttpSettings = { path: t.path, host: t.host, mode: t.mode };
+		if (isTrue(opts.xhttpPadding))
+			ss.xhttpSettings.xPaddingBytes = "100-1000";
+	}
 	else if (t.type == "ws")
 		ss.wsSettings = { path: t.path, headers: { Host: t.host } };
 	else if (t.type == "httpupgrade")
@@ -53,7 +61,7 @@ function buildStreamSettings(s) {
 	return ss;
 }
 
-function buildProxyOutbound(s) {
+function buildProxyOutbound(s, opts) {
 	let user = { id: s.uuid, encryption: s.encryption };
 	if (s.flow != null && s.flow != "")
 		user.flow = s.flow;
@@ -61,7 +69,22 @@ function buildProxyOutbound(s) {
 		tag: "proxy",
 		protocol: "vless",
 		settings: { vnext: [{ address: s.address, port: s.port, users: [user] }] },
-		streamSettings: buildStreamSettings(s),
+		streamSettings: buildStreamSettings(s, opts),
+	};
+}
+
+// Split-DNS: локальный регион резолвится напрямую, остальное — через DoH в туннеле.
+function buildDns(dns, region, ipv6Blocked) {
+	return {
+		servers: [
+			{
+				address: dns.direct_dns || "223.5.5.5",
+				domains: ["geosite:private", "geosite:" + geositeRegion(region)],
+				skipFallback: true,
+			},
+			dns.doh_url || "https://1.1.1.1/dns-query",
+		],
+		queryStrategy: isTrue(ipv6Blocked) ? "UseIPv4" : "UseIP",
 	};
 }
 
@@ -70,24 +93,30 @@ function buildRouting(g) {
 	let mode = g.routing_mode || "bypass-local";
 	let rules = [];
 
+	if (isTrue(g.ipv6_block))
+		push(rules, { type: "field", ip: ["::/0"], outboundTag: "block" });
+
+	let modeRules;
 	if (mode == "global") {
-		rules = [
+		modeRules = [
 			{ type: "field", ip: ["geoip:private"], outboundTag: "direct" },
 			{ type: "field", network: "tcp,udp", outboundTag: "proxy" },
 		];
 	} else if (mode == "gfwlist") {
-		rules = [
+		modeRules = [
 			{ type: "field", ip: ["geoip:private"], outboundTag: "direct" },
 			{ type: "field", domain: ["geosite:geolocation-!" + region], outboundTag: "proxy" },
 			{ type: "field", network: "tcp,udp", outboundTag: "direct" },
 		];
 	} else {
-		rules = [
+		modeRules = [
 			{ type: "field", ip: ["geoip:private", "geoip:" + region], outboundTag: "direct" },
 			{ type: "field", domain: ["geosite:private", "geosite:" + geositeRegion(region)], outboundTag: "direct" },
 			{ type: "field", network: "tcp,udp", outboundTag: "proxy" },
 		];
 	}
+	for (let r in modeRules)
+		push(rules, r);
 
 	return { domainStrategy: "IPIfNonMatch", rules: rules };
 }
@@ -98,20 +127,28 @@ function generate(config) {
 	if (s == null)
 		die("generate: missing server");
 
-	return {
+	let anti = config.anti_dpi || {};
+	let opts = { xhttpPadding: anti.xhttp_padding };
+
+	let out = {
 		log: { loglevel: g.log_level || "warning" },
 		inbounds: [buildInbound(g)],
 		outbounds: [
-			buildProxyOutbound(s),
+			buildProxyOutbound(s, opts),
 			{ tag: "direct", protocol: "freedom", settings: {} },
 			{ tag: "block", protocol: "blackhole", settings: {} },
 		],
 		routing: buildRouting(g),
 	};
+
+	if (config.dns != null)
+		out.dns = buildDns(config.dns, g.local_region || "ru", g.ipv6_block);
+
+	return out;
 }
 
 function generateJson(config) {
 	return sprintf("%.J", generate(config));
 }
 
-export { generate, generateJson, buildRouting, buildStreamSettings };
+export { generate, generateJson, buildRouting, buildStreamSettings, buildDns };
