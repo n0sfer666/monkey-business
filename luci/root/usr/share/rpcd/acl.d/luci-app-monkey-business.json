@@ -1,0 +1,17 @@
+{
+	"luci-app-monkey-business": {
+		"description": "Grant access to monkey-business VPN control",
+		"read": {
+			"ubus": {
+				"monkey-business": [ "status", "servers_list", "servers_ping" ]
+			},
+			"uci": [ "monkey-business" ]
+		},
+		"write": {
+			"ubus": {
+				"monkey-business": [ "subscription_update", "config_apply", "service_toggle", "geo_update" ]
+			},
+			"uci": [ "monkey-business" ]
+		}
+	}
+}

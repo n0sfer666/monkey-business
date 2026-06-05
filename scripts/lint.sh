@@ -22,4 +22,9 @@ if ! sh scripts/check-syntax.sh; then
 	rc=1
 fi
 
+echo "== js syntax =="
+if ! sh scripts/check-js.sh; then
+	rc=1
+fi
+
 exit "$rc"
