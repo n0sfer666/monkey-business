@@ -1,6 +1,6 @@
 import { test, assert, assertEq, assertThrows, run } from "../harness.uc";
 import { parse } from "../../src/parser/subscription.uc";
-import { generate, buildRouting, buildStreamSettings } from "../../src/generator/xray.uc";
+import { generate, buildRouting, buildStreamSettings, buildDns } from "../../src/generator/xray.uc";
 import { readfile } from "fs";
 
 const SERVERS = parse(readfile("test/fixtures/sub_urilist.txt")).servers;
@@ -68,6 +68,47 @@ test("routing mode: bypass-local default region ru", function() {
 
 test("generate dies without server", function() {
 	assertThrows(function() { generate({ global: {} }); });
+});
+
+const STAGE4_CFG = {
+	global: { tproxy_port: 12345, routing_mode: "bypass-local", local_region: "ru", log_level: "warning", ipv6_block: "1" },
+	server: SERVER_A,
+	anti_dpi: { xhttp_padding: "1" },
+	dns: { mode: "split", direct_dns: "223.5.5.5", doh_url: "https://1.1.1.1/dns-query" },
+};
+
+test("stage-4 config matches golden snapshot", function() {
+	let golden = json(readfile("test/fixtures/xray_stage4.json"));
+	assertEq(generate(STAGE4_CFG), golden);
+});
+
+test("ipv6 block adds blackhole rule first", function() {
+	let r = buildRouting({ ipv6_block: "1", routing_mode: "bypass-local" });
+	assertEq(r.rules[0].ip, ["::/0"]);
+	assertEq(r.rules[0].outboundTag, "block");
+});
+
+test("no ipv6 rule when ipv6_block off", function() {
+	let r = buildRouting({ routing_mode: "bypass-local" });
+	assertEq(r.rules[0].outboundTag, "direct");
+});
+
+test("dns split: direct for region, doh fallback", function() {
+	let d = buildDns({ direct_dns: "223.5.5.5", doh_url: "https://1.1.1.1/dns-query" }, "ru", "1");
+	assertEq(d.servers[0].address, "223.5.5.5");
+	assertEq(d.servers[0].domains, ["geosite:private", "geosite:category-ru"]);
+	assertEq(d.servers[1], "https://1.1.1.1/dns-query");
+	assertEq(d.queryStrategy, "UseIPv4");
+});
+
+test("dns queryStrategy UseIP when ipv6 allowed", function() {
+	let d = buildDns({}, "ru", "0");
+	assertEq(d.queryStrategy, "UseIP");
+});
+
+test("xhttp padding omitted by default", function() {
+	let out = generate(cfg({ tproxy_port: 1 }, SERVER_A));
+	assert(!exists(out.outbounds[0].streamSettings.xhttpSettings, "xPaddingBytes"), "no padding by default");
 });
 
 exit(run());
