@@ -1,0 +1,25 @@
+config global 'global'
+	option enabled '0'
+	option routing_mode 'bypass-local'
+	option local_region 'ru'
+	option tproxy_port '12345'
+	option kill_switch '1'
+	option ipv6_block '1'
+	option log_level 'warning'
+
+config subscription 'subscription'
+	option url ''
+	option auto_update '1'
+	option update_interval '86400'
+
+config dns 'dns'
+	option mode 'split'
+	option direct_dns '223.5.5.5'
+	option doh_url 'https://1.1.1.1/dns-query'
+
+config anti_dpi 'anti_dpi'
+	option default_fingerprint 'chrome'
+	option xhttp_padding '0'
+
+config selected 'selected'
+	option server ''

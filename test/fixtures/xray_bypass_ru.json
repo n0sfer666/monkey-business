@@ -1,0 +1,105 @@
+{
+	"log": {
+		"loglevel": "warning"
+	},
+	"inbounds": [
+		{
+			"tag": "tproxy-in",
+			"port": 12345,
+			"protocol": "dokodemo-door",
+			"settings": {
+				"network": "tcp,udp",
+				"followRedirect": true
+			},
+			"streamSettings": {
+				"sockopt": {
+					"tproxy": "tproxy"
+				}
+			},
+			"sniffing": {
+				"enabled": true,
+				"destOverride": [
+					"http",
+					"tls",
+					"quic"
+				],
+				"routeOnly": false
+			}
+		}
+	],
+	"outbounds": [
+		{
+			"tag": "proxy",
+			"protocol": "vless",
+			"settings": {
+				"vnext": [
+					{
+						"address": "a.example.com",
+						"port": 443,
+						"users": [
+							{
+								"id": "11111111-2222-3333-4444-555555555555",
+								"encryption": "none",
+								"flow": "xtls-rprx-vision"
+							}
+						]
+					}
+				]
+			},
+			"streamSettings": {
+				"network": "xhttp",
+				"xhttpSettings": {
+					"path": "/xhttp",
+					"host": "",
+					"mode": "auto"
+				},
+				"security": "reality",
+				"realitySettings": {
+					"serverName": "www.microsoft.com",
+					"fingerprint": "chrome",
+					"publicKey": "PUBKEYA",
+					"shortId": "ab12",
+					"spiderX": "/"
+				}
+			}
+		},
+		{
+			"tag": "direct",
+			"protocol": "freedom",
+			"settings": {
+			}
+		},
+		{
+			"tag": "block",
+			"protocol": "blackhole",
+			"settings": {
+			}
+		}
+	],
+	"routing": {
+		"domainStrategy": "IPIfNonMatch",
+		"rules": [
+			{
+				"type": "field",
+				"ip": [
+					"geoip:private",
+					"geoip:ru"
+				],
+				"outboundTag": "direct"
+			},
+			{
+				"type": "field",
+				"domain": [
+					"geosite:private",
+					"geosite:category-ru"
+				],
+				"outboundTag": "direct"
+			},
+			{
+				"type": "field",
+				"network": "tcp,udp",
+				"outboundTag": "proxy"
+			}
+		]
+	}
+}
