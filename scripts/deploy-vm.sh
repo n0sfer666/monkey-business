@@ -19,28 +19,31 @@ trap cleanup EXIT
 
 echo ">> assembling install layout"
 
+# портируемо (BSD install на macOS не знает -D): mkdir -p + cp
+cpf() { mkdir -p "$(dirname "$2")"; cp "$1" "$2"; }
+
 # rpcd-плагин + библиотека (src/ -> lib/monkey-business/, чтобы резолвились импорты плагина)
-install -D -m644 root/usr/share/rpcd/ucode/monkey-business.uc \
-	"$stage/usr/share/rpcd/ucode/monkey-business.uc"
+cpf root/usr/share/rpcd/ucode/monkey-business.uc "$stage/usr/share/rpcd/ucode/monkey-business.uc"
 mkdir -p "$stage/usr/share/rpcd/ucode/lib/monkey-business"
 cp -R src/. "$stage/usr/share/rpcd/ucode/lib/monkey-business/"
 
 # UCI-конфиг + procd init
-install -D -m644 root/etc/config/monkey-business "$stage/etc/config/monkey-business"
-install -D -m755 root/etc/init.d/monkey-business "$stage/etc/init.d/monkey-business"
+cpf root/etc/config/monkey-business "$stage/etc/config/monkey-business"
+cpf root/etc/init.d/monkey-business "$stage/etc/init.d/monkey-business"
+chmod 755 "$stage/etc/init.d/monkey-business"
 
 # firewall-скрипты
 mkdir -p "$stage/usr/share/monkey-business/firewall"
-install -m755 scripts/firewall/apply.sh "$stage/usr/share/monkey-business/firewall/apply.sh"
-install -m755 scripts/firewall/flush.sh "$stage/usr/share/monkey-business/firewall/flush.sh"
+cp scripts/firewall/apply.sh scripts/firewall/flush.sh "$stage/usr/share/monkey-business/firewall/"
+chmod 755 "$stage/usr/share/monkey-business/firewall/"*.sh
 
 # LuCI views + menu + acl
 mkdir -p "$stage/www/luci-static/resources/view/monkey-business"
 cp luci/htdocs/luci-static/resources/view/monkey-business/*.js \
 	"$stage/www/luci-static/resources/view/monkey-business/"
-install -D -m644 luci/root/usr/share/luci/menu.d/luci-app-monkey-business.json \
+cpf luci/root/usr/share/luci/menu.d/luci-app-monkey-business.json \
 	"$stage/usr/share/luci/menu.d/luci-app-monkey-business.json"
-install -D -m644 luci/root/usr/share/rpcd/acl.d/luci-app-monkey-business.json \
+cpf luci/root/usr/share/rpcd/acl.d/luci-app-monkey-business.json \
 	"$stage/usr/share/rpcd/acl.d/luci-app-monkey-business.json"
 
 tar -C "$stage" -czf "$tarball" .

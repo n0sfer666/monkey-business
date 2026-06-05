@@ -4,6 +4,7 @@
 build/
 dist/
 node_modules/
+__pycache__/
 .dev-vm/
 *.qcow2
 *.img
