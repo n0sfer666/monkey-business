@@ -1,0 +1,34 @@
+#!/bin/sh /etc/rc.common
+# procd init для Xray-core. Конфиг генерируется rpcd (config_apply) в $CONF.
+# ВЕРИФИКАЦИЯ: на устройстве/в dev-VM (нужны procd + xray). Логика конфига — host-тесты.
+
+USE_PROCD=1
+START=95
+STOP=10
+
+PROG=/usr/bin/xray
+CONF=/etc/monkey-business/xray.json
+FW=/usr/share/monkey-business/firewall
+
+start_service() {
+	[ -f "$CONF" ] || return 1
+
+	procd_open_instance
+	procd_set_param command "$PROG" run -c "$CONF"
+	procd_set_param respawn
+	procd_set_param stdout 1
+	procd_set_param stderr 1
+	procd_set_param file "$CONF"
+	procd_close_instance
+
+	MB_LAN_IFACE="$(uci -q get monkey-business.global.lan_iface || echo br-lan)" \
+		sh "$FW/apply.sh" 2>/dev/null
+}
+
+stop_service() {
+	sh "$FW/flush.sh" 2>/dev/null
+}
+
+service_triggers() {
+	procd_add_reload_trigger "monkey-business"
+}

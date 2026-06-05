@@ -3,6 +3,6 @@
 # Версии фиксируются на момент сборки образа; при дрейфе edge пересобрать `make test-build`.
 FROM alpine:edge
 
-RUN apk add --no-cache ucode shellcheck
+RUN apk add --no-cache ucode shellcheck nodejs
 
 WORKDIR /w
