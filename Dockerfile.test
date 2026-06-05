@@ -1,0 +1,8 @@
+# Linux-окружение для прогона ucode/shell тестов и линта с macOS-хоста.
+# alpine:edge — единственная ветка Alpine со свежим ucode (модули, loadfile).
+# Версии фиксируются на момент сборки образа; при дрейфе edge пересобрать `make test-build`.
+FROM alpine:edge
+
+RUN apk add --no-cache ucode shellcheck
+
+WORKDIR /w

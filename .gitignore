@@ -1,0 +1,11 @@
+.DS_Store
+*.ipk
+*.bin
+build/
+dist/
+node_modules/
+.dev-vm/
+*.qcow2
+*.img
+*.log
+.claude/.verify-state.json
