@@ -36,44 +36,58 @@ make test-integ    # netns TPROXY + валидация конфига реаль
 
 ### Dev-VM (ImmortalWrt aarch64 в QEMU)
 
-`make dev-up` запускает VM в режиме **последовательной консоли** (`-nographic`) прямо в текущем
-терминале: видны логи загрузки, затем root-shell (на свежем образе пароль не задан).
+VM запускается **фоном** (headless). Консоль — на unix-сокете, не занимает терминал.
+Вход: SSH или браузер. **Логин/пароль: `root` / `root`** (задаётся автонастройкой).
 
-| Действие | Команда |
-|----------|---------|
-| Запустить VM (консоль в этом терминале) | `make dev-up` |
-| Выйти из консоли QEMU (VM продолжит работать) | нажать `Ctrl-a`, затем `x` (это останавливает QEMU) |
-| Зайти по SSH (из **другого** терминала) | `make dev-ssh` → `root@localhost:2222` |
-| Открыть LuCI в браузере | http://localhost:8080 |
-| Остановить VM | `make dev-down` |
-| Удалить образ/диск | `sh scripts/dev-vm.sh clean` |
+> ⚠️ Не используй `Ctrl-a x` — это **убивает** QEMU. Останавливать VM только через `make dev-down`.
 
-**Первый вход (важно):**
-1. `make dev-up` → дождаться приглашения. На консоли ты уже root (без пароля).
-2. Задать пароль для SSH/LuCI — на консоли VM:
-   ```sh
-   passwd          # без пароля dropbear/LuCI не пустят
-   ```
-3. Теперь из другого терминала: `make dev-ssh` (или открыть http://localhost:8080).
+#### Быстрый старт (копипаст, по порядку)
+```sh
+brew install qemu        # один раз, если ещё нет
+make dev-up              # 1. скачать образ и запустить VM (фоном, ~1-2 мин)
+make dev-provision       # 2. автонастройка: сеть(DHCP)+пароль root/root+установка LuCI (~3 мин, ОДИН раз)
+```
+После этого:
+- **LuCI в браузере:** http://localhost:8080 — логин `root`, пароль `root`
+- **SSH:** `make dev-ssh` — пароль `root`
 
-> Сеть VM — QEMU user-mode NAT (один интерфейс): есть исходящий интернет, проброшены
-> `:2222→22` и `:8080→80`. Этого хватает для разработки UI/логики и `opkg`. Полный сценарий
-> «LAN-клиент через TPROXY» проверяется в netns (`make test-integ`), а не в этой VM.
+`make dev-provision` нужен только при первом запуске (или после `make dev-... clean`):
+он чинит сеть (гость берёт DHCP → работают проброс портов и интернет), ставит пароль
+`root/root` и устанавливает LuCI+uhttpd. Всё это сохраняется на диске — дальше хватает `make dev-up`.
 
-Переменные: `MB_VM_SSH_PORT` (2222), `MB_VM_HTTP_PORT` (8080), `MB_VM_MEM` (512),
-`MB_IMMORTALWRT_URL` (URL образа).
+#### Команды dev-VM
+| Команда | Что делает |
+|---------|-----------|
+| `make dev-up` | запустить VM фоном (скачает образ при первом запуске) |
+| `make dev-provision` | автонастройка (сеть/пароль/LuCI) — один раз |
+| `make dev-ssh` | SSH в VM (`root`/`root`) |
+| `make dev-console` | подключиться к консоли VM (выход `Ctrl-C`, VM продолжит работать) |
+| `make dev-status` | статус VM и порты |
+| `make dev-deploy` | разложить проект по путям в VM + restart rpcd |
+| `make dev-down` | остановить VM |
+| `sh scripts/dev-vm.sh clean` | удалить образ/диск (полный сброс) |
+
+> Сеть VM — QEMU user-mode NAT (один интерфейс): исходящий интернет + проброс `:2222→22`, `:8080→80`.
+> Хватает для разработки UI/логики и `apk`. Сценарий «LAN-клиент через TPROXY» проверяется в
+> netns (`make test-integ`), а не в этой VM. Переменные: `MB_VM_SSH_PORT`, `MB_VM_HTTP_PORT`, `MB_VM_MEM`.
+
+> Пакетный менеджер в свежем ImmortalWrt — **`apk`** (не `opkg`).
 
 ### Деплой кода в VM для экспериментов
-После того как на VM задан пароль root:
 ```sh
-# 1) поставить рантайм-зависимости (один раз, на консоли/по ssh в VM):
-opkg update
-opkg install ucode ucode-mod-uci ucode-mod-fs xray-core kmod-nft-tproxy luci-base
+# 1) рантайм-зависимости в VM (один раз). Можно по SSH или через консоль:
+make dev-ssh
+#   ↳ внутри VM:
+apk update
+apk add ucode-mod-uci ucode-mod-fs xray-core kmod-nft-tproxy
+exit
 
-# 2) с хоста — разложить файлы проекта по реальным путям и перезапустить rpcd:
+# 2) с ХОСТА — разложить файлы проекта и перезапустить rpcd (спросит пароль root = root):
 make dev-deploy
 
-# 3) проверить, что ubus-объект поднялся (в VM):
+# 3) проверить, что ubus-объект поднялся (по SSH в VM):
+make dev-ssh
+#   ↳ внутри VM:
 ubus call monkey-business status
 ```
 `make dev-deploy` копирует `src/`, `root/`, `luci/`, `scripts/firewall/` в нужные места
