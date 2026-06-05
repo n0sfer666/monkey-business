@@ -1,0 +1,5 @@
+{
+  "lint": "make lint",
+  "types": "make check",
+  "test": "make test-unit"
+}
