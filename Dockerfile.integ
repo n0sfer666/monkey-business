@@ -1,0 +1,7 @@
+# Привилегированное Linux-окружение для netns-интеграции (nft tproxy + ip netns).
+# Запускать только через `make test-integ` (docker run --privileged).
+FROM alpine:edge
+
+RUN apk add --no-cache nftables iproute2 iputils
+
+WORKDIR /w
