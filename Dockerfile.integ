@@ -1,7 +1,32 @@
-# Привилегированное Linux-окружение для netns-интеграции (nft tproxy + ip netns).
+# Привилегированное Linux-окружение для интеграции:
+#  - netns + nft tproxy (ip netns, nftables)
+#  - валидация сгенерированного конфига реальным xray (xray -test)
+#  - генерация конфига (ucode)
 # Запускать только через `make test-integ` (docker run --privileged).
 FROM alpine:edge
 
-RUN apk add --no-cache nftables iproute2 iputils
+RUN apk add --no-cache nftables iproute2 iputils ucode curl unzip
+
+ARG XRAY_VER=latest
+RUN set -eu; \
+	arch="$(uname -m)"; \
+	case "$arch" in \
+		aarch64) zip="Xray-linux-arm64-v8a.zip" ;; \
+		x86_64)  zip="Xray-linux-64.zip" ;; \
+		*) echo "unsupported arch $arch" >&2; exit 1 ;; \
+	esac; \
+	curl -fsSL "https://github.com/XTLS/Xray-core/releases/${XRAY_VER}/download/${zip}" -o /tmp/x.zip; \
+	unzip -oq /tmp/x.zip -d /usr/local/bin xray; \
+	chmod +x /usr/local/bin/xray; \
+	rm -f /tmp/x.zip; \
+	/usr/local/bin/xray version | head -1
+
+# Geo-данные для валидации routing-тегов генератора (geoip:ru, geosite:category-ru, ...)
+ENV XRAY_LOCATION_ASSET=/usr/local/share/xray
+RUN set -eu; mkdir -p /usr/local/share/xray; \
+	curl -fsSL "https://github.com/v2fly/geoip/releases/latest/download/geoip.dat" \
+		-o /usr/local/share/xray/geoip.dat; \
+	curl -fsSL "https://github.com/v2fly/domain-list-community/releases/latest/download/dlc.dat" \
+		-o /usr/local/share/xray/geosite.dat
 
 WORKDIR /w
