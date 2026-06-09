@@ -111,4 +111,28 @@ test("xhttp padding omitted by default", function() {
 	assert(!exists(out.outbounds[0].streamSettings.xhttpSettings, "xPaddingBytes"), "no padding by default");
 });
 
+test("custom direct/proxy lists become routing rules in split mode", function() {
+	let r = buildRouting({
+		routing_mode: "bypass-local", local_region: "ru",
+		custom_direct: "example.com\n1.2.3.0/24\ngeosite:netflix",
+		custom_proxy: "geoip:us\nblocked.example",
+	});
+	// порядок: custom direct(domains), custom direct(ips), custom proxy(domains), custom proxy(ips), затем режим
+	assertEq(r.rules[0].domain, ["example.com", "geosite:netflix"]);
+	assertEq(r.rules[0].outboundTag, "direct");
+	assertEq(r.rules[1].ip, ["1.2.3.0/24"]);
+	assertEq(r.rules[1].outboundTag, "direct");
+	assertEq(r.rules[2].domain, ["blocked.example"]);
+	assertEq(r.rules[2].outboundTag, "proxy");
+	assertEq(r.rules[3].ip, ["geoip:us"]);
+	assertEq(r.rules[3].outboundTag, "proxy");
+});
+
+test("custom lists ignored in global mode", function() {
+	let r = buildRouting({ routing_mode: "global", custom_direct: "example.com", custom_proxy: "x.com" });
+	for (let rule in r.rules)
+		assert(!(exists(rule, "domain") && index(rule.domain, "example.com") >= 0), "no custom rule in global");
+	assertEq(r.rules[0].ip, ["geoip:private"]);
+});
+
 exit(run());

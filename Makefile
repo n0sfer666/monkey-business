@@ -60,7 +60,7 @@ dev-down:
 	@sh scripts/dev-vm.sh down
 
 dev-deploy:
-	@sh scripts/deploy-vm.sh
+	@MB_VM_SSH_PASS=root MB_UBUS_RESPAWN=1 sh scripts/deploy-vm.sh
 
 clean:
 	@docker rmi -f $(IMAGE) >/dev/null 2>&1 || true

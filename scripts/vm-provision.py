@@ -62,16 +62,29 @@ def main():
         sys.exit(1)
     print(">> консоль активна")
 
-    print(">> 1/3 сеть -> DHCP")
-    run("uci set network.lan.proto='dhcp'")
-    run("uci -q delete network.lan.ipaddr; uci -q delete network.lan.netmask; "
-        "uci -q delete network.lan.ip6assign; echo ok")
-    run("uci commit network")
-    run("/etc/init.d/network restart", 30)
-    time.sleep(8)
-    out = run("ip -4 addr show br-lan | grep -o 'inet [0-9.]*' || echo NO_IP")
-    if "10.0.2" not in out:
-        print("!! гость не получил 10.0.2.x — проброс может не работать\n", out[-200:])
+    print(">> 1/3 сеть -> статический 10.0.2.15 (QEMU SLIRP)")
+    # SLIRP всегда отдаёт 10.0.2.0/24: gw .2, dns .3, гость .15. Статика надёжнее DHCP-гонки —
+    # иначе гость остаётся на 192.168.1.1 и hostfwd (SSH/LuCI) не достаёт до него.
+    # Одной командой через ';' — чтобы не зависеть от попадания в prompt между set'ами.
+    net = ("uci set network.lan.proto='static'; "
+           "uci set network.lan.ipaddr='10.0.2.15'; "
+           "uci set network.lan.netmask='255.255.255.0'; "
+           "uci set network.lan.gateway='10.0.2.2'; "
+           "uci -q delete network.lan.dns; uci add_list network.lan.dns='10.0.2.3'; "
+           "uci -q delete network.lan.ip6assign; "
+           "uci commit network; echo NET_SET")
+    ok_ip = False
+    for attempt in (1, 2, 3):
+        run(net)
+        run("/etc/init.d/network restart", 30)
+        time.sleep(6)
+        out = run("ip -4 addr show br-lan | grep -o 'inet [0-9.]*' || echo NO_IP")
+        if "10.0.2.15" in out:
+            ok_ip = True
+            break
+        print(f"   IP ещё не 10.0.2.15 (попытка {attempt}), повтор...")
+    if not ok_ip:
+        print("!! br-lan не на 10.0.2.15 — проброс (SSH/LuCI) и интернет в VM не заработают")
 
     print(">> 2/3 пароль root=root")
     buf["t"] = ""
