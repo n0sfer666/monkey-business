@@ -9,6 +9,8 @@ var callServers = rpc.declare({ object: 'monkey-business', method: 'servers_list
 var callPing = rpc.declare({ object: 'monkey-business', method: 'servers_ping' });
 var callApply = rpc.declare({ object: 'monkey-business', method: 'config_apply' });
 var callGeo = rpc.declare({ object: 'monkey-business', method: 'geo_update' });
+var callGeoStatus = rpc.declare({ object: 'monkey-business', method: 'geo_status' });
+var callGeoInstall = rpc.declare({ object: 'monkey-business', method: 'geo_install', params: ['which'] });
 var callToggle = rpc.declare({
 	object: 'monkey-business', method: 'service_toggle', params: ['enabled']
 });
@@ -31,7 +33,25 @@ function sleep(ms) {
 
 return view.extend({
 	load: function() {
-		return Promise.all([ callStatus(), callServers(), uci.load('monkey-business') ]);
+		return Promise.all([ callStatus(), callServers(), uci.load('monkey-business'), callGeoStatus().catch(function() { return {}; }) ]);
+	},
+
+	geoText: function(g) {
+		if (!g) return _('unknown');
+		var mb = function(b) { return b > 0 ? (b / 1048576).toFixed(1) + ' MB' : _('missing'); };
+		return 'geoip: ' + mb(g.geoip) + ', geosite: ' + mb(g.geosite) +
+			(g.state && g.state !== 'ok' && g.state !== 'idle' ? ' — ' + g.state : '');
+	},
+
+	pollGeo: function(labelEl) {
+		var tries = 0;
+		function step() {
+			return callGeoStatus().then(function(g) {
+				if (g.state !== 'updating' || ++tries >= 40) return g;
+				return sleep(2000).then(step);
+			});
+		}
+		return step();
 	},
 
 	// #6 — traffic readout (only if subscription reported it)
@@ -137,18 +157,6 @@ return view.extend({
 			})
 		}, [ _('Save & Apply') ]);
 
-		var geoBtn = E('button', {
-			'class': 'btn cbi-button',
-			'click': ui.createHandlerFn(this, function() {
-				ui.showModal(_('Updating geo databases…'), [ E('p', { 'class': 'spinning' }, _('Downloading geoip/geosite')) ]);
-				return callGeo().then(function(res) {
-					ui.hideModal();
-					var ok = res && (res.status === 'ok' || res.present);
-					ui.addNotification(null, E('p', ok ? _('Geo databases updated.') : (_('Geo update failed: ') + ((res && res.detail) || ''))), ok ? 'info' : 'warning');
-				}).catch(function(e) { ui.hideModal(); ui.addNotification(null, E('p', '' + e), 'error'); });
-			})
-		}, [ _('Update geo databases') ]);
-
 		return E('div', { 'class': 'cbi-section' }, [
 			E('h3', {}, [ _('Custom routing (split-tunnel)') ]),
 			E('p', { 'style': 'color:#888' }, [ _('One entry per line: domain, IP/CIDR, geosite:NAME or geoip:NAME. Active only in split-tunnel modes (not "Everything via VPN").') ]),
@@ -156,7 +164,67 @@ return view.extend({
 				E('div', {}, [ E('strong', {}, [ _('Direct (bypass VPN)') ]), taDirect ]),
 				E('div', {}, [ E('strong', {}, [ _('Via VPN') ]), taProxy ])
 			]),
-			E('p', { 'style': 'margin-top:8px' }, [ save, ' ', geoBtn ])
+			E('p', { 'style': 'margin-top:8px' }, [ save ])
+		]);
+	},
+
+	// Geo databases: status, background update (default or custom URL), upload from disk — all validated.
+	renderGeo: function(geo) {
+		var self = this;
+		var statusEl = E('span', {}, [ this.geoText(geo) ]);
+
+		function refresh() { return callGeoStatus().then(function(g) { statusEl.textContent = self.geoText(g); }); }
+
+		var urlGeoip = E('input', { 'type': 'text', 'style': 'width:100%;max-width:480px',
+			'value': uci.get('monkey-business', 'geo', 'geoip_url') || '',
+			'placeholder': _('custom geoip.dat URL (optional)') });
+		var urlGeosite = E('input', { 'type': 'text', 'style': 'width:100%;max-width:480px',
+			'value': uci.get('monkey-business', 'geo', 'geosite_url') || '',
+			'placeholder': _('custom geosite.dat URL (optional)') });
+
+		var updateBtn = E('button', { 'class': 'btn cbi-button cbi-button-apply',
+			'click': ui.createHandlerFn(this, function() {
+				uci.set('monkey-business', 'geo', 'geoip_url', urlGeoip.value || '');
+				uci.set('monkey-business', 'geo', 'geosite_url', urlGeosite.value || '');
+				return uci.save().then(function() {
+					return callGeo().then(function() {
+						ui.showModal(_('Updating geo databases…'), [ E('p', { 'class': 'spinning' }, _('Downloading & validating (may take a minute)')) ]);
+						return self.pollGeo().then(function(g) {
+							ui.hideModal();
+							statusEl.textContent = self.geoText(g);
+							var ok = (g.state === 'ok');
+							ui.addNotification(null, E('p', ok ? _('Geo databases updated & validated.') : (_('Geo update failed: ') + (g.state || ''))), ok ? 'info' : 'warning');
+						});
+					});
+				});
+			})
+		}, [ _('Update geo databases') ]);
+
+		function uploader(which) {
+			return E('button', { 'class': 'btn cbi-button',
+				'click': ui.createHandlerFn(this, function() {
+					return ui.uploadFile('/tmp/mb-upload-' + which + '.dat').then(function() {
+						ui.showModal(_('Validating…'), [ E('p', { 'class': 'spinning' }, _('Checking ') + which + '.dat') ]);
+						return callGeoInstall(which).then(function(res) {
+							ui.hideModal();
+							var ok = res && res.ok;
+							ui.addNotification(null, E('p', ok ? (which + _('.dat installed & validated.')) : (_('Rejected: ') + ((res && res.detail) || ''))), ok ? 'info' : 'warning');
+							return refresh();
+						});
+					}).catch(function(e) { ui.hideModal(); ui.addNotification(null, E('p', '' + e), 'error'); });
+				})
+			}, [ _('Upload ') + which + '.dat' ]);
+		}
+
+		return E('div', { 'class': 'cbi-section' }, [
+			E('h3', {}, [ _('Geo databases') ]),
+			E('p', {}, [ _('Current: '), statusEl ]),
+			E('p', { 'style': 'color:#888' }, [ _('Download from default source or custom URLs, or upload .dat from disk. Files are validated with Xray before being installed.') ]),
+			E('div', { 'style': 'display:flex;flex-direction:column;gap:6px;max-width:480px' }, [
+				E('label', {}, [ _('Custom geoip URL') ]), urlGeoip,
+				E('label', {}, [ _('Custom geosite URL') ]), urlGeosite
+			]),
+			E('p', { 'style': 'margin-top:8px' }, [ updateBtn, ' ', uploader('geoip'), ' ', uploader('geosite') ])
 		]);
 	},
 
@@ -202,10 +270,12 @@ return view.extend({
 	render: function(data) {
 		var st = data[0] || {};
 		var servers = (data[1] || {}).servers || [];
+		var geo = data[3] || {};
 		return E('div', {}, [
 			this.renderTraffic(st.traffic),
 			this.renderStatus(st),
 			this.renderRouting(),
+			this.renderGeo(geo),
 			this.renderServers(servers)
 		]);
 	},

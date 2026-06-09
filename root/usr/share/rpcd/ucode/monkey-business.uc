@@ -18,7 +18,7 @@ const CONFIG = 'monkey-business';
 const CONF_DIR = '/etc/monkey-business';
 const XRAY_CONF = CONF_DIR + '/xray.json';
 const GEO_DIR = '/usr/share/xray';
-const GEO_SCRIPT = '/usr/share/monkey-business/update-geo.sh';
+const GEO_SCRIPT = '/usr/share/monkey-business/geo.sh';
 
 function shq(s) {
 	return "'" + replace(s != null ? s : '', "'", "") + "'";
@@ -104,7 +104,7 @@ function tcpPing(server) {
 function applyConfig(jsonStr) {
 	system('mkdir -p ' + CONF_DIR);
 	if (!geoPresent())
-		system('sh ' + GEO_SCRIPT + ' >/dev/null 2>&1');
+		return 'geo databases missing — press "Update geo databases" on the Dashboard first';
 	writefile('/tmp/mb-xray.json', jsonStr);
 	let v = runCapture('xray run -test -c /tmp/mb-xray.json 2>/tmp/mb-xray.err');
 	if (!v.ok) {
@@ -175,8 +175,19 @@ function buildCtx() {
 			cursor.commit(CONFIG);
 		},
 		updateGeo: function() {
-			let r = runCapture('sh ' + GEO_SCRIPT + ' 2>&1');
-			return { status: r.ok ? 'ok' : 'error', present: geoPresent(), detail: firstLine(r.out) };
+			// фон: скачивание ~29MB дольше ubus-таймаута (30s). UI поллит geo_status.
+			system('sh ' + GEO_SCRIPT + ' download >/tmp/mb-geo.log 2>&1 &');
+			return { status: 'started' };
+		},
+		geoStatus: function() {
+			// runCapture добавляет строку MB_EXIT -> берём первую строку (JSON от geo.sh)
+			let line = firstLine(runCapture('sh ' + GEO_SCRIPT + ' status').out);
+			let j = (line != '') ? json(line) : null;
+			return (type(j) == 'object') ? j : { state: 'idle', geoip: 0, geosite: 0 };
+		},
+		geoInstall: function(which) {
+			let r = runCapture('sh ' + GEO_SCRIPT + ' install ' + which + ' /tmp/mb-upload-' + which + '.dat 2>&1');
+			return { ok: r.ok, detail: firstLine(r.out) };
 		},
 	};
 }
@@ -189,6 +200,8 @@ const methods = {
 	config_apply:         { call: function() { return h.configApply(buildCtx()); } },
 	service_toggle:       { args: { enabled: false }, call: function(req) { return h.serviceToggle(buildCtx(), req.args); } },
 	geo_update:           { call: function() { return h.geoUpdate(buildCtx()); } },
+	geo_status:           { call: function() { return h.geoStatus(buildCtx()); } },
+	geo_install:          { args: { which: '' }, call: function(req) { return h.geoInstall(buildCtx(), req.args); } },
 };
 
 return { 'monkey-business': methods };
