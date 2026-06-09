@@ -88,6 +88,47 @@ function buildDns(dns, region, ipv6Blocked) {
 	};
 }
 
+function isIpLike(t) {
+	if (match(t, /^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+(\/[0-9]+)?$/) != null)
+		return true;
+	if (index(t, ":") >= 0 && match(t, /^[0-9a-fA-F:]+(\/[0-9]+)?$/) != null)
+		return true;
+	return false;
+}
+
+// строки (через \n или ,) -> { domains:[...], ips:[...] }; поддержка geoip:/geosite:
+function classifyList(str) {
+	let domains = [], ips = [];
+	if (str == null || str == "")
+		return { domains: domains, ips: ips };
+	let norm = replace(str, ",", "\n");
+	for (let line in split(norm, "\n")) {
+		let t = trim(line);
+		if (t == "" || substr(t, 0, 1) == "#")
+			continue;
+		if (index(t, "geosite:") == 0)
+			push(domains, t);
+		else if (index(t, "geoip:") == 0)
+			push(ips, t);
+		else if (isIpLike(t))
+			push(ips, t);
+		else
+			push(domains, t);
+	}
+	return { domains: domains, ips: ips };
+}
+
+function customRules(g) {
+	let rules = [];
+	let cd = classifyList(g.custom_direct);
+	let cp = classifyList(g.custom_proxy);
+	if (length(cd.domains)) push(rules, { type: "field", domain: cd.domains, outboundTag: "direct" });
+	if (length(cd.ips)) push(rules, { type: "field", ip: cd.ips, outboundTag: "direct" });
+	if (length(cp.domains)) push(rules, { type: "field", domain: cp.domains, outboundTag: "proxy" });
+	if (length(cp.ips)) push(rules, { type: "field", ip: cp.ips, outboundTag: "proxy" });
+	return rules;
+}
+
 function buildRouting(g) {
 	let region = g.local_region || "ru";
 	let mode = g.routing_mode || "bypass-local";
@@ -95,6 +136,11 @@ function buildRouting(g) {
 
 	if (isTrue(g.ipv6_block))
 		push(rules, { type: "field", ip: ["::/0"], outboundTag: "block" });
+
+	// custom direct/proxy — только в split-tunnel (не в global), ПЕРЕД правилами режима
+	if (mode != "global")
+		for (let r in customRules(g))
+			push(rules, r);
 
 	let modeRules;
 	if (mode == "global") {

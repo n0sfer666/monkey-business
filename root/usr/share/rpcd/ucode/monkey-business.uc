@@ -9,7 +9,10 @@
 
 import * as uci from 'uci';
 import { popen, writefile } from 'fs';
-import * as h from './lib/monkey-business/rpcd/handlers.uc';
+// АБСОЛЮТНЫЙ путь: rpcd-mod-ucode компилирует плагин из буфера (без пути к файлу),
+// поэтому относительный import не резолвится. Транзитивные импорты в lib/ грузятся из
+// файла и остаются относительными. Путь = место установки (см. шапку и deploy/packaging).
+import * as h from '/usr/share/rpcd/ucode/lib/monkey-business/rpcd/handlers.uc';
 
 const CONFIG = 'monkey-business';
 const XRAY_CONF = '/etc/monkey-business/xray.json';

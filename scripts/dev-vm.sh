@@ -33,7 +33,10 @@ ensure_assets() {
 		echo ">> скачиваю образ ImmortalWrt aarch64..."
 		need curl "brew install curl"
 		curl -fL "$IMG_URL" -o "$VMDIR/disk.img.gz" || die "не удалось скачать образ"
-		gunzip -f "$VMDIR/disk.img.gz" || die "не удалось распаковать образ"
+		# gzip -dc терпит "trailing garbage" (бывает у release-образов); проверяем по непустому output
+		gzip -dc "$VMDIR/disk.img.gz" > "$DISK" 2>/dev/null
+		[ -s "$DISK" ] || die "не удалось распаковать образ"
+		rm -f "$VMDIR/disk.img.gz"
 		qemu-img resize "$DISK" 512M >/dev/null 2>&1 || true
 	fi
 	if [ ! -f "$FW" ]; then
@@ -53,27 +56,46 @@ cmd_up() {
 	fi
 	ensure_assets
 	rm -f "$SOCK" "$LOG"
+
+	# Ускорение: на Apple Silicon (arm64 + HVF) гость aarch64 виртуализируется почти нативно —
+	# на порядок быстрее и СТАБИЛЬНЕЕ программной эмуляции TCG (та даёт зависания ubusd/boot).
+	# Под HVF cpu обязан быть 'host'. Иначе (Intel/Linux/нет HVF) — TCG + cortex-a72.
+	if [ "$(uname -m)" = "arm64" ] && qemu-system-aarch64 -accel help 2>/dev/null | grep -q '^hvf$'; then
+		ACCEL="-machine virt,accel=hvf -cpu host"
+		echo ">> ускорение: HVF (Hypervisor.framework, нативная aarch64-виртуализация)"
+	else
+		ACCEL="-machine virt -cpu cortex-a72"
+		echo ">> ускорение: TCG (программная эмуляция — медленно; HVF недоступен)"
+	fi
+
 	echo ">> запускаю dev-VM (headless, фоном)..."
+	# shellcheck disable=SC2086
 	nohup qemu-system-aarch64 \
-		-M virt -cpu cortex-a72 -smp 2 -m "$MEM" \
+		$ACCEL -smp 2 -m "$MEM" \
 		-bios "$FW" \
 		-drive "file=$DISK,if=virtio,format=raw" \
 		-device virtio-net-pci,netdev=lan \
 		-netdev "user,id=lan,hostfwd=tcp::$SSH_PORT-:22,hostfwd=tcp::$HTTP_PORT-:80" \
+		-object rng-random,id=rng0,filename=/dev/urandom \
+		-device virtio-rng-pci,rng=rng0 \
 		-display none \
 		-chardev "socket,id=con,path=$SOCK,server=on,wait=off,logfile=$LOG" \
 		-serial chardev:con \
 		>"$VMDIR/qemu.log" 2>&1 &
 	qpid=$!
 	echo "$qpid" >"$PID"
-	echo ">> ожидаю загрузку..."
-	i=0
-	while [ "$i" -lt 120 ]; do
-		grep -q "activate this console" "$LOG" 2>/dev/null && break
+	echo ">> ожидаю загрузку (эмуляция aarch64 без KVM — медленно)..."
+	i=0; booted=0
+	while [ "$i" -lt 240 ]; do
+		if grep -q "activate this console" "$LOG" 2>/dev/null; then booted=1; break; fi
 		kill -0 "$qpid" 2>/dev/null || die "QEMU упал, см. $VMDIR/qemu.log"
 		sleep 1; i=$((i + 1))
 	done
-	echo ">> VM загружена. Дальше: make dev-provision (один раз), затем make dev-ssh / http://localhost:$HTTP_PORT"
+	if [ "$booted" = 1 ]; then
+		echo ">> VM загружена. Дальше: make dev-provision (один раз), затем make dev-deploy / http://localhost:$HTTP_PORT"
+	else
+		echo ">> WARN: не дождался приглашения консоли за ${i}s. VM может ещё грузиться — проверь: make dev-console"
+	fi
 }
 
 cmd_provision() {

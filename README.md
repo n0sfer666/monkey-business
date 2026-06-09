@@ -1,114 +1,101 @@
 # monkey-business
 
-VPN-клиент **Reality + VLESS + XHTTP** для ImmortalWrt/OpenWrt (целевое железо — NanoPi R2S).
-Аналог passwall/v2rayA с минималистичным интерфейсом и современными технологиями обхода блокировок.
+A minimalist VPN client for **OpenWrt / ImmortalWrt** routers (target hardware: **NanoPi R2S**).
+Reality + VLESS + XHTTP with a simple LuCI interface — a lightweight alternative to passwall / v2rayA.
 
-> ⚠️ В разработке. См. план: `.claude/plans/2026-06-05-monkey-business.md`
-> и спецификацию: `.context/specs/2026-06-05-monkey-business-vpn-client.md`.
+LuCI (JS) → rpcd (ucode) → UCI → config generator → Xray-core + nftables TPROXY + dnsmasq.
 
-## Возможности (целевые)
-- Подписка VPNON + ручное добавление серверов (VLESS/Reality/XHTTP).
-- Маршрутизация по geoip/geosite: bypass RU/CN → остальное через VPN.
-- TPROXY-перехват (nftables/fw4), kill-switch (fail-closed), блок IPv6-утечек.
-- Split-DNS (RU direct / DoH в туннеле), anti-DPI (uTLS + XHTTP padding).
-- Минималистичный LuCI-интерфейс (RU/EN) с подсказками к каждой опции.
+> ⚠️ **Work in progress.** Backend (subscription parser, config generator, rpcd) is covered by host
+> unit tests; the network path (TPROXY/DNS) by a netns harness. Real VPN connection and on-device
+> performance are validated on hardware.
 
-## Архитектура
-LuCI (JS) → rpcd (ucode) → UCI → генератор → Xray-core + nftables TPROXY + dnsmasq.
-Подробнее: `.context/architecture.md`.
+## Requirements
 
-## Начало работы
+- **Docker** (daemon running) — all linting/tests run inside a Linux container, because a macOS host
+  has no ucode/nftables/netns.
+- **QEMU** (`brew install qemu`) — only for the dev VM.
 
-### Требования
-- **Docker** (запущенный demon) — все тесты/линт гоняются в Linux-контейнере, т.к. macOS-хост
-  не имеет ucode/nftables/netns.
-- **qemu** (`brew install qemu`) — только для dev-VM.
+## Build an installable package
 
-### Цикл разработки (на хосте)
-Код правится на хосте, проверки — в контейнере (собирается автоматически при первом запуске):
+Packaging produces an `.ipk` via the OpenWrt/ImmortalWrt SDK for the target (rockchip/armv8):
+
 ```sh
-make help          # список целей
-make test          # lint + ucode/js syntax + 43 unit-теста
-make test-unit     # только ucode unit/snapshot
-make lint          # shellcheck + ucode + js syntax
-make test-integ    # netns TPROXY + валидация конфига реальным xray (privileged Docker)
+export MB_SDK_DIR=/path/to/immortalwrt-sdk   # SDK for rockchip/armv8
+make package
 ```
 
-### Dev-VM (ImmortalWrt aarch64 в QEMU)
+The artifact lands in the SDK's `bin/packages/aarch64*/`; copy it to the router and install with
+`apk add ./<pkg>.ipk` (or `opkg install`). *(SDK packaging is still being wired up — see
+`scripts/package.sh`.)*
 
-VM запускается **фоном** (headless). Консоль — на unix-сокете, не занимает терминал.
-Вход: SSH или браузер. **Логин/пароль: `root` / `root`** (задаётся автонастройкой).
+## Development
 
-> ⚠️ Не используй `Ctrl-a x` — это **убивает** QEMU. Останавливать VM только через `make dev-down`.
+Code is edited on the host; checks run in a container (built automatically on first use):
 
-#### Быстрый старт (копипаст, по порядку)
 ```sh
-brew install qemu        # один раз, если ещё нет
-make dev-up              # 1. скачать образ и запустить VM (фоном, ~1-2 мин)
-make dev-provision       # 2. автонастройка: сеть(DHCP)+пароль root/root+установка LuCI (~3 мин, ОДИН раз)
+make test        # lint + ucode/JS syntax + unit tests
+make test-integ  # netns TPROXY + config validation against a real xray (privileged Docker)
 ```
-После этого:
-- **LuCI в браузере:** http://localhost:8080 — логин `root`, пароль `root`
-- **SSH:** `make dev-ssh` — пароль `root`
 
-`make dev-provision` нужен только при первом запуске (или после `make dev-... clean`):
-он чинит сеть (гость берёт DHCP → работают проброс портов и интернет), ставит пароль
-`root/root` и устанавливает LuCI+uhttpd. Всё это сохраняется на диске — дальше хватает `make dev-up`.
+## Preview on a live router (dev VM)
 
-#### Команды dev-VM
-| Команда | Что делает |
-|---------|-----------|
-| `make dev-up` | запустить VM фоном (скачает образ при первом запуске) |
-| `make dev-provision` | автонастройка (сеть/пароль/LuCI) — один раз |
-| `make dev-ssh` | SSH в VM (`root`/`root`) |
-| `make dev-console` | подключиться к консоли VM (выход `Ctrl-C`, VM продолжит работать) |
-| `make dev-status` | статус VM и порты |
-| `make dev-deploy` | разложить проект по путям в VM + restart rpcd |
-| `make dev-down` | остановить VM |
-| `sh scripts/dev-vm.sh clean` | удалить образ/диск (полный сброс) |
+See the app running on a real ImmortalWrt aarch64 system in QEMU before flashing hardware:
 
-> Сеть VM — QEMU user-mode NAT (один интерфейс): исходящий интернет + проброс `:2222→22`, `:8080→80`.
-> Хватает для разработки UI/логики и `apk`. Сценарий «LAN-клиент через TPROXY» проверяется в
-> netns (`make test-integ`), а не в этой VM. Переменные: `MB_VM_SSH_PORT`, `MB_VM_HTTP_PORT`, `MB_VM_MEM`.
-
-> Пакетный менеджер в свежем ImmortalWrt — **`apk`** (не `opkg`).
-
-### Деплой кода в VM для экспериментов
 ```sh
-# 1) рантайм-зависимости в VM (один раз). Можно по SSH или через консоль:
-make dev-ssh
-#   ↳ внутри VM:
-apk update
-apk add ucode-mod-uci ucode-mod-fs xray-core kmod-nft-tproxy
-exit
-
-# 2) с ХОСТА — разложить файлы проекта и перезапустить rpcd (спросит пароль root = root):
-make dev-deploy
-
-# 3) проверить, что ubus-объект поднялся (по SSH в VM):
-make dev-ssh
-#   ↳ внутри VM:
-ubus call monkey-business status
+make dev-up         # boot the VM headless (downloads the image on first run)
+make dev-provision  # one-time setup: DHCP + root password + LuCI (~a few min)
+make dev-deploy     # install the app into the VM and reload rpcd
 ```
-`make dev-deploy` копирует `src/`, `root/`, `luci/`, `scripts/firewall/` в нужные места
-(`/usr/share/rpcd/ucode/...`, `/etc/config`, `/etc/init.d`, `/www/luci-static/...`) и делает
-`rpcd restart`. После деплоя раздел появится в LuCI: **Services → monkey-business VPN**.
 
-### Где что устанавливается
-| Исходник | Путь в системе |
-|----------|----------------|
-| `root/usr/share/rpcd/ucode/monkey-business.uc` | rpcd-плагин (ubus-объект) |
-| `src/*` | `/usr/share/rpcd/ucode/lib/monkey-business/` (импорты плагина) |
-| `root/etc/config/monkey-business` | UCI-конфиг |
-| `root/etc/init.d/monkey-business` | procd init (запуск xray) |
-| `scripts/firewall/*.sh` | `/usr/share/monkey-business/firewall/` |
-| `luci/htdocs/.../view/monkey-business/*.js` | `/www/luci-static/resources/view/monkey-business/` |
-| `luci/root/.../menu.d`, `acl.d` | меню и ACL LuCI |
+Then open **http://localhost:8080** (login `root` / `root`) → **Services → monkey-business VPN**.
 
-## Статус
-Backend (парсер/генератор/rpcd) — ucode, покрыт **43 host-тестами**. Сетевая часть — netns-харнесс
-(`make test-integ`: реальный TPROXY-перехват + валидация конфига настоящим xray). Реальное
-подключение к VPNON, прошивка R2S и перф-тесты — на железе. Подробности: `.claude/reports/`.
+| Command | Purpose |
+|---------|---------|
+| `make dev-up` | start the VM (background, headless) |
+| `make dev-provision` | one-time setup (network / password / LuCI) |
+| `make dev-deploy` | deploy the app + runtime deps, reload rpcd |
+| `make dev-ssh` | SSH into the VM (`root` / `root`) |
+| `make dev-status` | VM status and forwarded ports |
+| `make dev-down` | stop the VM |
 
-## Лицензия
+> The VM uses QEMU user-mode NAT (SSH `:2222→22`, LuCI `:8080→80`) — enough for UI/logic work.
+> The "LAN client through TPROXY" scenario is exercised by `make test-integ`, not this VM.
+> Do **not** `reboot` the guest (emulated `ubusd` doesn't restart cleanly) — use `make dev-down` / `dev-up`.
+
+## Troubleshooting (dev VM)
+
+The dev VM is `qemu-system-aarch64`. On Apple Silicon it uses **HVF** (near-native); elsewhere it
+falls back to slow TCG emulation.
+
+- **The ubus object doesn't register / `Failed to connect to ubus` after `make dev-deploy`.**
+  Handled by the current scripts; if you hit it, make sure you're up to date. Two things were at play:
+  1. **`rpcd` compiles ucode plugins from a buffer** (no file path), so the rpcd entrypoint must use
+     an **absolute** import path. Relative `./…` imports fail under rpcd (but work via the `ucode`
+     CLI, which hides the bug). Transitively imported modules under `lib/` may stay relative.
+  2. **Emulated `ubusd` wedges on `rpcd restart`** (alive but stops accepting connections — a known
+     QEMU/OpenWrt issue, openwrt#9492). `make dev-deploy` detects this and **respawns `ubusd`+`rpcd`
+     fresh** (only on the dev VM, via `MB_UBUS_RESPAWN=1`; never on real hardware).
+  Also, macOS `tar` adds AppleDouble `._*` files (the deploy strips them with `COPYFILE_DISABLE=1`) —
+  cosmetic rpcd errors, but worth keeping clean (they also reach a real R2S when deploying from a Mac).
+  Verify on the target: `cat /usr/share/rpcd/ucode/monkey-business.uc | ucode -R -` (must exit
+  cleanly), then `ubus call monkey-business status`.
+
+- **Guest reboot hangs at `procd: - ubus -` (SSH "banner exchange" timeout).**
+  A genuine QEMU-emulation race where `ubusd` doesn't come up on a *guest-initiated reboot*
+  (see openwrt/openwrt#9492, #13600) — **not** related to the app or to the `._*` issue, and not
+  fixed by HVF. **Don't `reboot` the guest** — stop/start the VM process instead:
+  `make dev-down && make dev-up` (a fresh cold boot works). If a boot stays wedged, full reset:
+  `sh scripts/dev-vm.sh clean` and start over.
+
+- **No internet in the VM / `apk` fails / LuCI didn't install.** The guest must be on
+  `10.0.2.15` (QEMU SLIRP). `make dev-provision` sets this statically; verify with
+  `make dev-ssh` then `ip -4 addr show br-lan`. If it shows `192.168.1.1`, re-run `make dev-provision`.
+
+For the **backend** (ubus/rpcd/ucode/xray) the most reliable target is real hardware — the same
+`deploy-vm.sh` can target a **NanoPi R2S** over SSH:
+`MB_VM_SSH_HOST=root@<ip> MB_VM_SSH_PORT=22 MB_VM_SSH_PASS=<pw> sh scripts/deploy-vm.sh`.
+Final validation (real VPN connection, performance) is done there.
+
+## License
+
 TBD.
