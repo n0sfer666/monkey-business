@@ -8,6 +8,14 @@ var callSubUpdate = rpc.declare({
 	object: 'monkey-business', method: 'subscription_update', params: ['url']
 });
 
+function notifyResult(res) {
+	if (res && res.error)
+		ui.addNotification(null, E('p', _('Subscription update failed: ') + res.error), 'warning');
+	else
+		ui.addNotification(null, E('p', _('Servers fetched: ') + ((res && res.added) || 0)), 'info');
+	return res;
+}
+
 return view.extend({
 	render: function() {
 		var m = new form.Map('monkey-business', _('Servers'),
@@ -17,7 +25,7 @@ return view.extend({
 			_('Subscription'));
 
 		var url = sub.option(form.Value, 'url', _('Subscription URL'),
-			_('VPNON subscription link. Servers are fetched and refreshed automatically.'));
+			_('VPNON subscription link. Type it and press "Fetch subscription" — it is saved automatically when the fetch succeeds.'));
 		url.password = true;
 
 		var auto = sub.option(form.Flag, 'auto_update', _('Auto-update'),
@@ -34,19 +42,32 @@ return view.extend({
 		btn.inputtitle = _('Fetch subscription');
 		btn.inputstyle = 'apply';
 		btn.onclick = function() {
-			return callSubUpdate('').then(function(res) {
-				if (res && res.error)
-					ui.addNotification(null, E('p', _('Update failed: ') + res.error), 'warning');
-				else
-					ui.addNotification(null, E('p', _('Added servers: ') + (res.added || 0)), 'info');
+			var typed = url.formvalue('subscription') || '';
+			if (typed === '') {
+				ui.addNotification(null, E('p', _('Enter a subscription URL first.')), 'warning');
+				return Promise.resolve();
+			}
+			ui.showModal(_('Fetching subscription…'), [ E('p', { 'class': 'spinning' }, _('Contacting server')) ]);
+			return callSubUpdate(typed).then(function(res) {
+				ui.hideModal();
+				notifyResult(res);
+				if (!(res && res.error))
+					window.setTimeout(function() { window.location.reload(); }, 600);
+			}).catch(function(e) {
+				ui.hideModal();
+				ui.addNotification(null, E('p', _('Fetch error: ') + e), 'error');
 			});
 		};
 
 		var srv = m.section(form.GridSection, 'server', _('Manual servers'),
-			_('Add servers by hand (vless:// link fields).'));
+			_('Add servers by hand, or reorder fetched ones. Lower priority connects first; if unreachable, the next is used.'));
 		srv.addremove = true;
 		srv.anonymous = true;
+		srv.sortable = true;
 
+		var prio = srv.option(form.Value, 'priority', _('Priority'));
+		prio.datatype = 'uinteger';
+		prio.default = '0';
 		srv.option(form.Value, 'tag', _('Name'));
 		srv.option(form.Value, 'address', _('Address'));
 		var port = srv.option(form.Value, 'port', _('Port'));
@@ -57,5 +78,15 @@ return view.extend({
 		sec.value('none', _('None'));
 
 		return m.render();
+	},
+
+	// Save & Apply: persist (incl. URL) then fetch+validate the subscription.
+	handleSaveApply: function(ev, mode) {
+		var self = this;
+		return this.handleSave(ev).then(function() {
+			return callSubUpdate('').then(function(res) {
+				notifyResult(res);
+			});
+		});
 	}
 });

@@ -47,10 +47,12 @@ cpf root/etc/config/monkey-business "$stage/etc/config/monkey-business"
 cpf root/etc/init.d/monkey-business "$stage/etc/init.d/monkey-business"
 chmod 755 "$stage/etc/init.d/monkey-business"
 
-# firewall-скрипты
+# firewall-скрипты + geo-апдейтер
 mkdir -p "$stage/usr/share/monkey-business/firewall"
 cp scripts/firewall/apply.sh scripts/firewall/flush.sh "$stage/usr/share/monkey-business/firewall/"
 chmod 755 "$stage/usr/share/monkey-business/firewall/"*.sh
+cpf root/usr/share/monkey-business/update-geo.sh "$stage/usr/share/monkey-business/update-geo.sh"
+chmod 755 "$stage/usr/share/monkey-business/update-geo.sh"
 
 # LuCI views + menu + acl
 mkdir -p "$stage/www/luci-static/resources/view/monkey-business"
