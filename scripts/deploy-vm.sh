@@ -78,7 +78,10 @@ echo ">> installing files + runtime deps + reloading rpcd"
 # shellcheck disable=SC2086
 $SSH $SSH_OPTS -p "$PORT" "$HOST" "MB_RESPAWN='${MB_UBUS_RESPAWN:-0}' sh -s" <<'REMOTE'
 	set -e
+	# сохранить пользовательский UCI-конфиг (url/серверы/выбор) между деплоями — как conffile
+	[ -f /etc/config/monkey-business ] && cp /etc/config/monkey-business /tmp/mb-cfg.keep
 	tar -C / -xzf /tmp/mb-deploy.tgz
+	[ -f /tmp/mb-cfg.keep ] && mv /tmp/mb-cfg.keep /etc/config/monkey-business
 	# подчистить возможные macOS AppleDouble-остатки (BusyBox find без -delete, поэтому rm по glob)
 	rm -f /usr/share/rpcd/ucode/._* /usr/share/rpcd/ucode/lib/monkey-business/._* 2>/dev/null || true
 	chmod 644 /usr/share/rpcd/ucode/monkey-business.uc
@@ -88,7 +91,7 @@ $SSH $SSH_OPTS -p "$PORT" "$HOST" "MB_RESPAWN='${MB_UBUS_RESPAWN:-0}' sh -s" <<'
 	# рантайм-зависимости (идемпотентно; для UI хватает uci/fs+rpcd-mod-ucode из LuCI,
 	# xray/tproxy нужны только для запуска сервиса). Не валим деплой при отсутствии сети.
 	if command -v apk >/dev/null 2>&1; then
-		for p in ucode-mod-uci ucode-mod-fs rpcd-mod-ucode xray-core kmod-nft-tproxy; do
+		for p in ucode-mod-uci ucode-mod-fs rpcd-mod-ucode xray-core kmod-nft-tproxy curl; do
 			apk info -e "$p" >/dev/null 2>&1 || MISS="${MISS:-} $p"
 		done
 		if [ -n "${MISS:-}" ]; then

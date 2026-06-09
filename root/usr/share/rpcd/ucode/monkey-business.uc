@@ -42,9 +42,26 @@ function loadSection(cursor, type_) {
 	return res;
 }
 
+// UCI хранит только строки/списки, а server имеет вложенные transport/reality (объекты) и alpn.
+// Сериализуем их в JSON при записи (storeServer) и восстанавливаем при чтении (reviveServer).
+function reviveServer(s) {
+	for (let key in ["transport", "reality", "alpn"]) {
+		if (type(s[key]) == "string") {
+			let v = s[key];
+			if (v == "" || v == "null")
+				s[key] = (key == "alpn") ? [] : null;
+			else
+				s[key] = json(v);
+		}
+	}
+	if (s.port != null)
+		s.port = int(s.port);
+	return s;
+}
+
 function loadServers(cursor) {
 	let servers = [];
-	cursor.foreach(CONFIG, 'server', function(s) { push(servers, s); });
+	cursor.foreach(CONFIG, 'server', function(s) { push(servers, reviveServer(s)); });
 	return servers;
 }
 
@@ -52,18 +69,24 @@ function geoPresent() {
 	return stat(GEO_DIR + '/geoip.dat') != null && stat(GEO_DIR + '/geosite.dat') != null;
 }
 
-// Скачивает тело подписки + захватывает заголовок Subscription-Userinfo (uclient-fetch -S).
+function haveCurl() {
+	return stat('/usr/bin/curl') != null || stat('/bin/curl') != null;
+}
+
+// Тело подписки + (если есть curl) заголовок Subscription-Userinfo для трафика.
+// uclient-fetch не умеет сохранять заголовки ответа -> userinfo доступен только с curl.
 function fetchSubscription(url) {
-	let hdr = '/tmp/mb-sub.hdr';
-	let p = popen('uclient-fetch -T 15 -S -O - ' + shq(url) + ' 2>' + hdr);
-	if (p == null)
-		return null;
-	let body = p.read('all');
-	p.close();
+	let bodyf = '/tmp/mb-sub.body', hdrf = '/tmp/mb-sub.hdr';
+	system('rm -f ' + bodyf + ' ' + hdrf);
+	if (haveCurl())
+		runCapture('curl -fsSL -m 25 -D ' + hdrf + ' -o ' + bodyf + ' ' + shq(url));
+	else
+		runCapture('uclient-fetch -q -T 20 -O ' + bodyf + ' ' + shq(url));
+	let body = readfile(bodyf);
 	if (body == null || length(body) == 0)
 		return null;
 	let userinfo = '';
-	let raw = readfile(hdr);
+	let raw = readfile(hdrf);
 	if (raw != null)
 		for (let line in split(raw, "\n"))
 			if (index(lc(line), 'subscription-userinfo:') >= 0)
@@ -106,8 +129,13 @@ function buildCtx() {
 			cursor.foreach(CONFIG, 'server', function(s) { cursor.delete(CONFIG, s['.name']); });
 			for (let s in servers) {
 				let name = cursor.add(CONFIG, 'server');
-				for (let k in s)
-					cursor.set(CONFIG, name, k, s[k]);
+				for (let k in s) {
+					let v = s[k], t = type(v);
+					if (t == "object" || t == "array")
+						cursor.set(CONFIG, name, k, sprintf("%J", v));
+					else if (v != null)
+						cursor.set(CONFIG, name, k, "" + v);
+				}
 			}
 			cursor.commit(CONFIG);
 		},
@@ -139,7 +167,8 @@ function buildCtx() {
 		applyConfig: function(jsonStr) { return applyConfig(jsonStr); },
 		stopService: function() { system('/etc/init.d/monkey-business stop'); },
 		serviceRunning: function() {
-			return index(runCapture('pgrep -x xray >/dev/null && echo up').out, 'up') >= 0;
+			// pidof надёжен на BusyBox (pgrep -x не матчит comm в этой сборке)
+			return index(runCapture('pidof xray >/dev/null && echo up').out, 'up') >= 0;
 		},
 		setEnabled: function(on) {
 			cursor.set(CONFIG, 'global', 'enabled', on ? '1' : '0');
