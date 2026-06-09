@@ -119,6 +119,10 @@ function serversList(ctx) {
 	return { servers: out };
 }
 
+function serverKey(s) {
+	return (s.address || "") + ":" + (s.port || "") + ":" + (s.uuid || "");
+}
+
 function subscriptionUpdate(ctx, args) {
 	let url = (args != null && args.url != null && args.url != "") ? args.url : ctx.getSubscription().url;
 	if (url == null || url == "")
@@ -132,13 +136,30 @@ function subscriptionUpdate(ctx, args) {
 	if (length(res.servers) == 0)
 		return { error: "no servers parsed", format: res.format, kept: length(ctx.getServers()) };
 
-	let i = 0;
-	for (let sv in res.servers) { sv.priority = i; i++; }
+	// сохранить РУЧНОЙ порядок: за существующими серверами оставить их priority (матч по ключу),
+	// новые — в конец. Иначе re-fetch (Save&Apply/автообновление) сбрасывал бы ручную сортировку.
+	let oldPrio = {};
+	let maxPrio = -1;
+	for (let s in ctx.getServers()) {
+		let p = prio(s);
+		if (p != 999) {
+			oldPrio[serverKey(s)] = p;
+			if (p > maxPrio) maxPrio = p;
+		}
+	}
+	let next = maxPrio + 1;
+	for (let sv in res.servers) {
+		let k = serverKey(sv);
+		if (oldPrio[k] != null)
+			sv.priority = oldPrio[k];
+		else
+			sv.priority = next++;
+	}
 	ctx.setServers(res.servers);
 	ctx.setSubscriptionUrl(url);
 	if (resp.userinfo != null && resp.userinfo != "")
 		ctx.setUserinfo(parseUserinfo(resp.userinfo));
-	selectBest(ctx);
+	ensureSelected(ctx);
 	return { format: res.format, added: length(res.servers), errors: res.errors };
 }
 

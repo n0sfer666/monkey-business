@@ -97,6 +97,21 @@ test("subscriptionUpdate stores servers, url, userinfo and auto-selects", functi
 	assertEq(st.servers[0].priority, 0);
 });
 
+test("subscriptionUpdate preserves manual priority on re-fetch", function() {
+	let st = freshState();
+	st.fetchResult = { body: SUB, userinfo: "" };
+	let ctx = mockCtx(st);
+	h.subscriptionUpdate(ctx, {});
+	let tagA = st.servers[0].tag;
+	st.servers[0].priority = 5;
+	h.subscriptionUpdate(ctx, {});
+	let found = null;
+	for (let s in st.servers)
+		if (s.tag == tagA)
+			found = s;
+	assertEq(found.priority, 5);
+});
+
 test("subscriptionUpdate falls back to saved url when arg empty", function() {
 	let st = freshState();
 	st.fetchResult = { body: SUB, userinfo: "" };
