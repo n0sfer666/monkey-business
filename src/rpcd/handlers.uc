@@ -189,4 +189,15 @@ function geoUpdate(ctx) {
 	return ctx.updateGeo();
 }
 
-export { status, serversList, subscriptionUpdate, serversPing, configApply, serviceToggle, geoUpdate, maskUuid, parseUserinfo, selectBest };
+function geoStatus(ctx) {
+	return ctx.geoStatus();
+}
+
+function geoInstall(ctx, args) {
+	let which = (args != null) ? args.which : null;
+	if (which != "geoip" && which != "geosite")
+		return { error: "bad which (geoip|geosite)" };
+	return ctx.geoInstall(which);
+}
+
+export { status, serversList, subscriptionUpdate, serversPing, configApply, serviceToggle, geoUpdate, geoStatus, geoInstall, maskUuid, parseUserinfo, selectBest };

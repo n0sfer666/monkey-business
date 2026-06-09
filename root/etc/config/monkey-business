@@ -29,3 +29,7 @@ config anti_dpi 'anti_dpi'
 
 config selected 'selected'
 	option server ''
+
+config geo 'geo'
+	option geoip_url ''
+	option geosite_url ''

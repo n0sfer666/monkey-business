@@ -51,8 +51,8 @@ chmod 755 "$stage/etc/init.d/monkey-business"
 mkdir -p "$stage/usr/share/monkey-business/firewall"
 cp scripts/firewall/apply.sh scripts/firewall/flush.sh "$stage/usr/share/monkey-business/firewall/"
 chmod 755 "$stage/usr/share/monkey-business/firewall/"*.sh
-cpf root/usr/share/monkey-business/update-geo.sh "$stage/usr/share/monkey-business/update-geo.sh"
-chmod 755 "$stage/usr/share/monkey-business/update-geo.sh"
+cpf root/usr/share/monkey-business/geo.sh "$stage/usr/share/monkey-business/geo.sh"
+chmod 755 "$stage/usr/share/monkey-business/geo.sh"
 
 # LuCI views + menu + acl
 mkdir -p "$stage/www/luci-static/resources/view/monkey-business"
