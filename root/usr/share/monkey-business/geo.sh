@@ -55,20 +55,47 @@ install_one() { # install_one <which> <src>
 	return 0
 }
 
+# sha256 первого поля (для .sha256sum-файла или локального файла)
+sha_of() { sha256sum "$1" 2>/dev/null | awk '{print $1}'; }
+remote_sha() { # remote_sha <dat_url> -> печатает hash или пусто
+	t="/tmp/mb-sum.$$"
+	if fetch "$1.sha256sum" "$t" 2>/dev/null && [ -s "$t" ]; then
+		awk '{print $1; exit}' "$t"
+	fi
+	rm -f "$t"
+}
+
 cmd_download() {
 	set_state "updating"
 	base="${MB_GEO_BASE:-$DEFAULT_BASE}"
 	gip="$(uci_get geoip_url)"; gst="$(uci_get geosite_url)"
 	[ -n "$gip" ] || gip="$base/geoip.dat"
 	[ -n "$gst" ] || gst="$base/geosite.dat"
+	changed=0
 	for pair in "geoip $gip" "geosite $gst"; do
 		which="${pair%% *}"; url="${pair#* }"
+		rsum="$(remote_sha "$url")"
+		# свежая версия уже стоит -> пропустить скачивание
+		if [ -n "$rsum" ] && [ -f "$DEST/$which.dat" ] && [ "$rsum" = "$(sha_of "$DEST/$which.dat")" ]; then
+			echo "$which: up to date (sha256 match), skipped"
+			continue
+		fi
 		tmp="/tmp/mb-$which.dl"
 		if ! fetch "$url" "$tmp"; then set_state "error: download failed ($which)"; rm -f "$tmp"; return 1; fi
+		# проверка целостности по контрольной сумме (если она доступна)
+		if [ -n "$rsum" ] && [ "$rsum" != "$(sha_of "$tmp")" ]; then
+			set_state "error: checksum mismatch ($which)"; rm -f "$tmp"; return 1
+		fi
 		if ! err="$(install_one "$which" "$tmp")"; then set_state "error: $err"; rm -f "$tmp"; return 1; fi
+		changed=1
 	done
-	set_state "ok"
-	echo "geo databases ready in $DEST"
+	if [ "$changed" = 0 ]; then
+		set_state "unchanged"
+		echo "geo databases already up to date"
+	else
+		set_state "ok"
+		echo "geo databases ready in $DEST"
+	fi
 }
 
 cmd_install() { # install <which> <src>

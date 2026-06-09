@@ -193,8 +193,11 @@ return view.extend({
 						return self.pollGeo().then(function(g) {
 							ui.hideModal();
 							statusEl.textContent = self.geoText(g);
-							var ok = (g.state === 'ok');
-							ui.addNotification(null, E('p', ok ? _('Geo databases updated & validated.') : (_('Geo update failed: ') + (g.state || ''))), ok ? 'info' : 'warning');
+							var msg, kind;
+							if (g.state === 'ok') { msg = _('Geo databases updated & validated.'); kind = 'info'; }
+							else if (g.state === 'unchanged') { msg = _('Already up to date — nothing changed.'); kind = 'info'; }
+							else { msg = _('Geo update failed: ') + (g.state || ''); kind = 'warning'; }
+							ui.addNotification(null, E('p', msg), kind);
 						});
 					});
 				});
