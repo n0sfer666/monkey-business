@@ -39,8 +39,9 @@ return view.extend({
 	geoText: function(g) {
 		if (!g) return _('unknown');
 		var mb = function(b) { return b > 0 ? (b / 1048576).toFixed(1) + ' MB' : _('missing'); };
+		// постоянный статус = размеры; «updating» при активном скачивании. Разовые ошибки — через нотификации.
 		return 'geoip: ' + mb(g.geoip) + ', geosite: ' + mb(g.geosite) +
-			(g.state && g.state !== 'ok' && g.state !== 'idle' ? ' — ' + g.state : '');
+			(g.state === 'updating' ? ' — ' + _('updating…') : '');
 	},
 
 	pollGeo: function(labelEl) {
