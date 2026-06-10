@@ -128,6 +128,21 @@ test("custom direct/proxy lists become routing rules in split mode", function() 
 	assertEq(r.rules[3].outboundTag, "proxy");
 });
 
+test("test_socks adds localhost socks inbound", function() {
+	let out = generate({ global: { tproxy_port: 12345 }, server: SERVER_A, test_socks: true });
+	assertEq(length(out.inbounds), 2);
+	assertEq(out.inbounds[1].tag, "socks-test");
+	assertEq(out.inbounds[1].listen, "127.0.0.1");
+	assertEq(out.inbounds[1].port, 10808);
+	assertEq(out.inbounds[1].protocol, "socks");
+});
+
+test("no socks inbound by default", function() {
+	let out = generate(cfg({ tproxy_port: 1 }, SERVER_A));
+	assertEq(length(out.inbounds), 1);
+	assertEq(out.inbounds[0].tag, "tproxy-in");
+});
+
 test("custom lists ignored in global mode", function() {
 	let r = buildRouting({ routing_mode: "global", custom_direct: "example.com", custom_proxy: "x.com" });
 	for (let rule in r.rules)
