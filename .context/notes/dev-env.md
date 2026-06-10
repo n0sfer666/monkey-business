@@ -13,7 +13,7 @@ NanoPi R2S — rockchip/armv8 (RK3328, aarch64). Для QEMU используе�
 ## Запуск
 ```sh
 brew install qemu          # на macOS qemu по умолчанию отсутствует
-make dev-up                # скачает образ, поднимет VM (SSH :2222, LuCI :8080)
+make dev-up                # скачает образ, поднимет VM (SSH :2222, LuCI :8090)
 make dev-ssh               # ssh root@localhost -p 2222
 make dev-down              # остановить
 ```
@@ -22,7 +22,7 @@ make dev-down              # остановить
 ## Статус проверки (T2 smoke)
 - **BLOCKED на этом хосте:** `qemu-system-aarch64` не установлен (macOS без qemu).
 - Скрипты готовы; для подтверждения boot выполнить у себя:
-  `brew install qemu && make dev-up`, затем `make dev-ssh` и открыть `http://localhost:8080`.
+  `brew install qemu && make dev-up`, затем `make dev-ssh` и открыть `http://localhost:8090`.
 - Тесты для этого шага не требуются (этап 1 освобождён); скрипты проходят shellcheck.
 
 ## Предпросмотр приложения (preview-флоу)
@@ -31,7 +31,7 @@ make dev-up         # boot
 make dev-provision  # один раз: DHCP + пароль root/root + LuCI
 make dev-deploy     # раскладка + рантайм-deps + reload rpcd; печатает URL
 ```
-LuCI: http://localhost:8080 (root/root) → Services → monkey-business VPN.
+LuCI: http://localhost:8090 (root/root) → Services → monkey-business VPN.
 - `deploy-vm.sh` теперь неинтерактивен через `MB_VM_SSH_PASS` (sshpass); Makefile-цель `dev-deploy`
   передаёт `root`. Ставит недостающие deps идемпотентно (для UI хватает uci/fs+rpcd-mod-ucode из LuCI;
   xray/tproxy — только для запуска сервиса). После рестарта проверяет регистрацию ubus-объекта.
