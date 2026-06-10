@@ -44,23 +44,15 @@ function parseUserinfo(s) {
 	return out;
 }
 
-function prio(s) {
-	let p = s.priority;
-	if (p == null)
-		return 999;
-	if (type(p) == "string" && trim(p) == "")
-		return 999;
-	return int(p);
+// Порядок серверов = порядок секций UCI (drag-reorder в GridSection) — единственный источник
+// приоритета. Backend и UI уважают этот порядок; re-fetch его сохраняет (см. subscriptionUpdate).
+function orderedServers(ctx) {
+	return ctx.getServers();
 }
 
-function sortedServers(ctx) {
-	let arr = ctx.getServers();
-	return sort(arr, function(a, b) { return prio(a) - prio(b); });
-}
-
-// первый доступный по приоритету (tcpPing); нет живых -> первый; фиксирует selected
+// первый доступный по порядку (tcpPing); нет живых -> первый; фиксирует selected
 function selectBest(ctx) {
-	let servers = sortedServers(ctx);
+	let servers = orderedServers(ctx);
 	if (length(servers) == 0)
 		return null;
 	let chosen = null;
@@ -106,16 +98,19 @@ function status(ctx) {
 
 function serversList(ctx) {
 	let out = [];
-	for (let s in sortedServers(ctx))
+	let i = 0;
+	for (let s in orderedServers(ctx)) {
 		push(out, {
 			tag: s.tag,
 			address: s.address,
 			port: s.port,
 			security: s.security,
 			transport: s.transport.type,
-			priority: prio(s),
+			priority: i,
 			uuid_masked: maskUuid(s.uuid),
 		});
+		i++;
+	}
 	return { servers: out };
 }
 
@@ -136,26 +131,29 @@ function subscriptionUpdate(ctx, args) {
 	if (length(res.servers) == 0)
 		return { error: "no servers parsed", format: res.format, kept: length(ctx.getServers()) };
 
-	// сохранить РУЧНОЙ порядок: за существующими серверами оставить их priority (матч по ключу),
-	// новые — в конец. Иначе re-fetch (Save&Apply/автообновление) сбрасывал бы ручную сортировку.
-	let oldPrio = {};
-	let maxPrio = -1;
-	for (let s in ctx.getServers()) {
-		let p = prio(s);
-		if (p != 999) {
-			oldPrio[serverKey(s)] = p;
-			if (p > maxPrio) maxPrio = p;
+	// СОХРАНИТЬ РУЧНОЙ ПОРЯДОК: выдать существующие серверы в их текущем порядке (матч по ключу,
+	// данные обновляются из свежей подписки), новые — в конец. Иначе re-fetch (Save&Apply/
+	// автообновление) сбрасывал бы drag-сортировку к порядку подписки.
+	let byKey = {};
+	for (let sv in res.servers)
+		byKey[serverKey(sv)] = sv;
+	let ordered = [];
+	let used = {};
+	for (let old in ctx.getServers()) {
+		let k = serverKey(old);
+		if (byKey[k] != null && used[k] == null) {
+			push(ordered, byKey[k]);
+			used[k] = true;
 		}
 	}
-	let next = maxPrio + 1;
 	for (let sv in res.servers) {
 		let k = serverKey(sv);
-		if (oldPrio[k] != null)
-			sv.priority = oldPrio[k];
-		else
-			sv.priority = next++;
+		if (used[k] == null) {
+			push(ordered, sv);
+			used[k] = true;
+		}
 	}
-	ctx.setServers(res.servers);
+	ctx.setServers(ordered);
 	ctx.setSubscriptionUrl(url);
 	if (resp.userinfo != null && resp.userinfo != "")
 		ctx.setUserinfo(parseUserinfo(resp.userinfo));
@@ -166,7 +164,7 @@ function subscriptionUpdate(ctx, args) {
 function serversPing(ctx) {
 	let results = [];
 	let best = null, bestMs = null;
-	for (let s in sortedServers(ctx)) {
+	for (let s in orderedServers(ctx)) {
 		let ms = ctx.pingServer(s);
 		push(results, { tag: s.tag, latency_ms: ms });
 		if (ms != null && (bestMs == null || ms < bestMs)) {

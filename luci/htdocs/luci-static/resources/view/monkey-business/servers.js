@@ -65,9 +65,6 @@ return view.extend({
 		srv.anonymous = true;
 		srv.sortable = true;
 
-		var prio = srv.option(form.Value, 'priority', _('Priority'));
-		prio.datatype = 'uinteger';
-		prio.default = '0';
 		srv.option(form.Value, 'tag', _('Name'));
 		srv.option(form.Value, 'address', _('Address'));
 		var port = srv.option(form.Value, 'port', _('Port'));

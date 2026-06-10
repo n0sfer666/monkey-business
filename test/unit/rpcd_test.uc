@@ -94,22 +94,19 @@ test("subscriptionUpdate stores servers, url, userinfo and auto-selects", functi
 	assertEq(st.subscription.url, "https://new/sub");
 	assertEq(st.subscription.total, "300");
 	assert(st.selected != null, "auto-selected a server");
-	assertEq(st.servers[0].priority, 0);
 });
 
-test("subscriptionUpdate preserves manual priority on re-fetch", function() {
+test("subscriptionUpdate preserves manual order on re-fetch", function() {
 	let st = freshState();
 	st.fetchResult = { body: SUB, userinfo: "" };
 	let ctx = mockCtx(st);
 	h.subscriptionUpdate(ctx, {});
-	let tagA = st.servers[0].tag;
-	st.servers[0].priority = 5;
+	// эмулируем drag: реверс порядка
+	st.servers = [ st.servers[1], st.servers[0] ];
+	let firstTag = st.servers[0].tag;
 	h.subscriptionUpdate(ctx, {});
-	let found = null;
-	for (let s in st.servers)
-		if (s.tag == tagA)
-			found = s;
-	assertEq(found.priority, 5);
+	assertEq(st.servers[0].tag, firstTag);
+	assertEq(length(st.servers), 2);
 });
 
 test("subscriptionUpdate falls back to saved url when arg empty", function() {
