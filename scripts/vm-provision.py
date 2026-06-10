@@ -8,6 +8,7 @@
 
 Использование: python3 scripts/vm-provision.py [path-to-console.sock]
 """
+import os
 import socket
 import sys
 import time
@@ -119,7 +120,8 @@ def main():
 
     s.close()
     if ok:
-        print(">> provision готов. LuCI: http://localhost:8080 (root/root), "
+        http_port = os.environ.get("MB_VM_HTTP_PORT", "8090")
+        print(f">> provision готов. LuCI: http://localhost:{http_port} (root/root), "
               "SSH: make dev-ssh (root/root)")
     else:
         sys.exit(1)
