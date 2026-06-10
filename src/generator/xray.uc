@@ -16,6 +16,8 @@ function isTrue(v) {
 	return v == true || v == "1" || v == 1;
 }
 
+const SOCKS_TEST_PORT = 10808;
+
 function buildInbound(g) {
 	return {
 		tag: "tproxy-in",
@@ -24,6 +26,19 @@ function buildInbound(g) {
 		settings: { network: "tcp,udp", followRedirect: true },
 		streamSettings: { sockopt: { tproxy: "tproxy" } },
 		sniffing: { enabled: true, destOverride: ["http", "tls", "quic"], routeOnly: false },
+	};
+}
+
+// Локальный SOCKS-inbound (только 127.0.0.1) для проверки сплита: запрос через него идёт по тем
+// же правилам маршрутизации, что и TPROXY-трафик. Включается флагом config.test_socks.
+function buildSocksTestInbound() {
+	return {
+		tag: "socks-test",
+		listen: "127.0.0.1",
+		port: SOCKS_TEST_PORT,
+		protocol: "socks",
+		settings: { udp: false },
+		sniffing: { enabled: true, destOverride: ["http", "tls"], routeOnly: false },
 	};
 }
 
@@ -176,9 +191,13 @@ function generate(config) {
 	let anti = config.anti_dpi || {};
 	let opts = { xhttpPadding: anti.xhttp_padding };
 
+	let inbounds = [buildInbound(g)];
+	if (isTrue(config.test_socks))
+		push(inbounds, buildSocksTestInbound());
+
 	let out = {
 		log: { loglevel: g.log_level || "warning" },
-		inbounds: [buildInbound(g)],
+		inbounds: inbounds,
 		outbounds: [
 			buildProxyOutbound(s, opts),
 			{ tag: "direct", protocol: "freedom", settings: {} },

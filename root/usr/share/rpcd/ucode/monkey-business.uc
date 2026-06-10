@@ -174,6 +174,29 @@ function buildCtx() {
 			cursor.set(CONFIG, 'global', 'enabled', on ? '1' : '0');
 			cursor.commit(CONFIG);
 		},
+		checkExit: function(domain) {
+			let d = (domain != null && domain != '') ? domain : 'ip-api.com';
+			if (match(d, /^[a-zA-Z0-9.\-]+$/) == null)
+				return { error: 'bad domain' };
+			// -x socks5h://: домен резолвит Xray -> срабатывают доменные правила сплита
+			// (этот curl не знает длинный --socks5h, форма -x работает)
+			let r = runCapture("curl -s -x socks5h://127.0.0.1:10808 --max-time 12 'http://" + d +
+				"/json?fields=status,message,query,country,countryCode' 2>/dev/null");
+			// curl не даёт trailing-\n -> маркер MB_EXIT клеится к JSON; отрезаем его
+			let body = r.out;
+			let cut = index(body, 'MB_EXIT:');
+			if (cut >= 0)
+				body = substr(body, 0, cut);
+			body = trim(body);
+			if (substr(body, 0, 1) != '{')
+				return { error: 'нет ответа через proxy — VPN включён? сервис запущен?' };
+			let j = json(body);
+			if (type(j) != 'object')
+				return { error: 'bad response' };
+			if (j.status != null && j.status != 'success')
+				return { error: j.message || 'lookup failed' };
+			return { probe: d, ip: j.query || j.ip || '', country: j.country || '', code: j.countryCode || '' };
+		},
 		updateGeo: function() {
 			// фон: скачивание ~29MB дольше ubus-таймаута (30s). UI поллит geo_status.
 			system('sh ' + GEO_SCRIPT + ' download >/tmp/mb-geo.log 2>&1 &');
@@ -202,6 +225,7 @@ const methods = {
 	geo_update:           { call: function() { return h.geoUpdate(buildCtx()); } },
 	geo_status:           { call: function() { return h.geoStatus(buildCtx()); } },
 	geo_install:          { args: { which: '' }, call: function(req) { return h.geoInstall(buildCtx(), req.args); } },
+	check_exit:           { args: { domain: '' }, call: function(req) { return h.checkExit(buildCtx(), req.args); } },
 };
 
 return { 'monkey-business': methods };

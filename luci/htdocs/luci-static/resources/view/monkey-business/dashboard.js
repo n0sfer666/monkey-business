@@ -11,6 +11,7 @@ var callApply = rpc.declare({ object: 'monkey-business', method: 'config_apply' 
 var callGeo = rpc.declare({ object: 'monkey-business', method: 'geo_update' });
 var callGeoStatus = rpc.declare({ object: 'monkey-business', method: 'geo_status' });
 var callGeoInstall = rpc.declare({ object: 'monkey-business', method: 'geo_install', params: ['which'] });
+var callCheckExit = rpc.declare({ object: 'monkey-business', method: 'check_exit', params: ['domain'] });
 var callToggle = rpc.declare({
 	object: 'monkey-business', method: 'service_toggle', params: ['enabled']
 });
@@ -115,6 +116,18 @@ return view.extend({
 		var label = on ? (running ? _('Connected') : _('Starting…')) : _('Off');
 		var color = running ? '#33a02c' : (on ? '#ff7f00' : '#888');
 
+		var exitEl = E('span', { 'style': 'font-family:monospace' }, [ '—' ]);
+		var checkBtn = E('button', {
+			'class': 'btn cbi-button',
+			'click': ui.createHandlerFn(this, function() {
+				exitEl.textContent = _('checking…');
+				return callCheckExit('').then(function(r) {
+					if (r && r.error) exitEl.textContent = r.error;
+					else exitEl.textContent = (r.ip || '?') + ' — ' + (r.country || '?') + ' (' + (r.code || '?') + ')';
+				}).catch(function(e) { exitEl.textContent = '' + e; });
+			})
+		}, [ _('Check exit IP') ]);
+
 		return E('div', { 'class': 'cbi-section' }, [
 			E('h3', {}, [ _('Status') ]),
 			E('p', { 'style': 'font-size:1.4em;color:' + color }, [ label ]),
@@ -123,7 +136,11 @@ return view.extend({
 			E('button', {
 				'class': 'btn cbi-button ' + (on ? 'cbi-button-remove' : 'cbi-button-apply'),
 				'click': ui.createHandlerFn(this, function() { return self.handleToggle(!on); })
-			}, [ on ? _('Turn off') : _('Turn on') ])
+			}, [ on ? _('Turn off') : _('Turn on') ]),
+			E('p', { 'style': 'margin-top:10px' }, [
+				checkBtn, ' ', E('span', {}, [ _('Exit (via VPN routing): ') ]), exitEl,
+				E('br'), E('small', { 'style': 'color:#888' }, [ _('Probes ip-api.com through the split rules. Add it to the Direct list above to see your real IP instead.') ])
+			])
 		]);
 	},
 

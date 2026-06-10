@@ -75,6 +75,7 @@ function genConfig(ctx, server) {
 		server: server,
 		dns: ctx.getDns(),
 		anti_dpi: ctx.getAntiDpi(),
+		test_socks: true,
 	};
 }
 
@@ -219,4 +220,11 @@ function geoInstall(ctx, args) {
 	return ctx.geoInstall(which);
 }
 
-export { status, serversList, subscriptionUpdate, serversPing, configApply, serviceToggle, geoUpdate, geoStatus, geoInstall, maskUuid, parseUserinfo, selectBest };
+// Проверка сплита: запрос к гео-сервису через тестовый SOCKS-inbound -> по каким правилам ушёл
+// (proxy/direct), какой выходной IP/страна. domain = гео-сервис (по умолчанию ip-api.com).
+function checkExit(ctx, args) {
+	let domain = (args != null) ? args.domain : null;
+	return ctx.checkExit(domain);
+}
+
+export { status, serversList, subscriptionUpdate, serversPing, configApply, serviceToggle, geoUpdate, geoStatus, geoInstall, checkExit, maskUuid, parseUserinfo, selectBest };
