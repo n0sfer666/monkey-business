@@ -11,7 +11,7 @@ set -eu
 PORT="${MB_VM_SSH_PORT:-2222}"
 HOST="${MB_VM_SSH_HOST:-root@localhost}"
 PASS="${MB_VM_SSH_PASS:-}"
-HTTP_PORT="${MB_HTTP_PORT:-8080}"
+HTTP_PORT="${MB_HTTP_PORT:-8090}"
 SSH_OPTS="-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null"
 
 command -v ssh >/dev/null 2>&1 || { echo "ssh required" >&2; exit 1; }

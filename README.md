@@ -47,7 +47,8 @@ make dev-provision  # one-time setup: DHCP + root password + LuCI (~a few min)
 make dev-deploy     # install the app into the VM and reload rpcd
 ```
 
-Then open **http://localhost:8080** (login `root` / `root`) → **Services → monkey-business VPN**.
+Then open **http://localhost:8090** (login `root` / `root`) → **Services → monkey-business VPN**.
+(Override the port with `MB_VM_HTTP_PORT=NNNN make dev-up` if 8090 is taken.)
 
 | Command | Purpose |
 |---------|---------|
@@ -58,7 +59,7 @@ Then open **http://localhost:8080** (login `root` / `root`) → **Services → m
 | `make dev-status` | VM status and forwarded ports |
 | `make dev-down` | stop the VM |
 
-> The VM uses QEMU user-mode NAT (SSH `:2222→22`, LuCI `:8080→80`) — enough for UI/logic work.
+> The VM uses QEMU user-mode NAT (SSH `:2222→22`, LuCI `:8090→80`) — enough for UI/logic work.
 > The "LAN client through TPROXY" scenario is exercised by `make test-integ`, not this VM.
 > Do **not** `reboot` the guest (emulated `ubusd` doesn't restart cleanly) — use `make dev-down` / `dev-up`.
 

@@ -10,7 +10,7 @@ set -u
 
 VMDIR=".dev-vm"
 SSH_PORT="${MB_VM_SSH_PORT:-2222}"
-HTTP_PORT="${MB_VM_HTTP_PORT:-8080}"
+HTTP_PORT="${MB_VM_HTTP_PORT:-8090}"
 MEM="${MB_VM_MEM:-512}"
 DEFAULT_URL="https://downloads.immortalwrt.org/snapshots/targets/armsr/armv8/immortalwrt-armsr-armv8-generic-ext4-combined-efi.img.gz"
 IMG_URL="${MB_IMMORTALWRT_URL:-$DEFAULT_URL}"
@@ -54,6 +54,11 @@ cmd_up() {
 		echo ">> VM уже запущена (pid $(cat "$PID")). SSH :$SSH_PORT, LuCI :$HTTP_PORT"
 		return 0
 	fi
+	for p in "$SSH_PORT" "$HTTP_PORT"; do
+		if command -v nc >/dev/null 2>&1 && nc -z 127.0.0.1 "$p" 2>/dev/null; then
+			die "порт $p уже занят другим процессом. Освободи его или задай MB_VM_SSH_PORT / MB_VM_HTTP_PORT (напр. MB_VM_HTTP_PORT=8091 make dev-up)"
+		fi
+	done
 	ensure_assets
 	rm -f "$SOCK" "$LOG"
 
