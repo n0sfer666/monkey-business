@@ -154,24 +154,22 @@ test("serversList masks uuid and exposes priority sorted", function() {
 	assert(!exists(r.servers[0], "uuid"), "raw uuid not leaked");
 });
 
-test("selectBest picks first reachable by priority", function() {
+test("selectBest picks first by order (priority), ignoring ping", function() {
 	let st = freshState();
 	st.servers = [
-		{ tag: "A", priority: "0", address: "a", port: 1 },
-		{ tag: "B", priority: "1", address: "b", port: 2 },
-		{ tag: "C", priority: "2", address: "c", port: 3 },
+		{ tag: "A", address: "a", port: 1 },
+		{ tag: "B", address: "b", port: 2 },
+		{ tag: "C", address: "c", port: 3 },
 	];
 	st.pings = { "A": null, "B": 50, "C": 20 };
 	let chosen = h.selectBest(mockCtx(st));
-	assertEq(chosen.tag, "B");
-	assertEq(st.selected, "B");
+	assertEq(chosen.tag, "A");
+	assertEq(st.selected, "A");
 });
 
-test("selectBest falls back to first when none reachable", function() {
+test("selectBest returns null when no servers", function() {
 	let st = freshState();
-	st.servers = [{ tag: "A", priority: "0", address: "a", port: 1 }, { tag: "B", priority: "1", address: "b", port: 2 }];
-	st.pings = { "A": null, "B": null };
-	assertEq(h.selectBest(mockCtx(st)).tag, "A");
+	assert(h.selectBest(mockCtx(st)) == null, "null on empty");
 });
 
 test("configApply auto-selects and passes dns+anti_dpi", function() {
@@ -186,6 +184,19 @@ test("configApply auto-selects and passes dns+anti_dpi", function() {
 	assert(st.selected != null, "auto-selected");
 	assert(index(st.applied, "dokodemo-door") >= 0, "has tproxy inbound");
 	assert(index(st.applied, "dns") >= 0, "dns applied");
+});
+
+test("configApply re-selects first server by order (reorder switches active)", function() {
+	let st = freshState();
+	st.fetchResult = { body: SUB, userinfo: "" };
+	let ctx = mockCtx(st);
+	h.subscriptionUpdate(ctx, {});
+	// эмулируем drag: второй сервер становится первым
+	st.servers = [ st.servers[1], st.servers[0] ];
+	st.selected = st.servers[1].tag;   // активен пока старый первый
+	st.pings = {};                      // никто не пингуется -> fallback на первый по порядку
+	h.configApply(ctx);
+	assertEq(st.selected, st.servers[0].tag);
 });
 
 test("configApply errors with no servers", function() {
