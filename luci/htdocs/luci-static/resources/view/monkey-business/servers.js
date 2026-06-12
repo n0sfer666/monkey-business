@@ -75,15 +75,8 @@ return view.extend({
 		sec.value('none', _('None'));
 
 		return m.render();
-	},
-
-	// Save & Apply: persist (incl. URL) then fetch+validate the subscription.
-	handleSaveApply: function(ev, mode) {
-		var self = this;
-		return this.handleSave(ev).then(function() {
-			return callSubUpdate('').then(function(res) {
-				notifyResult(res);
-			});
-		});
 	}
+	// Save / Save & Apply используют штатные обработчики LuCI (save + apply = commit UCI).
+	// Раньше override делал только handleSave без apply -> изменения зависали в "Unsaved".
+	// Скачивание серверов — отдельной кнопкой "Fetch subscription".
 });
