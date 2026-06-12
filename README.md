@@ -81,12 +81,17 @@ falls back to slow TCG emulation.
   Verify on the target: `cat /usr/share/rpcd/ucode/monkey-business.uc | ucode -R -` (must exit
   cleanly), then `ubus call monkey-business status`.
 
-- **Guest reboot hangs at `procd: - ubus -` (SSH "banner exchange" timeout).**
-  A genuine QEMU-emulation race where `ubusd` doesn't come up on a *guest-initiated reboot*
-  (see openwrt/openwrt#9492, #13600) — **not** related to the app or to the `._*` issue, and not
-  fixed by HVF. **Don't `reboot` the guest** — stop/start the VM process instead:
-  `make dev-down && make dev-up` (a fresh cold boot works). If a boot stays wedged, full reset:
-  `sh scripts/dev-vm.sh clean` and start over.
+- **Boot hangs at `procd: - ubus -` (SSH "banner exchange" timeout) — on reboot OR on `dev-up`
+  of an already-used disk.**
+  A genuine QEMU-emulation race where `ubusd` doesn't come up on any *non-first* boot
+  (see openwrt/openwrt#9492, #13600) — **not** related to the app, and not fixed by HVF/virtio-rng.
+  Only the first boot of a freshly-downloaded image is reliable; once the overlay has been written
+  (provision/deploy), subsequent boots tend to hang. Recovery — **one command**:
+  ```sh
+  make dev-rebuild     # clean + up + provision + deploy from scratch (~5–8 min)
+  ```
+  To avoid it: **keep the VM running between sessions** (don't `make dev-down`). On real NanoPi R2S
+  hardware this race does not occur.
 
 - **No internet in the VM / `apk` fails / LuCI didn't install.** The guest must be on
   `10.0.2.15` (QEMU SLIRP). `make dev-provision` sets this statically; verify with

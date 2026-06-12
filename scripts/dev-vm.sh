@@ -99,7 +99,9 @@ cmd_up() {
 	if [ "$booted" = 1 ]; then
 		echo ">> VM загружена. Дальше: make dev-provision (один раз), затем make dev-deploy / http://localhost:$HTTP_PORT"
 	else
-		echo ">> WARN: не дождался приглашения консоли за ${i}s. VM может ещё грузиться — проверь: make dev-console"
+		echo ">> WARN: не дождался приглашения консоли за ${i}s."
+		echo "   Если зависла на 'procd: - ubus -' (гонка ubusd в QEMU на не-первой загрузке) —"
+		echo "   восстанови одной командой: make dev-rebuild"
 	fi
 }
 
