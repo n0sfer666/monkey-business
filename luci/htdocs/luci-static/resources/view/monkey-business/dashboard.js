@@ -8,7 +8,8 @@ var callStatus = rpc.declare({ object: 'monkey-business', method: 'status' });
 var callServers = rpc.declare({ object: 'monkey-business', method: 'servers_list' });
 var callPing = rpc.declare({ object: 'monkey-business', method: 'servers_ping' });
 var callApply = rpc.declare({ object: 'monkey-business', method: 'config_apply' });
-var callGeo = rpc.declare({ object: 'monkey-business', method: 'geo_update' });
+var callGeo = rpc.declare({ object: 'monkey-business', method: 'geo_update', params: ['geoip_url', 'geosite_url'] });
+var callSetRouting = rpc.declare({ object: 'monkey-business', method: 'set_routing', params: ['direct', 'proxy'] });
 var callGeoStatus = rpc.declare({ object: 'monkey-business', method: 'geo_status' });
 var callGeoInstall = rpc.declare({ object: 'monkey-business', method: 'geo_install', params: ['which'] });
 var callCheckExit = rpc.declare({ object: 'monkey-business', method: 'check_exit', params: ['domain'] });
@@ -162,15 +163,12 @@ return view.extend({
 		var save = E('button', {
 			'class': 'btn cbi-button cbi-button-apply',
 			'click': ui.createHandlerFn(this, function() {
-				uci.set('monkey-business', 'global', 'custom_direct', taDirect.value);
-				uci.set('monkey-business', 'global', 'custom_proxy', taProxy.value);
-				return uci.save().then(function() {
-					return callApply().then(function(res) {
-						if (res && res.error)
-							ui.addNotification(null, E('p', _('Apply failed: ') + res.error), 'warning');
-						else
-							ui.addNotification(null, E('p', _('Routing rules applied.')), 'info');
-					});
+				// серверный commit+apply (без LuCI-стейджинга, иначе остаётся в Unsaved Changes)
+				return callSetRouting(taDirect.value, taProxy.value).then(function(res) {
+					if (res && res.error)
+						ui.addNotification(null, E('p', _('Apply failed: ') + res.error), 'warning');
+					else
+						ui.addNotification(null, E('p', _('Routing rules applied.')), 'info');
 				});
 			})
 		}, [ _('Save & Apply') ]);
@@ -202,10 +200,7 @@ return view.extend({
 
 		var updateBtn = E('button', { 'class': 'btn cbi-button cbi-button-apply',
 			'click': ui.createHandlerFn(this, function() {
-				uci.set('monkey-business', 'geo', 'geoip_url', urlGeoip.value || '');
-				uci.set('monkey-business', 'geo', 'geosite_url', urlGeosite.value || '');
-				return uci.save().then(function() {
-					return callGeo().then(function() {
+				return callGeo(urlGeoip.value || '', urlGeosite.value || '').then(function() {
 						ui.showModal(_('Updating geo databases…'), [ E('p', { 'class': 'spinning' }, _('Downloading & validating (may take a minute)')) ]);
 						return self.pollGeo().then(function(g) {
 							ui.hideModal();
@@ -217,7 +212,6 @@ return view.extend({
 							ui.addNotification(null, E('p', msg), kind);
 						});
 					});
-				});
 			})
 		}, [ _('Update geo databases') ]);
 

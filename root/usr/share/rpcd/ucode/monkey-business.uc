@@ -197,7 +197,18 @@ function buildCtx() {
 				return { error: j.message || 'lookup failed' };
 			return { probe: d, ip: j.query || j.ip || '', country: j.country || '', code: j.countryCode || '' };
 		},
-		updateGeo: function() {
+		setCustomRouting: function(direct, proxy) {
+			cursor.set(CONFIG, 'global', 'custom_direct', direct);
+			cursor.set(CONFIG, 'global', 'custom_proxy', proxy);
+			cursor.commit(CONFIG);
+		},
+		updateGeo: function(args) {
+			// сохранить кастомные URL (commit на сервере, без LuCI-стейджинга)
+			if (args != null && (args.geoip_url != null || args.geosite_url != null)) {
+				cursor.set(CONFIG, 'geo', 'geoip_url', args.geoip_url || '');
+				cursor.set(CONFIG, 'geo', 'geosite_url', args.geosite_url || '');
+				cursor.commit(CONFIG);
+			}
 			// фон: скачивание ~29MB дольше ubus-таймаута (30s). UI поллит geo_status.
 			system('sh ' + GEO_SCRIPT + ' download >/tmp/mb-geo.log 2>&1 &');
 			return { status: 'started' };
@@ -222,7 +233,8 @@ const methods = {
 	subscription_update:  { args: { url: '' }, call: function(req) { return h.subscriptionUpdate(buildCtx(), req.args); } },
 	config_apply:         { call: function() { return h.configApply(buildCtx()); } },
 	service_toggle:       { args: { enabled: false }, call: function(req) { return h.serviceToggle(buildCtx(), req.args); } },
-	geo_update:           { call: function() { return h.geoUpdate(buildCtx()); } },
+	geo_update:           { args: { geoip_url: '', geosite_url: '' }, call: function(req) { return h.geoUpdate(buildCtx(), req.args); } },
+	set_routing:          { args: { direct: '', proxy: '' }, call: function(req) { return h.setRouting(buildCtx(), req.args); } },
 	geo_status:           { call: function() { return h.geoStatus(buildCtx()); } },
 	geo_install:          { args: { which: '' }, call: function(req) { return h.geoInstall(buildCtx(), req.args); } },
 	check_exit:           { args: { domain: '' }, call: function(req) { return h.checkExit(buildCtx(), req.args); } },
