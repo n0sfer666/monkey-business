@@ -3,6 +3,7 @@
 'require form';
 'require rpc';
 'require ui';
+'require uci';
 
 var callApply = rpc.declare({ object: 'monkey-business', method: 'config_apply' });
 
@@ -75,14 +76,17 @@ return view.extend({
 	},
 
 	handleSaveApply: function(ev, mode) {
-		var self = this;
+		// handleSave только стейджит -> нужен uci.apply() (commit), иначе config_apply читает
+		// старый UCI и изменения висят в "Unsaved Changes".
 		return this.handleSave(ev).then(function() {
-			return callApply().then(function(res) {
-				if (res && res.error)
-					ui.addNotification(null, E('p', _('Apply failed: ') + res.error), 'warning');
-				else
-					ui.addNotification(null, E('p', _('Configuration applied.')), 'info');
-			});
+			return uci.apply();
+		}).then(function() {
+			return callApply();
+		}).then(function(res) {
+			if (res && res.error)
+				ui.addNotification(null, E('p', _('Apply failed: ') + res.error), 'warning');
+			else
+				ui.addNotification(null, E('p', _('Configuration applied.')), 'info');
 		});
 	}
 });
