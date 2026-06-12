@@ -3,10 +3,13 @@
 'require form';
 'require rpc';
 'require ui';
+'require uci';
 
 var callSubUpdate = rpc.declare({
 	object: 'monkey-business', method: 'subscription_update', params: ['url']
 });
+var callStatus = rpc.declare({ object: 'monkey-business', method: 'status' });
+var callApply = rpc.declare({ object: 'monkey-business', method: 'config_apply' });
 
 function notifyResult(res) {
 	if (res && res.error)
@@ -75,8 +78,25 @@ return view.extend({
 		sec.value('none', _('None'));
 
 		return m.render();
+	},
+
+	// Save & Apply: commit формы (порядок/серверы/URL), и если VPN включён — переприменить конфиг,
+	// чтобы переключиться на новый первый-по-приоритету сервер. handleSave без apply раньше оставлял
+	// изменения в "Unsaved Changes".
+	handleSaveApply: function(ev, mode) {
+		return this.handleSave(ev).then(function() {
+			return uci.apply();
+		}).then(function() {
+			return callStatus();
+		}).then(function(st) {
+			if (st && st.running)
+				return callApply().then(function(res) {
+					if (res && res.error)
+						ui.addNotification(null, E('p', _('Apply failed: ') + res.error), 'warning');
+					else
+						ui.addNotification(null, E('p', _('Applied — connected to: ') + ((res && res.server) || '?')), 'info');
+				});
+			ui.addNotification(null, E('p', _('Saved. Turn on to connect to the top-priority server.')), 'info');
+		});
 	}
-	// Save / Save & Apply используют штатные обработчики LuCI (save + apply = commit UCI).
-	// Раньше override делал только handleSave без apply -> изменения зависали в "Unsaved".
-	// Скачивание серверов — отдельной кнопкой "Fetch subscription".
 });

@@ -100,6 +100,12 @@ $SSH $SSH_OPTS -p "$PORT" "$HOST" "MB_RESPAWN='${MB_UBUS_RESPAWN:-0}' sh -s" <<'
 		fi
 	fi
 
+	# dev-VM: убить любые stale/detached rpcd (от прошлого respawn) -> ровно один свежий инстанс,
+	# иначе старый rpcd держит в памяти прежний код и отвечает на ubus устаревшими данными.
+	if [ "${MB_RESPAWN:-0}" = 1 ]; then
+		killall rpcd 2>/dev/null || true
+		sleep 1
+	fi
 	# тихий рестарт: "Failed to connect to ubus" из init-скрипта безвреден и сбивает с толку
 	/etc/init.d/rpcd restart >/dev/null 2>&1 || true
 	sleep 2

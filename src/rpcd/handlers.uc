@@ -50,23 +50,17 @@ function orderedServers(ctx) {
 	return ctx.getServers();
 }
 
-// первый доступный по порядку (tcpPing); нет живых -> первый; фиксирует selected
+// Активный сервер = ПЕРВЫЙ по приоритету (порядок секций UCI = предпочтение пользователя).
+// Probe доступности (nc/tcpPing) здесь ненадёжен (даёт ложные негативы даже на рабочих Reality-
+// серверах), поэтому не используем его для выбора. Реальный runtime-failover — через Xray balancer
+// (отдельная фича). "Test latency" в UI остаётся как информация.
 function selectBest(ctx) {
 	let servers = orderedServers(ctx);
 	if (length(servers) == 0)
 		return null;
-	let chosen = null;
-	for (let s in servers)
-		if (ctx.pingServer(s) != null) { chosen = s; break; }
-	if (chosen == null)
-		chosen = servers[0];
+	let chosen = servers[0];
 	ctx.setSelected(chosen.tag);
 	return chosen;
-}
-
-function ensureSelected(ctx) {
-	let s = ctx.getSelectedServer();
-	return (s != null) ? s : selectBest(ctx);
 }
 
 function genConfig(ctx, server) {
@@ -158,7 +152,7 @@ function subscriptionUpdate(ctx, args) {
 	ctx.setSubscriptionUrl(url);
 	if (resp.userinfo != null && resp.userinfo != "")
 		ctx.setUserinfo(parseUserinfo(resp.userinfo));
-	ensureSelected(ctx);
+	selectBest(ctx);
 	return { format: res.format, added: length(res.servers), errors: res.errors };
 }
 
@@ -177,7 +171,7 @@ function serversPing(ctx) {
 }
 
 function configApply(ctx) {
-	let s = ensureSelected(ctx);
+	let s = selectBest(ctx);
 	if (s == null)
 		return { error: "no servers — add a subscription or a manual server first" };
 	let jsonStr = generateJson(genConfig(ctx, s));
@@ -194,7 +188,7 @@ function serviceToggle(ctx, args) {
 		ctx.stopService();
 		return { enabled: false };
 	}
-	let s = ensureSelected(ctx);
+	let s = selectBest(ctx);
 	if (s == null)
 		return { error: "no servers — add a subscription first", enabled: false };
 	let jsonStr = generateJson(genConfig(ctx, s));
