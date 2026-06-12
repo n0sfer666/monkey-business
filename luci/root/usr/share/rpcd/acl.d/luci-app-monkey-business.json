@@ -9,7 +9,7 @@
 		},
 		"write": {
 			"ubus": {
-				"monkey-business": [ "subscription_update", "config_apply", "service_toggle", "geo_update", "geo_install" ]
+				"monkey-business": [ "subscription_update", "config_apply", "service_toggle", "geo_update", "geo_install", "set_routing" ]
 			},
 			"uci": [ "monkey-business" ]
 		}

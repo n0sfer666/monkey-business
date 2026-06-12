@@ -205,8 +205,16 @@ function serviceToggle(ctx, args) {
 	return { enabled: true, server: s.tag };
 }
 
-function geoUpdate(ctx) {
-	return ctx.updateGeo();
+function geoUpdate(ctx, args) {
+	return ctx.updateGeo(args);
+}
+
+// Записать custom direct/proxy в UCI (commit на стороне сервера, без LuCI-стейджинга) и применить.
+function setRouting(ctx, args) {
+	let direct = (args != null && args.direct != null) ? args.direct : "";
+	let proxy = (args != null && args.proxy != null) ? args.proxy : "";
+	ctx.setCustomRouting(direct, proxy);
+	return configApply(ctx);
 }
 
 function geoStatus(ctx) {
@@ -227,4 +235,4 @@ function checkExit(ctx, args) {
 	return ctx.checkExit(domain);
 }
 
-export { status, serversList, subscriptionUpdate, serversPing, configApply, serviceToggle, geoUpdate, geoStatus, geoInstall, checkExit, maskUuid, parseUserinfo, selectBest };
+export { status, serversList, subscriptionUpdate, serversPing, configApply, serviceToggle, geoUpdate, setRouting, geoStatus, geoInstall, checkExit, maskUuid, parseUserinfo, selectBest };
