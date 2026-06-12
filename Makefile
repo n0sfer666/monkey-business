@@ -3,7 +3,7 @@ INTEG := monkey-business-integ
 ROOT  := $(shell pwd)
 RUN   := docker run --rm -v $(ROOT):/w -w /w $(IMAGE)
 
-.PHONY: help test-build check lint test-unit test-integ test package dev-up dev-provision dev-console dev-status dev-ssh dev-down dev-deploy dev-test-split clean
+.PHONY: help test-build check lint test-unit test-integ test package dev-up dev-provision dev-console dev-status dev-ssh dev-down dev-deploy dev-rebuild dev-test-split clean
 
 help:
 	@echo "monkey-business — targets:"
@@ -19,6 +19,7 @@ help:
 	@echo "  make dev-console   подключиться к консоли VM (выход Ctrl-C)"
 	@echo "  make dev-status    статус VM"
 	@echo "  make dev-deploy    разложить проект по путям в dev-VM + restart rpcd"
+	@echo "  make dev-rebuild   ПОЛНОЕ восстановление VM с нуля (если зависла загрузка): clean+up+provision+deploy"
 	@echo "  make dev-test-split [d=domain]  проверить сплит: выходной IP/страна через SOCKS"
 
 test-build:
@@ -62,6 +63,13 @@ dev-down:
 
 dev-deploy:
 	@MB_VM_SSH_PASS=root MB_UBUS_RESPAWN=1 sh scripts/deploy-vm.sh
+
+dev-rebuild:
+	@sh scripts/dev-vm.sh clean
+	@$(MAKE) --no-print-directory dev-up
+	@$(MAKE) --no-print-directory dev-provision
+	@$(MAKE) --no-print-directory dev-deploy
+	@echo ">> VM пересобрана начисто. Открой LuCI (:8090, root/root), на вкладке Servers впиши URL подписки."
 
 dev-test-split:
 	@MB_VM_SSH_PASS=root sh scripts/test-split.sh $(d)
