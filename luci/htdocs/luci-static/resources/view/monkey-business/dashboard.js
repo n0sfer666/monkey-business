@@ -7,7 +7,6 @@
 var callStatus = rpc.declare({ object: 'monkey-business', method: 'status' });
 var callServers = rpc.declare({ object: 'monkey-business', method: 'servers_list' });
 var callPing = rpc.declare({ object: 'monkey-business', method: 'servers_ping' });
-var callApply = rpc.declare({ object: 'monkey-business', method: 'config_apply' });
 var callGeo = rpc.declare({ object: 'monkey-business', method: 'geo_update', params: ['geoip_url', 'geosite_url'] });
 var callSetRouting = rpc.declare({ object: 'monkey-business', method: 'set_routing', params: ['direct', 'proxy'] });
 var callGeoStatus = rpc.declare({ object: 'monkey-business', method: 'geo_status' });
@@ -35,7 +34,13 @@ function sleep(ms) {
 
 return view.extend({
 	load: function() {
-		return Promise.all([ callStatus(), callServers(), uci.load('monkey-business'), callGeoStatus().catch(function() { return {}; }) ]);
+		// каждый вызов с фолбэком: один упавший ubus-метод не должен ронять всю вьюшку
+		return Promise.all([
+			callStatus().catch(function() { return {}; }),
+			callServers().catch(function() { return {}; }),
+			uci.load('monkey-business').catch(function() { return null; }),
+			callGeoStatus().catch(function() { return {}; })
+		]);
 	},
 
 	geoText: function(g) {
@@ -90,7 +95,9 @@ return view.extend({
 	handleToggle: function(on) {
 		var self = this;
 		if (!on)
-			return callToggle(false).then(function() { window.location.reload(); });
+			return callToggle(false).then(function() { window.location.reload(); }).catch(function(e) {
+				ui.addNotification(null, E('p', _('Turn off failed: ') + e), 'error');
+			});
 
 		ui.showModal(_('Connecting…'), [ E('p', { 'class': 'spinning' }, _('Selecting server and starting Xray')) ]);
 		return callToggle(true).then(function(res) {
@@ -244,13 +251,18 @@ return view.extend({
 	},
 
 	renderServers: function(servers) {
+		// tag приходит из подписки (внешний источник) -> не строим CSS-селектор по нему.
+		// Держим ссылки на ping-ячейки в map по tag и обновляем напрямую.
+		var pingCells = {};
 		var rows = (servers || []).map(function(s) {
+			var pingTd = E('td', { 'class': 'td' }, [ '—' ]);
+			pingCells[s.tag] = pingTd;
 			return E('tr', { 'class': 'tr' }, [
 				E('td', { 'class': 'td' }, [ '' + (s.priority != null ? s.priority : '-') ]),
 				E('td', { 'class': 'td' }, [ s.tag ]),
 				E('td', { 'class': 'td' }, [ s.address + ':' + s.port ]),
 				E('td', { 'class': 'td' }, [ s.security ]),
-				E('td', { 'class': 'td', 'data-ping': s.tag }, [ '—' ])
+				pingTd
 			]);
 		});
 
@@ -271,7 +283,7 @@ return view.extend({
 				'click': ui.createHandlerFn(this, function() {
 					return callPing().then(function(res) {
 						(res.results || []).forEach(function(r) {
-							var cell = document.querySelector('[data-ping="' + r.tag + '"]');
+							var cell = pingCells[r.tag];
 							if (cell)
 								cell.textContent = (r.latency_ms != null) ? (r.latency_ms + ' ms') : _('down');
 						});
