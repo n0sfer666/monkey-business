@@ -110,7 +110,8 @@ function decodeBase64Maybe(raw) {
 	s = replace(s, " ", "");
 	s = replace(s, "-", "+");
 	s = replace(s, "_", "/");
-	if (s == "" || match(s, /^[A-Za-z0-9+\/=]+$/) == null)
+	s = replace(s, "=", "");
+	if (s == "" || match(s, /^[A-Za-z0-9+\/]+$/) == null)
 		return null;
 	let pad = length(s) % 4;
 	if (pad == 1)
@@ -133,7 +134,8 @@ function detectFormat(raw) {
 		return "clash";
 	if (index(s, "://") >= 0)
 		return "uri-list";
-	if (decodeBase64Maybe(s) != null && index(decodeBase64Maybe(s), "://") >= 0)
+	let dec = decodeBase64Maybe(s);
+	if (dec != null && index(dec, "://") >= 0)
 		return "base64";
 	return "unknown";
 }

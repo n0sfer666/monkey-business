@@ -137,6 +137,12 @@ test("dns queryStrategy UseIP when ipv6 allowed", function() {
 	assertEq(d.queryStrategy, "UseIP");
 });
 
+test("dns mode doh: single DoH server, no direct region resolve", function() {
+	let d = buildDns({ mode: "doh", direct_dns: "223.5.5.5", doh_url: "https://1.1.1.1/dns-query" }, "ru", "1");
+	assertEq(d.servers, ["https://1.1.1.1/dns-query"]);
+	assertEq(d.queryStrategy, "UseIPv4");
+});
+
 test("xhttp padding omitted by default", function() {
 	let out = generate(cfg({ tproxy_port: 1 }, SERVER_A));
 	assert(!exists(out.outbounds[0].streamSettings.xhttpSettings, "xPaddingBytes"), "no padding by default");

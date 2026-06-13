@@ -122,12 +122,15 @@ function parseUri(uri) {
 				port = int(ps);
 		}
 	} else {
-		let colon = lastIndexOf(rest, ":");
-		if (colon >= 0) {
-			let ps = substr(rest, colon + 1);
+		// Только РОВНО одно двоеточие = host:port. Несколько -> IPv6 без скобок: весь rest как host
+		// (иначе адрес вида 2001:db8::1 молча искажался: host="2001:db8:", port=1).
+		let first = index(rest, ":");
+		let last = lastIndexOf(rest, ":");
+		if (first >= 0 && first == last) {
+			let ps = substr(rest, last + 1);
 			if (ps != "" && match(ps, /^[0-9]+$/) != null) {
 				port = int(ps);
-				host = substr(rest, 0, colon);
+				host = substr(rest, 0, last);
 			} else {
 				host = rest;
 			}
