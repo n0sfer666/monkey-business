@@ -15,7 +15,7 @@ while IFS= read -r f; do
 		rc=1
 	fi
 done <<EOF
-$(find src test luci -name '*.uc' 2>/dev/null | sort)
+$(find src test luci root -name '*.uc' 2>/dev/null | sort)
 EOF
 
 if [ "$rc" -eq 0 ]; then

@@ -16,11 +16,13 @@ DOMAIN="${1:-ip-api.com}"
 
 SSH="ssh"
 if command -v sshpass >/dev/null 2>&1 && [ -n "$PASS" ]; then
-	SSH="sshpass -p $PASS ssh"
+	# -e: пароль из env SSHPASS, не из argv (иначе виден в `ps`)
+	SSHPASS="$PASS"; export SSHPASS
+	SSH="sshpass -e ssh"
 fi
 
 echo ">> probing exit for '$DOMAIN' via split routing..."
 # shellcheck disable=SC2086
 $SSH -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
 	-o PreferredAuthentications=password -o PubkeyAuthentication=no -p "$PORT" "$HOST" \
-	"ubus call monkey-business check_exit '{\"domain\":\"$DOMAIN\"}'" 2>/dev/null
+	"ubus call monkey-business check_exit '{\"domain\":\"$DOMAIN\"}'"

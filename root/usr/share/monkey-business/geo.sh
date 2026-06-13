@@ -17,7 +17,7 @@ set_state() { echo "$1" >"$STATE"; }
 fetch() { # fetch <url> <out>
 	if command -v curl >/dev/null 2>&1; then curl -fsSL -m 120 -o "$2" "$1"
 	elif command -v uclient-fetch >/dev/null 2>&1; then uclient-fetch -q -T 120 -O "$2" "$1"
-	else wget -q -O "$2" "$1"; fi
+	else wget -q -T 120 -O "$2" "$1"; fi
 }
 
 # validate <which> <file> -> 0 если xray грузит .dat

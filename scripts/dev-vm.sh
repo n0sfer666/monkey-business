@@ -5,7 +5,7 @@
 # Запускается ФОНОВО (headless), консоль — на unix-сокете, весь вывод пишется в лог.
 # Подкоманды: up | provision | console | ssh | down | clean | status
 #
-# Окружение: MB_VM_SSH_PORT(2222) MB_VM_HTTP_PORT(8080) MB_VM_MEM(512) MB_IMMORTALWRT_URL
+# Окружение: MB_VM_SSH_PORT(2222) MB_VM_HTTP_PORT(8090) MB_VM_MEM(512) MB_IMMORTALWRT_URL
 set -u
 
 VMDIR=".dev-vm"

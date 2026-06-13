@@ -14,9 +14,7 @@ TABLE="${MB_RT_TABLE:-100}"
 LAN="${MB_LAN_IFACE:-br-lan}"
 COUNTER="${MB_NFT_COUNTER:-}"
 
-ip rule add fwmark "$MARK" lookup "$TABLE" 2>/dev/null || true
-ip route add local 0.0.0.0/0 dev lo table "$TABLE" 2>/dev/null || true
-
+# Сначала nft (set -e прервёт при сбое ДО policy-routing -> нет окна утечки с ip-rule без nft).
 nft -f - <<EOF
 table inet monkey_business {
 	chain prerouting {
@@ -27,5 +25,8 @@ table inet monkey_business {
 	}
 }
 EOF
+
+ip rule add fwmark "$MARK" lookup "$TABLE" 2>/dev/null || true
+ip route add local 0.0.0.0/0 dev lo table "$TABLE" 2>/dev/null || true
 
 echo "tproxy firewall applied (port=$PORT mark=$MARK lan=$LAN)"

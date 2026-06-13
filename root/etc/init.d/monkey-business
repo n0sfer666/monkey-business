@@ -23,11 +23,11 @@ start_service() {
 	procd_close_instance
 
 	MB_LAN_IFACE="$(uci -q get monkey-business.global.lan_iface || echo br-lan)" \
-		sh "$FW/apply.sh" 2>/dev/null
+		sh "$FW/apply.sh" 2>&1 | logger -t monkey-business
 }
 
 stop_service() {
-	sh "$FW/flush.sh" 2>/dev/null
+	sh "$FW/flush.sh" 2>&1 | logger -t monkey-business
 }
 
 service_triggers() {

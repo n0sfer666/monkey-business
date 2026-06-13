@@ -75,4 +75,4 @@ dev-test-split:
 	@MB_VM_SSH_PASS=root sh scripts/test-split.sh $(d)
 
 clean:
-	@docker rmi -f $(IMAGE) >/dev/null 2>&1 || true
+	@docker rmi -f $(IMAGE) $(INTEG) >/dev/null 2>&1 || true

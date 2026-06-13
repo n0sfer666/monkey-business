@@ -20,5 +20,5 @@ EOF
 fi
 
 echo ">> SDK: $SDK_DIR"
-echo "[todo] копирование package-feed и вызов make package/...; реализуется на этапе дистрибуции"
-exit 0
+echo "[not-implemented] копирование package-feed и вызов make package/... реализуется на этапе дистрибуции" >&2
+exit 1
