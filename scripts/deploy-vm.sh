@@ -5,7 +5,7 @@
 # Окружение:
 #   MB_VM_SSH_PORT (2222)  MB_VM_SSH_HOST (root@localhost)
 #   MB_VM_SSH_PASS — пароль для неинтерактивного входа (нужен sshpass). Пусто => спросит пароль.
-#   MB_HTTP_PORT (8080) — только для подсказки с URL LuCI.
+#   MB_HTTP_PORT (8090) — только для подсказки с URL LuCI.
 set -eu
 
 PORT="${MB_VM_SSH_PORT:-2222}"
@@ -20,12 +20,18 @@ SSH="ssh"
 SCP="scp"
 if [ -n "$PASS" ]; then
 	if command -v sshpass >/dev/null 2>&1; then
-		SSH="sshpass -p $PASS ssh"
-		SCP="sshpass -p $PASS scp"
+		# -e: пароль из env SSHPASS, не из argv (иначе виден в `ps` другим пользователям)
+		SSHPASS="$PASS"; export SSHPASS
+		SSH="sshpass -e ssh"
+		SCP="sshpass -e scp"
 	else
 		echo "warn: MB_VM_SSH_PASS задан, но sshpass не найден — будет интерактивный ввод" >&2
 	fi
 fi
+
+# MB_UBUS_RESPAWN раскрывается в удалённую shell-строку -> допускаем только 0/1 (без инъекции)
+RESPAWN="${MB_UBUS_RESPAWN:-0}"
+case "$RESPAWN" in 0|1) ;; *) RESPAWN=0 ;; esac
 
 stage=$(mktemp -d)
 tarball=$(mktemp)
@@ -76,7 +82,7 @@ echo ">> installing files + runtime deps + reloading rpcd"
 # MB_RESPAWN передаётся в удалённый шелл (значение раскрывается ЛОКАЛЬНО), сам скрипт — через
 # stdin-heredoc <<'REMOTE' (без локального раскрытия $ внутри).
 # shellcheck disable=SC2086
-$SSH $SSH_OPTS -p "$PORT" "$HOST" "MB_RESPAWN='${MB_UBUS_RESPAWN:-0}' sh -s" <<'REMOTE'
+$SSH $SSH_OPTS -p "$PORT" "$HOST" "MB_RESPAWN='$RESPAWN' sh -s" <<'REMOTE'
 	set -e
 	# сохранить пользовательский UCI-конфиг (url/серверы/выбор) между деплоями — как conffile
 	[ -f /etc/config/monkey-business ] && cp /etc/config/monkey-business /tmp/mb-cfg.keep
