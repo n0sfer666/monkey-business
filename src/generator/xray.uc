@@ -90,6 +90,12 @@ function buildProxyOutbound(s, opts) {
 
 // Split-DNS: локальный регион резолвится напрямую, остальное — через DoH в туннеле.
 function buildDns(dns, region, ipv6Blocked) {
+	// passthrough (region "other"): всё direct -> весь DNS напрямую, без невалидной geosite:other.
+	if (region == "other")
+		return {
+			servers: [dns.direct_dns || "223.5.5.5"],
+			queryStrategy: isTrue(ipv6Blocked) ? "UseIPv4" : "UseIP",
+		};
 	return {
 		servers: [
 			{
@@ -151,6 +157,13 @@ function buildRouting(g) {
 
 	if (isTrue(g.ipv6_block))
 		push(rules, { type: "field", ip: ["::/0"], outboundTag: "block" });
+
+	// local_region "other" — VPN passthrough: весь трафик direct (нет geo-категории для региона).
+	// routing_mode и custom-списки игнорируются; proxy-outbound не используется.
+	if (region == "other") {
+		push(rules, { type: "field", network: "tcp,udp", outboundTag: "direct" });
+		return { domainStrategy: "IPIfNonMatch", rules: rules };
+	}
 
 	// custom direct/proxy — только в split-tunnel (не в global), ПЕРЕД правилами режима
 	if (mode != "global")
