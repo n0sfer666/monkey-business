@@ -30,7 +30,7 @@ return view.extend({
 		region.default = 'ru';
 
 		var ks = g.option(form.Flag, 'kill_switch', _('Kill-switch'),
-			_('If the tunnel drops, block traffic that should be proxied instead of leaking your real IP (fail-closed).'));
+			_('Fail-closed: while connected, traffic that should be proxied is dropped (not leaked direct) if the tunnel is down. Enforced at the transparent-proxy layer.'));
 		ks.default = '1';
 
 		var v6 = g.option(form.Flag, 'ipv6_block', _('Block IPv6'),
