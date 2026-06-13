@@ -22,10 +22,11 @@ return view.extend({
 		mode.default = 'bypass-local';
 
 		var region = g.option(form.ListValue, 'local_region', _('Local region'),
-			_('Region treated as "local" for direct routing (geoip/geosite).'));
+			_('Region treated as "local" for direct routing (geoip/geosite). "Other" is a passthrough mode: all traffic goes direct, the tunnel is not used.'));
 		region.value('ru', 'Russia');
 		region.value('cn', 'China');
 		region.value('ir', 'Iran');
+		region.value('other', _('Other — all traffic direct (no VPN routing)'));
 		region.default = 'ru';
 
 		var ks = g.option(form.Flag, 'kill_switch', _('Kill-switch'),

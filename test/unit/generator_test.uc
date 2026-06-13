@@ -66,6 +66,37 @@ test("routing mode: bypass-local default region ru", function() {
 	assertEq(r.rules[1].domain, ["geosite:private", "geosite:category-ru"]);
 });
 
+test("routing region other: passthrough all direct", function() {
+	let r = buildRouting({ local_region: "other", routing_mode: "bypass-local" });
+	assertEq(length(r.rules), 1);
+	assertEq(r.rules[0].network, "tcp,udp");
+	assertEq(r.rules[0].outboundTag, "direct");
+});
+
+test("routing region other: ipv6 block kept, then direct", function() {
+	let r = buildRouting({ local_region: "other", ipv6_block: "1" });
+	assertEq(r.rules[0].ip, ["::/0"]);
+	assertEq(r.rules[0].outboundTag, "block");
+	assertEq(r.rules[1].outboundTag, "direct");
+	assertEq(length(r.rules), 2);
+});
+
+test("routing region other: ignores mode and custom (no proxy rule)", function() {
+	let r = buildRouting({
+		local_region: "other", routing_mode: "global",
+		custom_direct: "a.com", custom_proxy: "b.com",
+	});
+	for (let rule in r.rules)
+		assert(rule.outboundTag != "proxy", "passthrough has no proxy rule");
+	assertEq(length(r.rules), 1);
+});
+
+test("dns region other: only direct_dns, no geosite:other", function() {
+	let d = buildDns({ direct_dns: "1.1.1.1" }, "other", "1");
+	assertEq(d.servers, ["1.1.1.1"]);
+	assertEq(d.queryStrategy, "UseIPv4");
+});
+
 test("generate dies without server", function() {
 	assertThrows(function() { generate({ global: {} }); });
 });
