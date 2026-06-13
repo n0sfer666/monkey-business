@@ -21,7 +21,7 @@ function isTrue(v) {
 }
 
 function maskUuid(u) {
-	if (u == null || length(u) < 8)
+	if (u == null || length(u) < 12)
 		return "****";
 	return substr(u, 0, 4) + ".." + substr(u, length(u) - 4);
 }
@@ -100,7 +100,7 @@ function serversList(ctx) {
 			address: s.address,
 			port: s.port,
 			security: s.security,
-			transport: s.transport.type,
+			transport: (s.transport != null) ? s.transport.type : "tcp",
 			priority: i,
 			uuid_masked: maskUuid(s.uuid),
 		});
@@ -110,7 +110,8 @@ function serversList(ctx) {
 }
 
 function serverKey(s) {
-	return (s.address || "") + ":" + (s.port || "") + ":" + (s.uuid || "");
+	let tr = (s.transport != null) ? (s.transport.type || "") : "";
+	return (s.address || "") + ":" + (s.port || "") + ":" + (s.uuid || "") + ":" + tr;
 }
 
 function subscriptionUpdate(ctx, args) {

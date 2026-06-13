@@ -20,8 +20,10 @@ const XRAY_CONF = CONF_DIR + '/xray.json';
 const GEO_DIR = '/usr/share/xray';
 const GEO_SCRIPT = '/usr/share/monkey-business/geo.sh';
 
+// POSIX single-quote экранирование: ' -> '\'' (закрыть кавычку, экранированный ', снова открыть).
+// Раньше кавычки УДАЛЯЛИСЬ -> молчаливая порча URL/значений с апострофом.
 function shq(s) {
-	return "'" + replace(s != null ? s : '', "'", "") + "'";
+	return "'" + replace(s != null ? s : '', "'", "'\\''") + "'";
 }
 
 function runCapture(cmd) {
@@ -82,20 +84,26 @@ function fetchSubscription(url) {
 		runCapture('curl -fsSL -m 25 -D ' + hdrf + ' -o ' + bodyf + ' ' + shq(url));
 	else
 		runCapture('uclient-fetch -q -T 20 -O ' + bodyf + ' ' + shq(url));
+	// тело подписки и заголовки содержат токен/UUID серверов -> права 0600 и подчистка после чтения
+	system('chmod 600 ' + bodyf + ' ' + hdrf + ' 2>/dev/null');
 	let body = readfile(bodyf);
-	if (body == null || length(body) == 0)
+	if (body == null || length(body) == 0) {
+		system('rm -f ' + bodyf + ' ' + hdrf);
 		return null;
+	}
 	let userinfo = '';
 	let raw = readfile(hdrf);
 	if (raw != null)
 		for (let line in split(raw, "\n"))
 			if (index(lc(line), 'subscription-userinfo:') >= 0)
 				userinfo = trim(substr(line, index(line, ':') + 1));
+	system('rm -f ' + bodyf + ' ' + hdrf);
 	return { body: body, userinfo: userinfo };
 }
 
 function tcpPing(server) {
-	let r = runCapture(sprintf('nc -z -w2 %s %d 2>/dev/null && echo ok', server.address, int(server.port)));
+	// server.address — внешний вход из подписки -> shq (иначе shell-инъекция в popen)
+	let r = runCapture(sprintf('nc -z -w2 %s %d 2>/dev/null && echo ok', shq(server.address), int(server.port)));
 	return (index(r.out, 'ok') >= 0) ? 1 : null;
 }
 
@@ -220,6 +228,9 @@ function buildCtx() {
 			return (type(j) == 'object') ? j : { state: 'idle', geoip: 0, geosite: 0 };
 		},
 		geoInstall: function(which) {
+			// defense-in-depth: whitelist и здесь (which идёт в команду + имя файла)
+			if (which != "geoip" && which != "geosite")
+				return { ok: false, detail: "bad which" };
 			let r = runCapture('sh ' + GEO_SCRIPT + ' install ' + which + ' /tmp/mb-upload-' + which + '.dat 2>&1');
 			return { ok: r.ok, detail: firstLine(r.out) };
 		},
