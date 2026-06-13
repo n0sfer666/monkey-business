@@ -33,6 +33,12 @@ test("parseUri ipv6 host", function() {
 	assertEq(u.port, 8443);
 });
 
+test("parseUri ipv6 host without brackets keeps full address", function() {
+	let u = parseUri("vless://uuid@2001:db8::1?type=tcp#v6");
+	assertEq(u.host, "2001:db8::1");
+	assertEq(u.port, null);
+});
+
 test("parseUri without port or query", function() {
 	let u = parseUri("vless://uuid@host.tld#name");
 	assertEq(u.host, "host.tld");

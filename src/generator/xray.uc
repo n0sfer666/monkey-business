@@ -90,12 +90,13 @@ function buildProxyOutbound(s, opts) {
 
 // Split-DNS: локальный регион резолвится напрямую, остальное — через DoH в туннеле.
 function buildDns(dns, region, ipv6Blocked) {
+	let queryStrategy = isTrue(ipv6Blocked) ? "UseIPv4" : "UseIP";
 	// passthrough (region "other"): всё direct -> весь DNS напрямую, без невалидной geosite:other.
 	if (region == "other")
-		return {
-			servers: [dns.direct_dns || "223.5.5.5"],
-			queryStrategy: isTrue(ipv6Blocked) ? "UseIPv4" : "UseIP",
-		};
+		return { servers: [dns.direct_dns || "223.5.5.5"], queryStrategy: queryStrategy };
+	// "doh": весь DNS через DoH в туннеле (без direct-резолва локального региона).
+	if (dns.mode == "doh")
+		return { servers: [dns.doh_url || "https://1.1.1.1/dns-query"], queryStrategy: queryStrategy };
 	return {
 		servers: [
 			{
