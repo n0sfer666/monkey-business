@@ -97,6 +97,8 @@ return view.extend({
 						ui.addNotification(null, E('p', _('Applied — connected to: ') + ((res && res.server) || '?')), 'info');
 				});
 			ui.addNotification(null, E('p', _('Saved. Turn on to connect to the top-priority server.')), 'info');
+		}).catch(function(e) {
+			ui.addNotification(null, E('p', _('Save & Apply failed: ') + e), 'error');
 		});
 	}
 });
