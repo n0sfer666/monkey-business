@@ -1,5 +1,7 @@
 # monkey-business
 
+**English** | [Русский](README.ru.md)
+
 A minimalist VPN client for **OpenWrt / ImmortalWrt** routers (target hardware: **NanoPi R2S**).
 Reality + VLESS + XHTTP with a simple LuCI interface — a lightweight alternative to passwall / v2rayA.
 
@@ -30,6 +32,11 @@ MB_VM_SSH_HOST=root@<router-ip> MB_VM_SSH_PORT=22 MB_VM_SSH_PASS=<password> \
   sh scripts/deploy-vm.sh
 ```
 
+```nu
+# nushell
+with-env { MB_VM_SSH_HOST: "root@<router-ip>", MB_VM_SSH_PORT: "22", MB_VM_SSH_PASS: "<password>" } { sh scripts/deploy-vm.sh }
+```
+
 This installs the rpcd plugin, LuCI views, init script, firewall and geo scripts, and idempotently
 pulls the runtime deps (`xray-core`, `kmod-nft-tproxy`, `curl`, the rpcd/ucode mods) via `apk`.
 Then open LuCI → **Services → monkey-business VPN**.
@@ -43,6 +50,12 @@ Packaging via the OpenWrt/ImmortalWrt SDK for the target (rockchip/armv8):
 
 ```sh
 export MB_SDK_DIR=/path/to/immortalwrt-sdk   # SDK for rockchip/armv8
+make package
+```
+
+```nu
+# nushell
+$env.MB_SDK_DIR = "/path/to/immortalwrt-sdk"  # SDK for rockchip/armv8
 make package
 ```
 
@@ -97,7 +110,8 @@ make dev-test-split # check split routing: exit IP/country via the SOCKS test in
 ```
 
 Then open **http://localhost:8090** (login `root` / `root`) → **Services → monkey-business VPN**.
-Override the port with `MB_VM_HTTP_PORT=NNNN make dev-up` if 8090 is taken.
+Override the port with `MB_VM_HTTP_PORT=NNNN make dev-up` if 8090 is taken
+(nushell: `with-env { MB_VM_HTTP_PORT: "NNNN" } { make dev-up }`).
 
 | Command | Purpose |
 |---------|---------|
