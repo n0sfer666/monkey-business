@@ -38,6 +38,20 @@ MB_VM_SSH_HOST=root@<router-ip> MB_VM_SSH_PORT=22 MB_VM_SSH_PASS=<password> \
 with-env { MB_VM_SSH_HOST: "root@<router-ip>", MB_VM_SSH_PORT: "22", MB_VM_SSH_PASS: "<password>" } { sh scripts/deploy-vm.sh }
 ```
 
+**По SSH-ключу** (рекомендуется) — авторизуйте его один раз (`ssh-copy-id root@<router-ip>`), затем
+просто опустите `MB_VM_SSH_PASS`; ключ/ssh-agent подхватятся автоматически:
+
+```sh
+MB_VM_SSH_HOST=root@<router-ip> MB_VM_SSH_PORT=22 sh scripts/deploy-vm.sh
+```
+
+```nu
+# nushell
+with-env { MB_VM_SSH_HOST: "root@<router-ip>", MB_VM_SSH_PORT: "22" } { sh scripts/deploy-vm.sh }
+```
+
+`<router-ip>` — LAN-адрес роутера, обычно `192.168.1.1` (приватный диапазон `192.168.x.x`).
+
 Это устанавливает rpcd-плагин, LuCI-вьюшки, init-скрипт, firewall- и geo-скрипты и идемпотентно
 подтягивает рантайм-зависимости (`xray-core`, `kmod-nft-tproxy`, `curl`, модули rpcd/ucode) через
 `apk`. Затем откройте LuCI → **Services → monkey-business VPN**.

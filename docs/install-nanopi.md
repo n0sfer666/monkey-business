@@ -74,6 +74,23 @@ with-env {
 } { sh scripts/deploy-vm.sh }
 ```
 
+**With an SSH key** (recommended) — authorize it once (`ssh-copy-id root@<router-ip>`), then drop
+`MB_VM_SSH_PASS` entirely; the script uses plain `ssh`/`scp`, so your key/agent is picked up
+automatically (no extra flag needed):
+
+```sh
+MB_VM_SSH_HOST=root@<router-ip> MB_VM_SSH_PORT=22 sh scripts/deploy-vm.sh
+```
+
+```nu
+# nushell
+with-env { MB_VM_SSH_HOST: "root@<router-ip>", MB_VM_SSH_PORT: "22" } { sh scripts/deploy-vm.sh }
+```
+
+`<router-ip>` is the router's LAN address — usually `192.168.1.1` (private `192.168.x.x`). Double-check
+it: `191.168.x.x` is a *public* internet address, not your LAN, and will fail with
+`Connection closed … / lost connection`.
+
 What this does:
 
 - Stages the files and copies them to the right paths:

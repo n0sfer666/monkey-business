@@ -73,6 +73,23 @@ with-env {
 } { sh scripts/deploy-vm.sh }
 ```
 
+**По SSH-ключу** (рекомендуется) — авторизуйте его один раз (`ssh-copy-id root@<router-ip>`), затем
+полностью опустите `MB_VM_SSH_PASS`; скрипт использует обычные `ssh`/`scp`, поэтому ключ/ssh-agent
+подхватываются сами (никакого доп. флага не нужно):
+
+```sh
+MB_VM_SSH_HOST=root@<router-ip> MB_VM_SSH_PORT=22 sh scripts/deploy-vm.sh
+```
+
+```nu
+# nushell
+with-env { MB_VM_SSH_HOST: "root@<router-ip>", MB_VM_SSH_PORT: "22" } { sh scripts/deploy-vm.sh }
+```
+
+`<router-ip>` — LAN-адрес роутера, обычно `192.168.1.1` (приватный `192.168.x.x`). Проверьте его:
+`191.168.x.x` — это *публичный* интернет-адрес, а не ваша сеть, и даст
+`Connection closed … / lost connection`.
+
 Что это делает:
 
 - Готовит файлы и копирует их по нужным путям:
