@@ -14,3 +14,8 @@
 
 Проект: VPN-клиент Reality/VLESS/XHTTP для роутера, аналог passwall/v2rayA с простым UI.
 План разработки: `.claude/plans/2026-06-05-monkey-business.md`.
+
+Внешняя докуа двуязычна: `README.md`/`docs/install-nanopi.md` — canonical (EN), рядом `*.ru.md` —
+перевод (кросс-линки EN↔RU вверху). Хост-команды с env-var префиксами имеют отдельный nushell-блок
+(`with-env {…} {…}` / `$env.X = …`); router-команды (`#`/ssh/apk/nft/ubus) — без nushell.
+При правке доков синхронизировать EN+RU и nushell-блоки.
