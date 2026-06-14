@@ -1,23 +1,38 @@
 {
 	"admin/services/monkey-business": {
-		"title": "monkey-business VPN",
+		"title": "Monkey Business",
 		"order": 60,
-		"action": { "type": "firstchild" },
-		"depends": { "acl": [ "luci-app-monkey-business" ] }
+		"action": {
+			"type": "firstchild"
+		},
+		"depends": {
+			"acl": [
+				"luci-app-monkey-business"
+			]
+		}
 	},
 	"admin/services/monkey-business/dashboard": {
 		"title": "Dashboard",
 		"order": 1,
-		"action": { "type": "view", "path": "monkey-business/dashboard" }
+		"action": {
+			"type": "view",
+			"path": "monkey-business/dashboard"
+		}
 	},
 	"admin/services/monkey-business/servers": {
 		"title": "Servers",
 		"order": 2,
-		"action": { "type": "view", "path": "monkey-business/servers" }
+		"action": {
+			"type": "view",
+			"path": "monkey-business/servers"
+		}
 	},
 	"admin/services/monkey-business/settings": {
 		"title": "Settings",
 		"order": 3,
-		"action": { "type": "view", "path": "monkey-business/settings" }
+		"action": {
+			"type": "view",
+			"path": "monkey-business/settings"
+		}
 	}
 }

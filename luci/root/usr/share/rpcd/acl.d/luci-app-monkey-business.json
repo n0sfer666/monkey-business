@@ -3,15 +3,32 @@
 		"description": "Grant access to monkey-business VPN control",
 		"read": {
 			"ubus": {
-				"monkey-business": [ "status", "servers_list", "servers_ping", "geo_status", "check_exit" ]
+				"monkey-business": [
+					"status",
+					"servers_list",
+					"servers_ping",
+					"geo_status",
+					"check_exit"
+				]
 			},
-			"uci": [ "monkey-business" ]
+			"uci": [
+				"monkey-business"
+			]
 		},
 		"write": {
 			"ubus": {
-				"monkey-business": [ "subscription_update", "config_apply", "service_toggle", "geo_update", "geo_install", "set_routing" ]
+				"monkey-business": [
+					"subscription_update",
+					"config_apply",
+					"service_toggle",
+					"geo_update",
+					"geo_install",
+					"set_routing"
+				]
 			},
-			"uci": [ "monkey-business" ]
+			"uci": [
+				"monkey-business"
+			]
 		}
 	}
 }
