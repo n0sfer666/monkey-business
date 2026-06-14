@@ -66,34 +66,56 @@ test("routing mode: bypass-local default region ru", function() {
 	assertEq(r.rules[1].domain, ["geosite:private", "geosite:category-ru"]);
 });
 
-test("routing region other: passthrough all direct", function() {
+test("routing region other: drops region geo, private direct, default by mode", function() {
 	let r = buildRouting({ local_region: "other", routing_mode: "bypass-local" });
-	assertEq(length(r.rules), 1);
-	assertEq(r.rules[0].network, "tcp,udp");
+	assertEq(r.rules[0].ip, ["geoip:private"]);
 	assertEq(r.rules[0].outboundTag, "direct");
+	assertEq(r.rules[1].domain, ["geosite:private"]);
+	assertEq(r.rules[1].outboundTag, "direct");
+	assertEq(r.rules[length(r.rules) - 1].network, "tcp,udp");
+	assertEq(r.rules[length(r.rules) - 1].outboundTag, "proxy");
 });
 
-test("routing region other: ipv6 block kept, then direct", function() {
-	let r = buildRouting({ local_region: "other", ipv6_block: "1" });
+test("routing region other: ipv6 block kept first", function() {
+	let r = buildRouting({ local_region: "other", routing_mode: "bypass-local", ipv6_block: "1" });
 	assertEq(r.rules[0].ip, ["::/0"]);
 	assertEq(r.rules[0].outboundTag, "block");
-	assertEq(r.rules[1].outboundTag, "direct");
-	assertEq(length(r.rules), 2);
+	assertEq(r.rules[1].ip, ["geoip:private"]);
+	assertEq(r.rules[length(r.rules) - 1].outboundTag, "proxy");
 });
 
-test("routing region other: ignores mode and custom (no proxy rule)", function() {
+test("routing region other: custom lists drive split, no region geo category", function() {
 	let r = buildRouting({
-		local_region: "other", routing_mode: "global",
+		local_region: "other", routing_mode: "bypass-local",
 		custom_direct: "a.com", custom_proxy: "b.com",
 	});
-	for (let rule in r.rules)
-		assert(rule.outboundTag != "proxy", "passthrough has no proxy rule");
-	assertEq(length(r.rules), 1);
+	assertEq(r.rules[0].domain, ["a.com"]);
+	assertEq(r.rules[0].outboundTag, "direct");
+	assertEq(r.rules[1].domain, ["b.com"]);
+	assertEq(r.rules[1].outboundTag, "proxy");
+	for (let rule in r.rules) {
+		if (exists(rule, "ip"))
+			for (let v in rule.ip)
+				assert(index(v, "geoip:other") < 0, "no geoip:other category");
+		if (exists(rule, "domain"))
+			for (let v in rule.domain)
+				assert(index(v, ":other") < 0, "no geosite:other category");
+	}
 });
 
-test("dns region other: only direct_dns, no geosite:other", function() {
-	let d = buildDns({ direct_dns: "1.1.1.1" }, "other", "1");
-	assertEq(d.servers, ["1.1.1.1"]);
+test("routing region other + gfwlist: no geolocation-!other, default direct", function() {
+	let r = buildRouting({ local_region: "other", routing_mode: "gfwlist", custom_proxy: "x.com" });
+	for (let rule in r.rules)
+		if (exists(rule, "domain"))
+			for (let v in rule.domain)
+				assert(index(v, "geolocation-!") < 0, "no geolocation-! list for other");
+	assertEq(r.rules[length(r.rules) - 1].outboundTag, "direct");
+});
+
+test("dns region other: split direct private only, no geosite:other", function() {
+	let d = buildDns({ mode: "split", direct_dns: "1.1.1.1", doh_url: "https://1.1.1.1/dns-query" }, "other", "1");
+	assertEq(d.servers[0].domains, ["geosite:private"]);
+	assertEq(d.servers[1], "https://1.1.1.1/dns-query");
 	assertEq(d.queryStrategy, "UseIPv4");
 });
 

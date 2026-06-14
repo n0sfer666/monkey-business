@@ -2,7 +2,7 @@
 # Валидация сгенерированного конфига РЕАЛЬНЫМ xray (-test).
 # Ловит расхождения генератора со схемой Xray. Использует валидный x25519 publicKey
 # и hex shortId (иначе xray отвергнет reality по типам, а не по структуре).
-# Кейсы: bypass-local (ru) и passthrough (local_region=other).
+# Кейсы: bypass-local (ru) и other (сплит задаётся custom-списками, без geo-категории региона).
 set -u
 
 PUB=$(xray x25519 | grep -i 'public' | awk '{print $NF}')
@@ -44,5 +44,5 @@ validate() { # validate <file> <label>
 gen '{ tproxy_port: 12345, routing_mode: "bypass-local", local_region: "ru", ipv6_block: "1" }' /tmp/xray.json
 validate /tmp/xray.json "bypass-local(ru)"
 
-gen '{ tproxy_port: 12345, routing_mode: "global", local_region: "other", ipv6_block: "1" }' /tmp/xray-other.json
-validate /tmp/xray-other.json "passthrough(other)"
+gen '{ tproxy_port: 12345, routing_mode: "bypass-local", local_region: "other", ipv6_block: "1", custom_direct: "example.com\n10.0.0.0/8", custom_proxy: "geosite:google\ngeoip:cn" }' /tmp/xray-other.json
+validate /tmp/xray-other.json "other(custom-split)"

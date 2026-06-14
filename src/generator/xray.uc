@@ -91,22 +91,20 @@ function buildProxyOutbound(s, opts) {
 // Split-DNS: локальный регион резолвится напрямую, остальное — через DoH в туннеле.
 function buildDns(dns, region, ipv6Blocked) {
 	let queryStrategy = isTrue(ipv6Blocked) ? "UseIPv4" : "UseIP";
-	// passthrough (region "other"): всё direct -> весь DNS напрямую, без невалидной geosite:other.
-	if (region == "other")
-		return { servers: [dns.direct_dns || "223.5.5.5"], queryStrategy: queryStrategy };
 	// "doh": весь DNS через DoH в туннеле (без direct-резолва локального региона).
 	if (dns.mode == "doh")
 		return { servers: [dns.doh_url || "https://1.1.1.1/dns-query"], queryStrategy: queryStrategy };
+	// split: локальный регион + private резолвятся напрямую, остальное — через DoH в туннеле.
+	// region "other": geosite:other невалидна -> direct только private, сплит доменов — через custom-списки.
+	let directDomains = (region == "other")
+		? ["geosite:private"]
+		: ["geosite:private", "geosite:" + geositeRegion(region)];
 	return {
 		servers: [
-			{
-				address: dns.direct_dns || "223.5.5.5",
-				domains: ["geosite:private", "geosite:" + geositeRegion(region)],
-				skipFallback: true,
-			},
+			{ address: dns.direct_dns || "223.5.5.5", domains: directDomains, skipFallback: true },
 			dns.doh_url || "https://1.1.1.1/dns-query",
 		],
-		queryStrategy: isTrue(ipv6Blocked) ? "UseIPv4" : "UseIP",
+		queryStrategy: queryStrategy,
 	};
 }
 
@@ -154,17 +152,14 @@ function customRules(g) {
 function buildRouting(g) {
 	let region = g.local_region || "ru";
 	let mode = g.routing_mode || "bypass-local";
+	// local_region "other": нет geo-категории региона (geosite:other/geoip:other невалидны,
+	// xray -test падает) -> geo-правила региона опускаются; сплит задаётся custom-списками,
+	// private всегда direct, судьба «остального» — по routing_mode.
+	let other = (region == "other");
 	let rules = [];
 
 	if (isTrue(g.ipv6_block))
 		push(rules, { type: "field", ip: ["::/0"], outboundTag: "block" });
-
-	// local_region "other" — VPN passthrough: весь трафик direct (нет geo-категории для региона).
-	// routing_mode и custom-списки игнорируются; proxy-outbound не используется.
-	if (region == "other") {
-		push(rules, { type: "field", network: "tcp,udp", outboundTag: "direct" });
-		return { domainStrategy: "IPIfNonMatch", rules: rules };
-	}
 
 	// custom direct/proxy — только в split-tunnel (не в global), ПЕРЕД правилами режима
 	if (mode != "global")
@@ -178,15 +173,16 @@ function buildRouting(g) {
 			{ type: "field", network: "tcp,udp", outboundTag: "proxy" },
 		];
 	} else if (mode == "gfwlist") {
-		modeRules = [
-			{ type: "field", ip: ["geoip:private"], outboundTag: "direct" },
-			{ type: "field", domain: ["geosite:geolocation-!" + region], outboundTag: "proxy" },
-			{ type: "field", network: "tcp,udp", outboundTag: "direct" },
-		];
+		modeRules = [ { type: "field", ip: ["geoip:private"], outboundTag: "direct" } ];
+		if (!other)
+			push(modeRules, { type: "field", domain: ["geosite:geolocation-!" + region], outboundTag: "proxy" });
+		push(modeRules, { type: "field", network: "tcp,udp", outboundTag: "direct" });
 	} else {
+		let directIps = other ? ["geoip:private"] : ["geoip:private", "geoip:" + region];
+		let directDomains = other ? ["geosite:private"] : ["geosite:private", "geosite:" + geositeRegion(region)];
 		modeRules = [
-			{ type: "field", ip: ["geoip:private", "geoip:" + region], outboundTag: "direct" },
-			{ type: "field", domain: ["geosite:private", "geosite:" + geositeRegion(region)], outboundTag: "direct" },
+			{ type: "field", ip: directIps, outboundTag: "direct" },
+			{ type: "field", domain: directDomains, outboundTag: "direct" },
 			{ type: "field", network: "tcp,udp", outboundTag: "proxy" },
 		];
 	}
