@@ -44,7 +44,7 @@ ip netns exec "$NS_R" env \
 assert_counter() {
 	desc="$1"
 	want="$2"
-	pkts=$(ip netns exec "$NS_R" nft list table inet monkey_business \
+	pkts=$(ip netns exec "$NS_R" nft list chain inet monkey_business prerouting \
 		| grep -oE 'counter packets [0-9]+' | grep -oE '[0-9]+$' | head -1)
 	pkts="${pkts:-0}"
 	echo "  [$desc] intercepted packets=$pkts (want $want)"
