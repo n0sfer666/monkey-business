@@ -155,9 +155,11 @@ them out of logs and issues.
 - **Routing mode** — `Bypass local (recommended)`: your local region (RU/CN/IR) and private
   addresses go direct, everything else through the tunnel. Other modes: `Only blocked via VPN`
   (gfwlist) and `Everything via VPN` (global).
-- **Local region** — which region is treated as "local" for direct routing. Pick **`Other —
-  all traffic direct`** if you want a **passthrough** mode: the tunnel is configured but all
-  traffic goes direct (no VPN routing). Custom routing lists and the mode are ignored in this mode.
+- **Local region** — which region is treated as "local" for direct routing. Pick **`Other`** if
+  your region has no geo preset: there is no predefined local geo-category, so you drive the split
+  yourself via the custom **Direct (bypass VPN)** / **Via VPN** lists on the Dashboard. Private
+  addresses stay direct, and everything not in your lists follows the **Routing mode** default
+  (bypass-local → tunnel, gfwlist → direct, global → tunnel).
 - **Kill-switch** — fail-closed (default on): LAN traffic to non-local destinations is dropped, not
   leaked direct, whenever it isn't carried by the tunnel (Xray down, a rule gap, or non-proxied
   traffic like ICMP). Disable for a direct fallback when the tunnel is down (less safe).
