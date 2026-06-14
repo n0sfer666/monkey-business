@@ -147,8 +147,11 @@ them out of logs and issues.
 - **Local region** — which region is treated as "local" for direct routing. Pick **`Other —
   all traffic direct`** if you want a **passthrough** mode: the tunnel is configured but all
   traffic goes direct (no VPN routing). Custom routing lists and the mode are ignored in this mode.
-- **Kill-switch** — fail-closed: while connected, traffic that should be proxied is dropped (not
-  leaked direct) if the tunnel is down. Enforced at the TPROXY layer.
+- **Kill-switch** — fail-closed (default on): LAN traffic to non-local destinations is dropped, not
+  leaked direct, whenever it isn't carried by the tunnel (Xray down, a rule gap, or non-proxied
+  traffic like ICMP). Disable for a direct fallback when the tunnel is down (less safe).
+  Local-region and private traffic are unaffected. Implemented as an nftables `forward` leak-guard
+  (`scripts/firewall/apply.sh`).
 - **Block IPv6** — on by default, so client traffic can't leak around the IPv4 tunnel.
 - **TPROXY port** — change only on a conflict (default `12345`).
 - **DNS** — `Split` resolves local-region domains directly and the rest over DoH in the tunnel;

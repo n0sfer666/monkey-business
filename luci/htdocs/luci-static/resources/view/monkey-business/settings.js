@@ -30,7 +30,7 @@ return view.extend({
 		region.default = 'ru';
 
 		var ks = g.option(form.Flag, 'kill_switch', _('Kill-switch'),
-			_('Fail-closed: while connected, traffic that should be proxied is dropped (not leaked direct) if the tunnel is down. Enforced at the transparent-proxy layer.'));
+			_('Fail-closed: LAN traffic to non-local destinations is dropped instead of leaking direct whenever it is not carried by the tunnel (Xray down, rule gap, or non-proxied traffic such as ICMP). Disable for a direct fallback when the tunnel is down (less safe). Local-region and private traffic are unaffected.'));
 		ks.default = '1';
 
 		var v6 = g.option(form.Flag, 'ipv6_block', _('Block IPv6'),
