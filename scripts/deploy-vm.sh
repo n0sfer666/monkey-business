@@ -91,20 +91,32 @@ $SSH $SSH_OPTS -p "$PORT" "$HOST" "MB_RESPAWN='$RESPAWN' sh -s" <<'REMOTE'
 	[ -f /tmp/mb-cfg.keep ] && mv /tmp/mb-cfg.keep /etc/config/monkey-business
 	# подчистить возможные macOS AppleDouble-остатки (BusyBox find без -delete, поэтому rm по glob)
 	rm -f /usr/share/rpcd/ucode/._* /usr/share/rpcd/ucode/lib/monkey-business/._* 2>/dev/null || true
+	# macOS tar сохраняет локальный uid -> вернуть владельца root:root на развёрнутых путях
+	for d in /usr/share/rpcd/ucode/monkey-business.uc /usr/share/rpcd/ucode/lib/monkey-business \
+	         /etc/config/monkey-business /etc/init.d/monkey-business /usr/share/monkey-business \
+	         /www/luci-static/resources/view/monkey-business \
+	         /usr/share/luci/menu.d/luci-app-monkey-business.json \
+	         /usr/share/rpcd/acl.d/luci-app-monkey-business.json; do
+		chown -R root:root "$d" 2>/dev/null || true
+	done
 	chmod 644 /usr/share/rpcd/ucode/monkey-business.uc
 	chmod +x /etc/init.d/monkey-business /usr/share/monkey-business/firewall/*.sh
 	rm -f /tmp/mb-deploy.tgz /tmp/luci-indexcache* 2>/dev/null || true
 
 	# рантайм-зависимости (идемпотентно; для UI хватает uci/fs+rpcd-mod-ucode из LuCI,
-	# xray/tproxy нужны только для запуска сервиса). Не валим деплой при отсутствии сети.
+	# xray/tproxy нужны только для запуска сервиса). ImmortalWrt/OpenWrt бывает и на apk (24.10+),
+	# и на opkg — поддерживаем оба. Не валим деплой при отсутствии сети/пакета.
+	PKGS="ucode-mod-uci ucode-mod-fs rpcd-mod-ucode xray-core kmod-nft-tproxy curl"
 	if command -v apk >/dev/null 2>&1; then
-		for p in ucode-mod-uci ucode-mod-fs rpcd-mod-ucode xray-core kmod-nft-tproxy curl; do
-			apk info -e "$p" >/dev/null 2>&1 || MISS="${MISS:-} $p"
-		done
-		if [ -n "${MISS:-}" ]; then
-			echo ">> installing missing:$MISS"
-			apk add $MISS >/dev/null 2>&1 || echo "   (apk add не прошёл — нет сети? UI всё равно покажется)"
-		fi
+		for p in $PKGS; do apk info -e "$p" >/dev/null 2>&1 || MISS="${MISS:-} $p"; done
+		[ -n "${MISS:-}" ] && { echo ">> installing missing (apk):$MISS"; apk add $MISS >/dev/null 2>&1 || echo "   (apk add не прошёл — нет сети/пакета?)"; }
+	elif command -v opkg >/dev/null 2>&1; then
+		opkg list-installed >/tmp/mb-pkgs 2>/dev/null || true
+		for p in $PKGS; do grep -q "^$p " /tmp/mb-pkgs 2>/dev/null || MISS="${MISS:-} $p"; done
+		rm -f /tmp/mb-pkgs
+		[ -n "${MISS:-}" ] && { echo ">> installing missing (opkg):$MISS"; { opkg update >/dev/null 2>&1 && opkg install $MISS >/dev/null 2>&1; } || echo "   (opkg install не прошёл — нет сети/пакета?)"; }
+	else
+		echo ">> warn: ни apk, ни opkg не найдены — проверь рантайм-зависимости вручную"
 	fi
 
 	# dev-VM: убить любые stale/detached rpcd (от прошлого respawn) -> ровно один свежий инстанс,
@@ -117,11 +129,13 @@ $SSH $SSH_OPTS -p "$PORT" "$HOST" "MB_RESPAWN='$RESPAWN' sh -s" <<'REMOTE'
 	/etc/init.d/rpcd restart >/dev/null 2>&1 || true
 	sleep 2
 
-	# В QEMU-эмуляции boot-time ubusd часто виснет при рестарте rpcd (openwrt#9492): жив, но не
-	# принимает соединения. Только для dev-VM (MB_RESPAWN=1) пересоздаём ubusd+rpcd свежими —
-	# на реальном железе этого не делаем (флаг не выставлен).
-	if ! ubus list >/dev/null 2>&1 && [ "${MB_RESPAWN:-0}" = 1 ]; then
-		echo ">> ubus завис (эмуляция QEMU) — пересоздаю ubusd+rpcd..."
+	# ubusd виснет при рестарте rpcd (жив, но не принимает соединения; openwrt#9492). Это случается
+	# НЕ только в QEMU, но и на железе (race). Если ubus недоступен — пересоздаём ubusd+rpcd свежими.
+	# Срабатывает ТОЛЬКО при реально зависшем ubus (ретрай отсекает гонку рестарта), поэтому здоровую
+	# систему не трогает. Сам форвардинг трафика от ubus не зависит — клиенты сети не страдают.
+	ubus list >/dev/null 2>&1 || sleep 2
+	if ! ubus list >/dev/null 2>&1; then
+		echo ">> ubus не отвечает (wedge openwrt#9492) — пересоздаю ubusd+rpcd..."
 		killall rpcd 2>/dev/null || true
 		killall ubusd 2>/dev/null || true
 		sleep 1

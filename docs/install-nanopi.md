@@ -230,8 +230,15 @@ Verify the exit path:
   params on the server entry, or a TPROXY port already in use.
 - **Config survives reboot/sysupgrade.** `/etc/config/monkey-business` is UCI; keep it in your
   sysupgrade keep-list (it is by default) so servers and credentials persist.
-- **The QEMU-only boot-hang and ubusd-wedge issues in the main README do _not_ apply to the R2S** —
-  they're emulator artifacts. On hardware `ubusd`, reboot, and `rpcd restart` behave normally.
+- **`WARN: ubus object did not come up` right after deploy.** A `rpcd restart` can occasionally leave
+  `ubusd` alive but not accepting connections (openwrt#9492) — rarer on hardware than in QEMU, but it
+  *does* happen. `deploy-vm.sh` now detects an unreachable ubus and respawns `ubusd`+`rpcd`
+  automatically; packet forwarding is unaffected (only management blips for a second). If you hit a
+  wedge outside the script, recover with
+  `killall rpcd ubusd; rm -f /var/run/ubus/ubus.sock; /sbin/ubusd & sleep 2; /sbin/rpcd &` — or just
+  `reboot` (the boot itself is fine on hardware; only the QEMU dev-VM has the separate boot-hang).
+- **`apk` vs `opkg`.** `deploy-vm.sh` installs runtime deps via whichever your build has. If neither is
+  found, install `xray-core kmod-nft-tproxy rpcd-mod-ucode ucode-mod-uci ucode-mod-fs curl` by hand.
 
 ---
 

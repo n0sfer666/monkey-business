@@ -229,8 +229,14 @@ Xray не стартует без `geoip.dat` и `geosite.dat`. Проще вс�
   Reality-параметры в записи сервера или TPROXY-порт уже занят.
 - **Конфиг переживает reboot/sysupgrade.** `/etc/config/monkey-business` — это UCI; держите его в
   keep-list для sysupgrade (по умолчанию так и есть), чтобы серверы и креды сохранялись.
-- **QEMU-проблемы с зависанием загрузки и wedge ubusd из основного README к R2S _не_ относятся** —
-  это артефакты эмулятора. На железе `ubusd`, reboot и `rpcd restart` ведут себя нормально.
+- **`WARN: ubus-объект не поднялся` сразу после деплоя.** `rpcd restart` иногда оставляет `ubusd`
+  живым, но не принимающим соединения (openwrt#9492) — на железе реже, чем в QEMU, но **случается**.
+  `deploy-vm.sh` теперь сам детектит недоступный ubus и пересоздаёт `ubusd`+`rpcd`; форвардинг трафика
+  не страдает (управление моргает на секунду). Если поймали wedge вне скрипта — восстановите вручную:
+  `killall rpcd ubusd; rm -f /var/run/ubus/ubus.sock; /sbin/ubusd & sleep 2; /sbin/rpcd &` — или просто
+  `reboot` (сама загрузка на железе нормальная; отдельный boot-hang только у QEMU dev-VM).
+- **`apk` или `opkg`.** `deploy-vm.sh` ставит deps тем менеджером, что есть в сборке. Если нет ни того,
+  ни другого — поставьте `xray-core kmod-nft-tproxy rpcd-mod-ucode ucode-mod-uci ucode-mod-fs curl` вручную.
 
 ---
 
