@@ -24,9 +24,9 @@ fetch() { # fetch <url> <out>
 validate() {
 	which="$1"; file="$2"
 	[ -s "$file" ] || { echo "empty file"; return 1; }
-	dir="/tmp/mb-geocheck"
-	rm -rf "$dir"; mkdir -p "$dir"
-	cp "$file" "$dir/$which.dat" || return 1
+	# уникальный каталог на вызов: без клоббера/TOCTOU при параллельных validate
+	dir="$(mktemp -d "${TMPDIR:-/tmp}/mb-geocheck.XXXXXX")" || { echo "mktemp failed"; return 1; }
+	cp "$file" "$dir/$which.dat" || { rm -rf "$dir"; return 1; }
 	if [ "$which" = "geoip" ]; then
 		rule='"ip":["geoip:private"]'
 	else
@@ -35,15 +35,16 @@ validate() {
 	cat >"$dir/test.json" <<EOF
 {"inbounds":[{"port":10800,"protocol":"socks","settings":{}}],"outbounds":[{"protocol":"freedom"},{"tag":"blk","protocol":"blackhole"}],"routing":{"rules":[{"type":"field",$rule,"outboundTag":"blk"}]}}
 EOF
-	XRAY_LOCATION_ASSET="$dir" xray run -test -c "$dir/test.json" >/tmp/mb-geocheck.err 2>&1
+	XRAY_LOCATION_ASSET="$dir" xray run -test -c "$dir/test.json" >"$dir/err" 2>&1
 	rc=$?
-	rm -rf "$dir"
 	if [ "$rc" != 0 ]; then
-		line="$(grep -iE 'failed|error|invalid|panic' /tmp/mb-geocheck.err | head -1)"
+		line="$(grep -iE 'failed|error|invalid|panic' "$dir/err" | head -1)"
 		[ -n "$line" ] || line="invalid geo .dat (xray test failed)"
+		rm -rf "$dir"
 		echo "$which.dat rejected: $line"
 		return 1
 	fi
+	rm -rf "$dir"
 	return 0
 }
 
@@ -58,7 +59,7 @@ install_one() { # install_one <which> <src>
 # sha256 первого поля (для .sha256sum-файла или локального файла)
 sha_of() { sha256sum "$1" 2>/dev/null | awk '{print $1}'; }
 remote_sha() { # remote_sha <dat_url> -> печатает hash или пусто
-	t="/tmp/mb-sum.$$"
+	t="$(mktemp "${TMPDIR:-/tmp}/mb-sum.XXXXXX")" || return 0
 	if fetch "$1.sha256sum" "$t" 2>/dev/null && [ -s "$t" ]; then
 		awk '{print $1; exit}' "$t"
 	fi
@@ -80,7 +81,7 @@ cmd_download() {
 			echo "$which: up to date (sha256 match), skipped"
 			continue
 		fi
-		tmp="/tmp/mb-$which.dl"
+		tmp="$(mktemp "${TMPDIR:-/tmp}/mb-$which.dl.XXXXXX")" || { set_state "error: mktemp failed ($which)"; return 1; }
 		if ! fetch "$url" "$tmp"; then set_state "error: download failed ($which)"; rm -f "$tmp"; return 1; fi
 		# проверка целостности по контрольной сумме (если она доступна)
 		if [ -n "$rsum" ] && [ "$rsum" != "$(sha_of "$tmp")" ]; then

@@ -13,7 +13,7 @@ while IFS= read -r f; do
 		rc=1
 	fi
 done <<EOF
-$(find scripts test -name '*.sh' 2>/dev/null | sort)
+$(find scripts test root -name '*.sh' 2>/dev/null | sort)
 EOF
 [ "$rc" -eq 0 ] && echo "shellcheck: ok ($sh_found files)"
 
