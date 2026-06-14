@@ -88,6 +88,8 @@ return view.extend({
 				ui.addNotification(null, E('p', _('Apply failed: ') + res.error), 'warning');
 			else
 				ui.addNotification(null, E('p', _('Configuration applied.')), 'info');
+		}).catch(function(e) {
+			ui.addNotification(null, E('p', _('Apply failed: ') + e), 'error');
 		});
 	}
 });

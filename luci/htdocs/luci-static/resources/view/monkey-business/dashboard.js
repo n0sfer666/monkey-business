@@ -51,7 +51,7 @@ return view.extend({
 			(g.state === 'updating' ? ' — ' + _('updating…') : '');
 	},
 
-	pollGeo: function(labelEl) {
+	pollGeo: function() {
 		var tries = 0;
 		function step() {
 			return callGeoStatus().then(function(g) {
@@ -218,6 +218,9 @@ return view.extend({
 							else { msg = _('Geo update failed: ') + (g.state || ''); kind = 'warning'; }
 							ui.addNotification(null, E('p', msg), kind);
 						});
+					}).catch(function(e) {
+						ui.hideModal();
+						ui.addNotification(null, E('p', _('Geo update failed: ') + e), 'error');
 					});
 			})
 		}, [ _('Update geo databases') ]);
@@ -287,6 +290,8 @@ return view.extend({
 							if (cell)
 								cell.textContent = (r.latency_ms != null) ? (r.latency_ms + ' ms') : _('down');
 						});
+					}).catch(function(e) {
+						ui.addNotification(null, E('p', _('Latency test failed: ') + e), 'error');
 					});
 				})
 			}, [ _('Test latency') ]),
