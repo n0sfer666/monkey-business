@@ -5,7 +5,8 @@
 # Окружение:
 #   MB_VM_SSH_PORT (2222)  MB_VM_SSH_HOST (root@localhost)
 #   MB_VM_SSH_PASS — пароль для неинтерактивного входа (нужен sshpass). Пусто => спросит пароль.
-#   MB_HTTP_PORT (8090) — только для подсказки с URL LuCI.
+#   MB_HTTP_PORT (8090) — порт LuCI для подсказки (актуален для localhost/dev-VM с пробросом QEMU).
+#   MB_LUCI_URL — переопределить итоговую ссылку LuCI явно (иначе выводится из MB_VM_SSH_HOST).
 set -eu
 
 PORT="${MB_VM_SSH_PORT:-2222}"
@@ -139,4 +140,14 @@ $SSH $SSH_OPTS -p "$PORT" "$HOST" "MB_RESPAWN='$RESPAWN' sh -s" <<'REMOTE'
 		echo ">> WARN: ubus-объект не поднялся. Диагностика: logread | grep -i ucode"
 	fi
 REMOTE
-echo ">> готово. LuCI: http://localhost:$HTTP_PORT (root/root) -> Services -> monkey-business VPN"
+# Ссылка на LuCI выводится из окружения: localhost (dev-VM, проброс QEMU) -> :$HTTP_PORT;
+# реальный хост -> http://<host> (LuCI на :80). MB_LUCI_URL переопределяет явно.
+LUCI_HOST="${HOST##*@}"
+if [ -n "${MB_LUCI_URL:-}" ]; then
+	LUCI_URL="$MB_LUCI_URL"
+elif [ "$LUCI_HOST" = localhost ] || [ "$LUCI_HOST" = 127.0.0.1 ]; then
+	LUCI_URL="http://localhost:$HTTP_PORT"
+else
+	LUCI_URL="http://$LUCI_HOST"
+fi
+echo ">> готово. LuCI: $LUCI_URL (root/root) -> Services -> monkey-business VPN"
