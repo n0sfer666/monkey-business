@@ -66,3 +66,15 @@
 - `7236c70` fix(dev): mktemp geo temp files, shellcheck root/ runtime scripts
 - `4a444ca` fix(luci): handle geo/ping/save-apply rejections, drop dead param
 - `8a2903b` docs: add Russian README and NanoPi guide, nushell command variants
+- `b8349e1` docs(context): spec, plan, report
+
+## Дополнение (follow-up по запросу пользователя): переделка local_region "other"
+Семантика `other` изменена: раньше — полный passthrough (всё direct, custom+mode игнорировались).
+Теперь — нет geo-пресета региона: опускаются только невалидные `geosite:other`/`geoip:other`, сплит
+задаётся custom Direct/Via-VPN списками, private всегда direct, «остальное» — по `routing_mode`.
+Переписаны `buildRouting`+`buildDns`; other-тесты под новую семантику (generator 25); integ
+валидирует other+bypass-local+custom реальным `xray -test`; обновлены `settings.js` (лейбл+тултип)
+и install-nanopi EN/RU §5. `make test` + `make test-integ` зелёные.
+- `31436d1` feat(generator): local_region 'other' drives split via custom lists
+- `bbcfd8f` chore(luci): rename menu title to Monkey Business, expand json formatting
+  (ребрендинг заголовка меню — появился в рабочем дереве из параллельного редактора, подтверждён пользователем)
