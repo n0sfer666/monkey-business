@@ -80,12 +80,12 @@ function haveCurl() {
 function fetchSubscription(url) {
 	let bodyf = '/tmp/mb-sub.body', hdrf = '/tmp/mb-sub.hdr';
 	system('rm -f ' + bodyf + ' ' + hdrf);
+	// тело/заголовки содержат токен/UUID серверов -> umask 077: файлы создаются 0600 сразу,
+	// без окна world-readable во время скачивания; подчистка после чтения ниже.
 	if (haveCurl())
-		runCapture('curl -fsSL -m 25 -D ' + hdrf + ' -o ' + bodyf + ' ' + shq(url));
+		runCapture('umask 077; curl -fsSL -m 25 -D ' + hdrf + ' -o ' + bodyf + ' ' + shq(url));
 	else
-		runCapture('uclient-fetch -q -T 20 -O ' + bodyf + ' ' + shq(url));
-	// тело подписки и заголовки содержат токен/UUID серверов -> права 0600 и подчистка после чтения
-	system('chmod 600 ' + bodyf + ' ' + hdrf + ' 2>/dev/null');
+		runCapture('umask 077; uclient-fetch -q -T 20 -O ' + bodyf + ' ' + shq(url));
 	let body = readfile(bodyf);
 	if (body == null || length(body) == 0) {
 		system('rm -f ' + bodyf + ' ' + hdrf);

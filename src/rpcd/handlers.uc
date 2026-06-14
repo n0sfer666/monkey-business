@@ -11,7 +11,9 @@
 //   setSubscriptionUrl(url)   setUserinfo({used_upload,used_download,total,expire})
 //   fetchSubscription(url) -> { body, userinfo }|null   pingServer(server) -> int(ms)|null
 //   applyConfig(jsonStr) -> errString|null (валидирует + запускает)   stopService()
-//   serviceRunning() -> bool   setEnabled(bool)   updateGeo() -> { status }
+//   serviceRunning() -> bool   setEnabled(bool)   updateGeo(args) -> { status }
+//   setCustomRouting(direct, proxy)   geoStatus() -> { state, geoip, geosite }
+//   geoInstall(which) -> { ok, detail }   checkExit(domain) -> { ip, country, code }|{ error }
 
 import { parse } from "../parser/subscription.uc";
 import { generateJson } from "../generator/xray.uc";
