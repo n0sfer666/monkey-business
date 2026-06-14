@@ -1,5 +1,7 @@
 # Installing monkey-business on a NanoPi R2S
 
+**English** | [Русский](install-nanopi.ru.md)
+
 A detailed, step-by-step walkthrough for getting the VPN client running on a **NanoPi R2S**
 (RK3328, aarch64) that **already runs ImmortalWrt/OpenWrt** and is reachable over SSH.
 
@@ -61,6 +63,15 @@ MB_VM_SSH_HOST=root@<router-ip> \
 MB_VM_SSH_PORT=22 \
 MB_VM_SSH_PASS=<root-password> \
   sh scripts/deploy-vm.sh
+```
+
+```nu
+# nushell
+with-env {
+  MB_VM_SSH_HOST: "root@<router-ip>",
+  MB_VM_SSH_PORT: "22",
+  MB_VM_SSH_PASS: "<root-password>"
+} { sh scripts/deploy-vm.sh }
 ```
 
 What this does:
