@@ -13,7 +13,8 @@
 - **UI:** LuCI client-side JS (luci-base, ubus/rpcd).
 - **Конфиг:** UCI `/etc/config/monkey-business` → генератор → Xray JSON.
 - **Перехват трафика:** nftables TPROXY (fw4 include).
-- **DNS:** dnsmasq + split (RU direct / DoH в туннеле).
+- **DNS:** прозрачный через Xray (клиентский :53 → dns-инбаунд :5300 → dns-модуль со сплитом:
+  регион direct / остальное DoH в туннеле). dnsmasq — резолвер самого роутера.
 - **Geo:** geoip.dat/geosite.dat (скачивание при установке + кнопка обновить).
 
 ## Инструменты разработки
