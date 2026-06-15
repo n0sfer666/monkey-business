@@ -72,6 +72,7 @@ function genConfig(ctx, server) {
 		dns: ctx.getDns(),
 		anti_dpi: ctx.getAntiDpi(),
 		test_socks: true,
+		dns_transparent: true,
 	};
 }
 

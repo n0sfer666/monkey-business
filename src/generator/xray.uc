@@ -42,6 +42,21 @@ function buildSocksTestInbound() {
 	};
 }
 
+const DNS_INBOUND_PORT = 5300;
+
+// Прозрачный DNS: клиентский :53 редиректится firewall'ом сюда, трафик уходит в dns-аутбаунд ->
+// dns-модуль xray применяет сплит (локальный регион direct / остальное DoH в туннеле). Без этого
+// инбаунда клиентский UDP 53 ушёл бы под общий TPROXY и не резолвился. Включается config.dns_transparent.
+function buildDnsInbound(port, dns) {
+	return {
+		tag: "dns-in",
+		listen: "0.0.0.0",
+		port: port,
+		protocol: "dokodemo-door",
+		settings: { address: dns.direct_dns || "223.5.5.5", port: 53, network: "tcp,udp" },
+	};
+}
+
 function buildStreamSettings(s, opts) {
 	opts = opts || {};
 	let ss = { network: s.transport.type };
@@ -205,15 +220,27 @@ function generate(config) {
 	if (isTrue(config.test_socks))
 		push(inbounds, buildSocksTestInbound());
 
+	let outbounds = [
+		buildProxyOutbound(s, opts),
+		{ tag: "direct", protocol: "freedom", settings: {} },
+		{ tag: "block", protocol: "blackhole", settings: {} },
+	];
+
+	let routing = buildRouting(g);
+
+	// прозрачный DNS: dns-инбаунд -> dns-аутбаунд (резолв через dns-модуль со сплитом).
+	// правило dns-in ставится ПЕРВЫМ, чтобы DNS всегда уходил в dns-out (а не под общие правила).
+	if (isTrue(config.dns_transparent)) {
+		push(inbounds, buildDnsInbound(config.dns_port || DNS_INBOUND_PORT, config.dns || {}));
+		push(outbounds, { tag: "dns-out", protocol: "dns", settings: {} });
+		unshift(routing.rules, { type: "field", inboundTag: ["dns-in"], outboundTag: "dns-out" });
+	}
+
 	let out = {
 		log: { loglevel: g.log_level || "warning" },
 		inbounds: inbounds,
-		outbounds: [
-			buildProxyOutbound(s, opts),
-			{ tag: "direct", protocol: "freedom", settings: {} },
-			{ tag: "block", protocol: "blackhole", settings: {} },
-		],
-		routing: buildRouting(g),
+		outbounds: outbounds,
+		routing: routing,
 	};
 
 	if (config.dns != null)

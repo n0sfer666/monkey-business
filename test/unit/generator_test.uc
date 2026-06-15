@@ -123,6 +123,32 @@ test("generate dies without server", function() {
 	assertThrows(function() { generate({ global: {} }); });
 });
 
+test("transparent dns adds dns-in inbound, dns-out outbound, first routing rule", function() {
+	let out = generate({
+		global: { tproxy_port: 12345, routing_mode: "bypass-local", local_region: "ru" },
+		server: SERVER_A,
+		dns: { mode: "split", direct_dns: "77.88.8.8", doh_url: "https://1.1.1.1/dns-query" },
+		dns_transparent: true,
+	});
+	let dnsIn = null;
+	for (let ib in out.inbounds) if (ib.tag == "dns-in") dnsIn = ib;
+	assert(dnsIn != null, "dns-in inbound present");
+	assertEq(dnsIn.protocol, "dokodemo-door");
+	assertEq(dnsIn.port, 5300);
+	let dnsOut = null;
+	for (let ob in out.outbounds) if (ob.tag == "dns-out") dnsOut = ob;
+	assert(dnsOut != null, "dns-out outbound present");
+	assertEq(dnsOut.protocol, "dns");
+	assertEq(out.routing.rules[0].inboundTag, ["dns-in"]);
+	assertEq(out.routing.rules[0].outboundTag, "dns-out");
+});
+
+test("no transparent dns by default (golden unaffected)", function() {
+	let out = generate(cfg({ tproxy_port: 12345, routing_mode: "bypass-local", local_region: "ru" }, SERVER_A));
+	for (let ib in out.inbounds) assert(ib.tag != "dns-in", "no dns-in without flag");
+	for (let ob in out.outbounds) assert(ob.tag != "dns-out", "no dns-out without flag");
+});
+
 const STAGE4_CFG = {
 	global: { tproxy_port: 12345, routing_mode: "bypass-local", local_region: "ru", log_level: "warning", ipv6_block: "1" },
 	server: SERVER_A,
