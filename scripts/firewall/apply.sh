@@ -9,8 +9,11 @@
 # (direct-фолбэк). Локальный direct идёт через Xray (OUTPUT), не LAN-forward, поэтому split не ломается.
 #
 # Параметры через окружение (дефолты — боевые):
-#   MB_TPROXY_PORT (12345) MB_FWMARK (1) MB_RT_TABLE (100)
+#   MB_TPROXY_PORT (12345) MB_FWMARK (1) MB_RT_TABLE (100) MB_DNS_PORT (5300)
 #   MB_LAN_IFACE (br-lan)  MB_KILL_SWITCH (1)  MB_NFT_COUNTER ("" | "counter" для тестов)
+#
+# DNS: клиентский :53 НЕ уходит под общий TPROXY (raw-UDP-53 через прокси не ходит), а редиректится
+# на локальный DNS-инбаунд Xray (MB_DNS_PORT), где dns-модуль применяет сплит. Иначе DNS клиентов мёртв.
 set -eu
 
 PORT="${MB_TPROXY_PORT:-12345}"
@@ -18,6 +21,7 @@ MARK="${MB_FWMARK:-1}"
 TABLE="${MB_RT_TABLE:-100}"
 LAN="${MB_LAN_IFACE:-br-lan}"
 KILL="${MB_KILL_SWITCH:-1}"
+DNS_PORT="${MB_DNS_PORT:-5300}"
 COUNTER="${MB_NFT_COUNTER:-}"
 
 V4_LOCAL="{ 127.0.0.0/8, 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, 100.64.0.0/10, 224.0.0.0/4, 240.0.0.0/4 }"
@@ -45,7 +49,12 @@ table inet monkey_business {
 		type filter hook prerouting priority mangle; policy accept;
 		ip daddr $V4_LOCAL return
 		ip6 daddr $V6_LOCAL return
+		iifname "$LAN" meta l4proto { tcp, udp } th dport 53 return
 		iifname "$LAN" meta l4proto { tcp, udp } $COUNTER tproxy to :$PORT meta mark set $MARK
+	}
+	chain dns_dnat {
+		type nat hook prerouting priority -105; policy accept;
+		iifname "$LAN" meta l4proto { tcp, udp } th dport 53 $COUNTER redirect to :$DNS_PORT
 	}$FORWARD
 }
 EOF
@@ -53,4 +62,4 @@ EOF
 ip rule add fwmark "$MARK" lookup "$TABLE" 2>/dev/null || true
 ip route add local 0.0.0.0/0 dev lo table "$TABLE" 2>/dev/null || true
 
-echo "tproxy firewall applied (port=$PORT mark=$MARK lan=$LAN kill_switch=$KILL)"
+echo "tproxy firewall applied (port=$PORT mark=$MARK lan=$LAN kill_switch=$KILL dns=>:$DNS_PORT)"

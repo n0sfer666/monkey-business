@@ -24,7 +24,8 @@ let cfg = {
 	global: $1,
 	server: server,
 	anti_dpi: { xhttp_padding: "1" },
-	dns: { mode: "split", direct_dns: "223.5.5.5", doh_url: "https://1.1.1.1/dns-query" }
+	dns: { mode: "split", direct_dns: "223.5.5.5", doh_url: "https://1.1.1.1/dns-query" },
+	dns_transparent: true
 };
 writefile("$2", sprintf("%J", generate(cfg)));
 UEOF
