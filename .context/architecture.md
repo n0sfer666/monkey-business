@@ -14,6 +14,7 @@
 │  Lib (src/lib/*.uc)                          │  общие утилиты (uri, validation)
 ├─────────────────────────────────────────────┤
 │  procd init → Xray-core                       │
+│  cron watchdog (watchdog.sh, 1/мин)           │  проба exit через VPN; провал → fail-open direct
 │  nftables TPROXY (scripts/firewall/)          │  перехват TCP+UDP; :53 → dns-in (не tproxy)
 │  Xray transparent DNS (dns-in :5300 + split)  │  клиентский :53 редиректится в dns-модуль
 └─────────────────────────────────────────────┘
