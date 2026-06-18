@@ -62,6 +62,10 @@ cpf root/usr/share/monkey-business/geo.sh "$stage/usr/share/monkey-business/geo.
 chmod 755 "$stage/usr/share/monkey-business/geo.sh"
 cpf root/usr/share/monkey-business/watchdog.sh "$stage/usr/share/monkey-business/watchdog.sh"
 chmod 755 "$stage/usr/share/monkey-business/watchdog.sh"
+cpf root/usr/share/monkey-business/boothealth.sh "$stage/usr/share/monkey-business/boothealth.sh"
+chmod 755 "$stage/usr/share/monkey-business/boothealth.sh"
+cpf root/etc/init.d/mb-boothealth "$stage/etc/init.d/mb-boothealth"
+chmod 755 "$stage/etc/init.d/mb-boothealth"
 
 # LuCI views + menu + acl
 mkdir -p "$stage/www/luci-static/resources/view/monkey-business"
@@ -95,7 +99,7 @@ $SSH $SSH_OPTS -p "$PORT" "$HOST" "MB_RESPAWN='$RESPAWN' sh -s" <<'REMOTE'
 	rm -f /usr/share/rpcd/ucode/._* /usr/share/rpcd/ucode/lib/monkey-business/._* 2>/dev/null || true
 	# macOS tar сохраняет локальный uid -> вернуть владельца root:root на развёрнутых путях
 	for d in /usr/share/rpcd/ucode/monkey-business.uc /usr/share/rpcd/ucode/lib/monkey-business \
-	         /etc/config/monkey-business /etc/init.d/monkey-business \
+	         /etc/config/monkey-business /etc/init.d/monkey-business /etc/init.d/mb-boothealth \
 	         /usr/share/monkey-business \
 	         /www/luci-static/resources/view/monkey-business \
 	         /usr/share/luci/menu.d/luci-app-monkey-business.json \
@@ -103,16 +107,25 @@ $SSH $SSH_OPTS -p "$PORT" "$HOST" "MB_RESPAWN='$RESPAWN' sh -s" <<'REMOTE'
 		chown -R root:root "$d" 2>/dev/null || true
 	done
 	chmod 644 /usr/share/rpcd/ucode/monkey-business.uc
-	chmod +x /etc/init.d/monkey-business /usr/share/monkey-business/firewall/*.sh \
-		/usr/share/monkey-business/watchdog.sh
+	chmod +x /etc/init.d/monkey-business /etc/init.d/mb-boothealth \
+		/usr/share/monkey-business/firewall/*.sh \
+		/usr/share/monkey-business/watchdog.sh /usr/share/monkey-business/boothealth.sh
 	rm -f /tmp/mb-deploy.tgz /tmp/luci-indexcache* 2>/dev/null || true
 
-	# connectivity watchdog: cron раз в минуту. Скрипт сам гейтит частоту (60с/10мин) по tmpfs-стейту.
-	# Идемпотентно: строку не дублируем. crond включаем (на свежем образе бывает выключен).
+	# boot-resilience: ранний init-хук (детект unclean/ro на загрузке, clean на стопе) + инициализация
+	# маркера сейчас (мы успешно поднялись -> текущее состояние running, не ложный алярм на след. ребуте).
+	/etc/init.d/mb-boothealth enable >/dev/null 2>&1 || true
+	/usr/share/monkey-business/boothealth.sh boot >/dev/null 2>&1 || true
+
+	# cron: watchdog раз в минуту (сам гейтит частоту 60с/10мин по tmpfs); boothealth beat раз в 5 мин
+	# (sync + heartbeat -> меньше теряется при пропаже питания). Идемпотентно, crond включаем.
 	mkdir -p /etc/crontabs
 	WD_LINE='* * * * * /usr/share/monkey-business/watchdog.sh >/dev/null 2>&1'
+	BH_LINE='*/5 * * * * /usr/share/monkey-business/boothealth.sh beat >/dev/null 2>&1'
 	grep -q 'monkey-business/watchdog.sh' /etc/crontabs/root 2>/dev/null \
 		|| printf '%s\n' "$WD_LINE" >> /etc/crontabs/root
+	grep -q 'monkey-business/boothealth.sh' /etc/crontabs/root 2>/dev/null \
+		|| printf '%s\n' "$BH_LINE" >> /etc/crontabs/root
 	/etc/init.d/cron enable >/dev/null 2>&1 || true
 	/etc/init.d/cron restart >/dev/null 2>&1 || true
 

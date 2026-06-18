@@ -1,0 +1,21 @@
+#!/bin/sh /etc/rc.common
+# Boot-resilience monkey-business: на загрузке детект unclean/ro + remount,rw; на стопе — отметка
+# clean. Профилактический sync делает cron (boothealth.sh beat). Логика — boothealth.sh.
+# ВЕРИФИКАЦИЯ: на устройстве (нужны procd + реальный /proc/mounts). Логика покрыта host-тестом.
+
+START=11
+STOP=99
+
+BH=/usr/share/monkey-business/boothealth.sh
+
+boot() {
+	"$BH" boot
+}
+
+start() {
+	:
+}
+
+stop() {
+	"$BH" clean
+}
