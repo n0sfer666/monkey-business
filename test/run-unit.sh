@@ -14,5 +14,14 @@ for f in test/unit/*.uc; do
 	fi
 done
 
+for f in test/unit/*_test.sh; do
+	[ -e "$f" ] || continue
+	count=$((count + 1))
+	printf '\n=== %s ===\n' "$f"
+	if ! sh "$f"; then
+		fail=1
+	fi
+done
+
 printf '\n%d test file(s) run\n' "$count"
 exit "$fail"
