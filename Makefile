@@ -3,7 +3,7 @@ INTEG := monkey-business-integ
 ROOT  := $(shell pwd)
 RUN   := docker run --rm -v $(ROOT):/w -w /w $(IMAGE)
 
-.PHONY: help test-build check lint test-unit test-integ test package dev-up dev-provision dev-console dev-status dev-ssh dev-down dev-deploy dev-rebuild dev-test-split clean
+.PHONY: help test-build check lint test-unit test-integ test package deploy dev-up dev-provision dev-console dev-status dev-ssh dev-down dev-deploy dev-rebuild dev-test-split clean
 
 help:
 	@echo "monkey-business — targets:"
@@ -13,6 +13,7 @@ help:
 	@echo "  make test-integ  netns integration (Linux/привилегированный контейнер)"
 	@echo "  make test        lint + check + test-unit"
 	@echo "  make package     сборка ipk (нужен OpenWrt SDK)"
+	@echo "  make deploy HOST=root@<ip>  залить/обновить на устройство (lint+check+test перед заливкой)"
 	@echo "  make dev-up        запуск dev-VM в QEMU фоном (нужен qemu)"
 	@echo "  make dev-provision автонастройка VM: сеть+пароль+LuCI (один раз)"
 	@echo "  make dev-ssh       ssh в dev-VM (root@localhost:2222, пароль root)"
@@ -42,6 +43,9 @@ test: lint check test-unit
 
 package:
 	@sh scripts/package.sh
+
+deploy:
+	@MB_HOST=$(HOST) sh scripts/deploy.sh
 
 dev-up:
 	@sh scripts/dev-vm.sh up
