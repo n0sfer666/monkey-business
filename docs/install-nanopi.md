@@ -225,6 +225,11 @@ Verify the exit path:
 - **Two NICs.** One R2S Ethernet port is behind USB3; make sure your LAN bridge (`br-lan`) is the
   one clients are on. The firewall intercepts `iifname "br-lan"` by default — if your LAN interface
   differs, set `uci set monkey-business.global.lan_iface=<iface>` and re-apply.
+- **A *Direct* entry looks ignored (e.g. `ping <IP>` from a LAN client times out).** `ping`/ICMP
+  is not a valid test: only TCP/UDP is intercepted, so ICMP to any public IP is dropped by the
+  kill-switch whether or not the address is on the *Direct* list. Direct routing happens inside
+  Xray (there is no kernel-level bypass), so test with `curl`/`nc` (TCP), or add the host to *Direct*
+  and confirm with **Dashboard → Check exit IP** — not with ping.
 - **`geo databases missing` on Turn on.** Do Section 3 first.
 - **Stuck on "Starting…".** Xray crashed — `logread | grep xray`. Usual causes: wrong Reality
   params on the server entry, or a TPROXY port already in use.
