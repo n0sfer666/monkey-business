@@ -25,7 +25,7 @@ function buildInbound(g) {
 		protocol: "dokodemo-door",
 		settings: { network: "tcp,udp", followRedirect: true },
 		streamSettings: { sockopt: { tproxy: "tproxy" } },
-		sniffing: { enabled: true, destOverride: ["http", "tls", "quic"], routeOnly: false },
+		sniffing: { enabled: true, destOverride: ["http", "tls", "quic"], routeOnly: true },
 	};
 }
 
@@ -173,13 +173,14 @@ function buildRouting(g) {
 	let other = (region == "other");
 	let rules = [];
 
-	if (isTrue(g.ipv6_block))
-		push(rules, { type: "field", ip: ["::/0"], outboundTag: "block" });
-
-	// custom direct/proxy — только в split-tunnel (не в global), ПЕРЕД правилами режима
+	// custom direct/proxy — только в split-tunnel (не в global), ПЕРЕД правилами режима.
+	// Должны идти ДО ipv6-block: явный whitelist (в т.ч. IPv6) перекрывает блок ::/0.
 	if (mode != "global")
 		for (let r in customRules(g))
 			push(rules, r);
+
+	if (isTrue(g.ipv6_block))
+		push(rules, { type: "field", ip: ["::/0"], outboundTag: "block" });
 
 	let modeRules;
 	if (mode == "global") {
