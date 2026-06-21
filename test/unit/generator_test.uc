@@ -172,6 +172,23 @@ test("no ipv6 rule when ipv6_block off", function() {
 	assertEq(r.rules[0].outboundTag, "direct");
 });
 
+test("custom direct precedes ipv6 block (whitelist overrides ::/0)", function() {
+	let r = buildRouting({
+		routing_mode: "bypass-local", local_region: "ru", ipv6_block: "1",
+		custom_direct: "2001:db8::1\nexample.com",
+	});
+	let blockIdx = null, directIp6Idx = null, directDomIdx = null, i = 0;
+	for (let rule in r.rules) {
+		if (rule.outboundTag == "block" && exists(rule, "ip") && index(rule.ip, "::/0") >= 0) blockIdx = i;
+		if (rule.outboundTag == "direct" && exists(rule, "ip") && index(rule.ip, "2001:db8::1") >= 0) directIp6Idx = i;
+		if (rule.outboundTag == "direct" && exists(rule, "domain") && index(rule.domain, "example.com") >= 0) directDomIdx = i;
+		i++;
+	}
+	assert(directIp6Idx != null && blockIdx != null, "both rules present");
+	assert(directIp6Idx < blockIdx, "custom direct ipv6 before ::/0 block");
+	assert(directDomIdx < blockIdx, "custom direct domain before ::/0 block");
+});
+
 test("dns split: direct for region, doh fallback", function() {
 	let d = buildDns({ direct_dns: "223.5.5.5", doh_url: "https://1.1.1.1/dns-query" }, "ru", "1");
 	assertEq(d.servers[0].address, "223.5.5.5");

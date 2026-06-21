@@ -23,7 +23,7 @@
 					"tls",
 					"quic"
 				],
-				"routeOnly": false
+				"routeOnly": true
 			}
 		}
 	],
