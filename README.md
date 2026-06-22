@@ -25,7 +25,15 @@ The app runs on the router. Two ways to get it there.
 
 ### Option A — deploy over SSH (no packaging)
 
-If ImmortalWrt/OpenWrt is already on the router and you have SSH access, lay the files out directly:
+If ImmortalWrt/OpenWrt is already on the router and you have SSH access, the one-liner is
+`make deploy` — a wrapper (`scripts/deploy.sh`) that runs the local checks first, then deploys
+with device defaults (SSH :22) and keeps your `/etc/config/monkey-business` across re-runs:
+
+```sh
+make deploy HOST=root@<router-ip>          # add MB_PASS=… if you don't use an SSH key
+```
+
+It calls `scripts/deploy-vm.sh` underneath, which you can also run directly:
 
 ```sh
 MB_VM_SSH_HOST=root@<router-ip> MB_VM_SSH_PORT=22 MB_VM_SSH_PASS=<password> \
