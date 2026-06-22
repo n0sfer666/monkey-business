@@ -26,7 +26,15 @@ kill-switch, блокировка утечки IPv6, split-DNS поверх DoH,
 
 ### Вариант A — деплой по SSH (без сборки пакета)
 
-Если ImmortalWrt/OpenWrt уже стоит на роутере и есть SSH-доступ, разложите файлы напрямую:
+Если ImmortalWrt/OpenWrt уже стоит на роутере и есть SSH-доступ, команда в одну строку —
+`make deploy`: обёртка (`scripts/deploy.sh`), которая сначала гонит локальные проверки, затем
+деплоит с device-дефолтами (SSH :22) и сохраняет ваш `/etc/config/monkey-business` между запусками:
+
+```sh
+make deploy HOST=root@<router-ip>          # добавьте MB_PASS=… если без SSH-ключа
+```
+
+Под капотом вызывается `scripts/deploy-vm.sh` — его можно запустить и напрямую:
 
 ```sh
 MB_VM_SSH_HOST=root@<router-ip> MB_VM_SSH_PORT=22 MB_VM_SSH_PASS=<password> \

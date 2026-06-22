@@ -56,7 +56,23 @@ The app needs these packages on the router:
 
 ## 2. Deploy the application files
 
-The easiest path mirrors the dev workflow but targets the R2S over SSH. From the repo checkout:
+**Recommended: `make deploy`.** From the repo checkout:
+
+```sh
+make deploy HOST=root@<router-ip>
+```
+
+`make deploy` is a thin wrapper (`scripts/deploy.sh`) around the dev deployer. It exists so a
+push to real hardware is safe and one-line: it first runs the local checks
+(`make lint check test-unit`) so you never ship broken code, then sets the device defaults
+(SSH port 22) and hands off to `scripts/deploy-vm.sh` for the actual copy. Re-running it is an
+**update** — files are refreshed while your `/etc/config/monkey-business` (servers, selection,
+settings) is kept intact. Optional env overrides (prefix the command, e.g.
+`MB_PASS=secret make deploy HOST=…`): `MB_PORT` (SSH port), `MB_PASS` (root password if you don't
+use a key), `MB_SKIP_CHECKS=1` (skip the pre-flight checks when Docker isn't available).
+
+Under the hood it calls `scripts/deploy-vm.sh`, which you can also run directly for finer control
+(this is what `make deploy` ends up executing):
 
 ```sh
 MB_VM_SSH_HOST=root@<router-ip> \
