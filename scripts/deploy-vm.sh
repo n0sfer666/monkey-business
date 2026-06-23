@@ -62,6 +62,8 @@ cpf root/usr/share/monkey-business/geo.sh "$stage/usr/share/monkey-business/geo.
 chmod 755 "$stage/usr/share/monkey-business/geo.sh"
 cpf root/usr/share/monkey-business/watchdog.sh "$stage/usr/share/monkey-business/watchdog.sh"
 chmod 755 "$stage/usr/share/monkey-business/watchdog.sh"
+cpf root/usr/share/monkey-business/probes.sh "$stage/usr/share/monkey-business/probes.sh"
+chmod 644 "$stage/usr/share/monkey-business/probes.sh"
 cpf root/usr/share/monkey-business/boothealth.sh "$stage/usr/share/monkey-business/boothealth.sh"
 chmod 755 "$stage/usr/share/monkey-business/boothealth.sh"
 cpf root/etc/init.d/mb-boothealth "$stage/etc/init.d/mb-boothealth"
