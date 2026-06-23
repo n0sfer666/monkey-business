@@ -1,69 +1,50 @@
 #!/bin/sh
-# Connectivity watchdog для monkey-business VPN. Запускается cron'ом раз в минуту.
-#
-# ЗАЧЕМ: проблема с VPN-сервером не должна валить весь LAN. При kill_switch=1 firewall
-# fail-closed — упавший Xray = дроп всего форвардимого трафика. Watchdog детектит провал и
-# делает `init.d stop` (flush.sh снимает kill-switch → LAN падает на direct), а затем
-# периодически пробует поднять VPN обратно. Так связь не «отражается на устройстве в целом».
-#
-# КРИТЕРИЙ ЗДОРОВЬЯ: exit-IP через socks (трафик в туннеле) НЕ равен домашнему IP (direct).
-# Это буквальное «туннель несёт трафик» — не зависит от geoip, имени сервера и от того, что
-# цель пробы попала в direct-лист. Цель — echo-IP сервис, который маршрутизируется через proxy
-# (см. PROBE_URLS), с фолбэком на случай отказа одного хоста.
-#
-# КОНТРАКТ (env-override для тестов; дефолты — боевые):
-#   MB_WD_FAIL_LIMIT(5) MB_WD_POLL(60) MB_WD_BACKOFF(600) MB_WD_RECOVERY_TRIES(5)
-#   MB_WD_TIMEOUT(10) MB_WD_REC_TIMEOUT(6) MB_WD_LOG_MAX(65536)
-#   MB_WD_NOW (epoch override) — для детерминированных тестов.
-#   MB_WD_SOURCED=1 — не запускать main (тест переопределяет функции и зовёт tick).
-#
-# СОСТОЯНИЕ — только в tmpfs (флэш не изнашивается). ЛОГ /usr/local/server.main.log пишется
-# ТОЛЬКО на переходах состояний (редко) и ротируется по размеру.
+# Connectivity watchdog для monkey-business VPN (cron раз в минуту). Стратегия и машина состояний
+# — .context/notes/watchdog.md; сетевые пробы — probes.sh. Reconnect-first: при провале сперва
+# bounce xray (kill-switch держится), и лишь если не помогло — init.d stop → LAN на direct.
+# Env-override (дефолты боевые): FAIL_LIMIT(3) RECONNECT_LIMIT(2) POLL(60) BACKOFF(600)
+# EXIT_EVERY(5) REC_TRIES(3) RECOVERY_TRIES(5) RECONNECT_WAIT(5) TIMEOUT(10) REC_TIMEOUT(6)
+# LOG_MAX(65536) — все с префиксом MB_WD_. MB_WD_NOW(epoch), MB_WD_LIB(каталог probes.sh),
+# MB_WD_SOURCED=1(тест зовёт tick без main).
 set -u
 
 CONFIG=monkey-business
 INIT=/etc/init.d/monkey-business
-SOCKS=127.0.0.1:10808
-# echo-IP цели (plaintext IP в теле). Должны идти через proxy: НЕ держать в direct-листе.
-PROBE_URLS='https://api.ipify.org https://ifconfig.me/ip https://icanhazip.com'
-
 STATE_DIR=/tmp/mb-watchdog
 STATE="$STATE_DIR/state"
 LOCK="$STATE_DIR/lock"
 LOG=/usr/local/server.main.log
 
-FAIL_LIMIT="${MB_WD_FAIL_LIMIT:-5}"
+FAIL_LIMIT="${MB_WD_FAIL_LIMIT:-3}"
+RECONNECT_LIMIT="${MB_WD_RECONNECT_LIMIT:-2}"
 POLL="${MB_WD_POLL:-60}"
 BACKOFF="${MB_WD_BACKOFF:-600}"
+EXIT_EVERY="${MB_WD_EXIT_EVERY:-5}"
+REC_TRIES="${MB_WD_REC_TRIES:-3}"
 RECOVERY_TRIES="${MB_WD_RECOVERY_TRIES:-5}"
+RECONNECT_WAIT="${MB_WD_RECONNECT_WAIT:-5}"
 TIMEOUT="${MB_WD_TIMEOUT:-10}"
 REC_TIMEOUT="${MB_WD_REC_TIMEOUT:-6}"
 LOG_MAX="${MB_WD_LOG_MAX:-65536}"
+MB_WD_LIB="${MB_WD_LIB:-$(dirname "$0")}"
+[ -f "$MB_WD_LIB/probes.sh" ] || MB_WD_LIB=/usr/share/monkey-business
+# shellcheck source=root/usr/share/monkey-business/probes.sh disable=SC1091
+. "$MB_WD_LIB/probes.sh"
 
 now() { echo "${MB_WD_NOW:-$(date +%s)}"; }
-sig() { printf '%s' "${1:-}" | cksum | cut -d' ' -f1; }            # стабильный хеш tag (без кавычек)
-sane() { printf '%s' "${1:-}" | tr -cd 'A-Za-z0-9.:_-'; }         # безопасно для source state
-
+sig() { printf '%s' "${1:-}" | cksum | cut -d' ' -f1; }
+sane() { printf '%s' "${1:-}" | tr -cd 'A-Za-z0-9.:_-'; }
 read_intent() { uci -q get "$CONFIG.global.enabled" 2>/dev/null || echo 0; }
 selected_tag() { uci -q get "$CONFIG.selected.server" 2>/dev/null || echo ''; }
 vpn_running() { pidof xray >/dev/null 2>&1; }
 vpn_start() { $INIT start >/dev/null 2>&1; sleep 5; }
 vpn_stop() { $INIT stop >/dev/null 2>&1; }
-
-extract_ip() { printf '%s' "${1:-}" | grep -oE '([0-9]{1,3}\.){3}[0-9]{1,3}' | head -1; }
-
-# Первый echo-хост, отдавший валидный IPv4. $1 — доп. аргументы curl (напр. -x socks5h://...),
-# $2 — таймаут. Форсим -4: домашний и exit-IP сравнимы, xray-аутбаунд дилит по IPv4. Печатает IP.
-probe_via() {
-	for u in $PROBE_URLS; do
-		# shellcheck disable=SC2086
-		ip=$(extract_ip "$(curl -s -4 $1 --max-time "$2" "$u" 2>/dev/null)")
-		[ -n "$ip" ] && { printf '%s' "$ip"; return; }
-	done
+vpn_reconnect() {
+	# shellcheck disable=SC2046
+	kill $(pidof xray) 2>/dev/null || true
+	sleep "$RECONNECT_WAIT"
+	vpn_running || vpn_start
 }
-
-vpn_probe() { probe_via "-x socks5h://$SOCKS" "$1"; }              # exit-IP через туннель
-direct_probe() { probe_via "" "$TIMEOUT"; }                       # домашний (direct) IP
 
 log_event() {
 	mkdir -p "$(dirname "$LOG")" 2>/dev/null || true
@@ -75,35 +56,40 @@ log_event() {
 }
 
 load_state() {
-	WD_PHASE=healthy; WD_FAILS=0; WD_BASE_IP=; WD_HOME_IP=; WD_TAGSIG=0; WD_NEXT=0; WD_DOWNKIND=
+	WD_PHASE=healthy; WD_FAILS=0; WD_BASE_IP=; WD_HOME_IP=; WD_TAGSIG=0; WD_NEXT=0
+	WD_DOWNKIND=; WD_RECTRIES=0; WD_EXITDUE=0
 	# shellcheck disable=SC1090
 	[ -f "$STATE" ] && . "$STATE"
 }
-
 save_state() {
-	{
-		echo "WD_PHASE=$(sane "$WD_PHASE")"
-		echo "WD_FAILS=$(sane "$WD_FAILS")"
-		echo "WD_BASE_IP=$(sane "$WD_BASE_IP")"
-		echo "WD_HOME_IP=$(sane "$WD_HOME_IP")"
-		echo "WD_TAGSIG=$(sane "$WD_TAGSIG")"
-		echo "WD_NEXT=$(sane "$WD_NEXT")"
-		echo "WD_DOWNKIND=$(sane "$WD_DOWNKIND")"
-	} > "$STATE"
+	printf 'WD_PHASE=%s\nWD_FAILS=%s\nWD_BASE_IP=%s\nWD_HOME_IP=%s\nWD_TAGSIG=%s\nWD_NEXT=%s\nWD_DOWNKIND=%s\nWD_RECTRIES=%s\nWD_EXITDUE=%s\n' \
+		"$(sane "$WD_PHASE")" "$(sane "$WD_FAILS")" "$(sane "$WD_BASE_IP")" "$(sane "$WD_HOME_IP")" \
+		"$(sane "$WD_TAGSIG")" "$(sane "$WD_NEXT")" "$(sane "$WD_DOWNKIND")" "$(sane "$WD_RECTRIES")" \
+		"$(sane "$WD_EXITDUE")" > "$STATE"
 }
 
-# Здоров, если exit-IP валиден И отличается от домашнего (трафик реально в туннеле, не утёк
-# direct). Пустой WD_HOME_IP (домашний ещё не известен) → принять любой валидный exit-IP.
-# Печатает "ok <ip>" | "fail".
+# Здоров, если exit-IP валиден И отличается от домашнего; пустой WD_HOME_IP → любой валидный.
 eval_exit() {
 	ip=$(sane "${1:-}")
 	[ -n "$ip" ] || { echo fail; return; }
 	[ -n "$WD_HOME_IP" ] && [ "$ip" = "$WD_HOME_IP" ] && { echo fail; return; }
 	echo "ok $ip"
 }
-
 refresh_home() { h=$(direct_probe); [ -n "$h" ] && WD_HOME_IP=$(sane "$h"); }
 
+# 0 — здоров. liveness обязателен; exit-IP сверка при force ($1=1) или раз в EXIT_EVERY циклов.
+health_check() {
+	live_probe || return 1
+	WD_EXITDUE=$((WD_EXITDUE + 1))
+	if [ "${1:-0}" = 1 ] || [ "$WD_EXITDUE" -ge "$EXIT_EVERY" ]; then
+		WD_EXITDUE=0
+		refresh_home
+		res=$(eval_exit "$(vpn_probe "${2:-$TIMEOUT}")")
+		[ "${res%% *}" = ok ] || return 1
+		WD_BASE_IP=${res#ok }
+	fi
+	return 0
+}
 tick() {
 	[ "$(read_intent)" = 1 ] || { rm -f "$STATE" 2>/dev/null || true; return 0; }
 
@@ -113,26 +99,23 @@ tick() {
 
 	tagsig=$(sig "$(selected_tag)")
 	if [ "$tagsig" != "$WD_TAGSIG" ]; then
-		WD_TAGSIG=$tagsig; WD_BASE_IP=; WD_FAILS=0; WD_PHASE=healthy
+		WD_TAGSIG=$tagsig; WD_BASE_IP=; WD_FAILS=0; WD_RECTRIES=0; WD_EXITDUE=0; WD_PHASE=healthy
 	fi
 
 	case "$WD_PHASE" in
-		healthy) tick_healthy ;;
-		down)    tick_down ;;
-		*)       WD_PHASE=healthy; WD_NEXT=$((t + POLL)) ;;
+		healthy)      tick_healthy ;;
+		reconnecting) tick_reconnecting ;;
+		down)         tick_down ;;
+		*)            WD_PHASE=healthy; WD_NEXT=$((t + POLL)) ;;
 	esac
 	save_state
 }
 
 tick_healthy() {
 	vpn_running || vpn_start
-	refresh_home
-	res=$(eval_exit "$(vpn_probe "$TIMEOUT")")
 
-	if [ "${res%% *}" = ok ]; then
-		WD_BASE_IP=${res#ok }
-		WD_FAILS=0; WD_NEXT=$((t + POLL))
-		return
+	if health_check 0; then
+		WD_FAILS=0; WD_NEXT=$((t + POLL)); return
 	fi
 
 	WD_FAILS=$((WD_FAILS + 1))
@@ -140,15 +123,42 @@ tick_healthy() {
 		WD_NEXT=$((t + POLL)); return
 	fi
 
-	vpn_stop
-	if [ -n "$(direct_probe)" ]; then
-		WD_DOWNKIND=vpn
-		log_event "VPN exit failing ${FAIL_LIMIT}x (home ${WD_HOME_IP:-?}, last exit ${WD_BASE_IP:-?}). VPN stopped, LAN on direct."
-	else
-		WD_DOWNKIND=net
+	if [ -z "$(direct_probe)" ]; then
+		vpn_stop; WD_DOWNKIND=net
 		log_event "No connectivity: VPN and direct probes both failing. VPN stopped."
+		WD_PHASE=down; WD_FAILS=0; WD_NEXT=$((t + BACKOFF)); return
 	fi
-	WD_PHASE=down; WD_FAILS=0; WD_NEXT=$((t + BACKOFF))
+
+	WD_DOWNKIND=vpn
+	log_event "VPN exit failing ${FAIL_LIMIT}x (home ${WD_HOME_IP:-?}, last exit ${WD_BASE_IP:-?}). Reconnecting (kill-switch held)."
+	WD_PHASE=reconnecting; WD_RECTRIES=0; WD_FAILS=0; WD_NEXT=$t
+}
+
+tick_reconnecting() {
+	if [ -z "$(direct_probe)" ]; then
+		vpn_stop; WD_DOWNKIND=net
+		log_event "Network down during reconnect. VPN stopped, LAN on direct."
+		WD_PHASE=down; WD_NEXT=$((t + BACKOFF)); return
+	fi
+
+	vpn_reconnect
+	i=0
+	while [ "$i" -lt "$REC_TRIES" ]; do
+		if health_check 1 "$REC_TIMEOUT"; then
+			log_event "VPN reconnected (exit ${WD_BASE_IP:-?}). Resuming monitoring."
+			WD_PHASE=healthy; WD_FAILS=0; WD_RECTRIES=0; WD_NEXT=$((t + POLL)); return
+		fi
+		i=$((i + 1)); sleep 2
+	done
+
+	WD_RECTRIES=$((WD_RECTRIES + 1))
+	if [ "$WD_RECTRIES" -lt "$RECONNECT_LIMIT" ]; then
+		WD_NEXT=$((t + POLL)); return
+	fi
+
+	vpn_stop; WD_DOWNKIND=vpn
+	log_event "Reconnect failed ${RECONNECT_LIMIT}x. VPN stopped, LAN on direct."
+	WD_PHASE=down; WD_RECTRIES=0; WD_NEXT=$((t + BACKOFF))
 }
 
 tick_down() {
@@ -164,16 +174,13 @@ tick_down() {
 	vpn_start
 	i=0; ok=0
 	while [ "$i" -lt "$RECOVERY_TRIES" ]; do
-		res=$(eval_exit "$(vpn_probe "$REC_TIMEOUT")")
-		if [ "${res%% *}" = ok ]; then
-			WD_BASE_IP=${res#ok }; ok=1; break
-		fi
+		if health_check 1 "$REC_TIMEOUT"; then ok=1; break; fi
 		i=$((i + 1)); sleep 2
 	done
 
 	if [ "$ok" = 1 ]; then
 		log_event "VPN restored (exit ${WD_BASE_IP:-?}). Resuming monitoring."
-		WD_PHASE=healthy; WD_FAILS=0; WD_DOWNKIND=; WD_NEXT=$((t + POLL))
+		WD_PHASE=healthy; WD_FAILS=0; WD_RECTRIES=0; WD_DOWNKIND=; WD_NEXT=$((t + POLL))
 	else
 		vpn_stop
 		[ "$WD_DOWNKIND" != vpn ] && log_event "Network up but VPN still failing. Staying on direct."
