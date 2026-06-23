@@ -6,6 +6,11 @@
 # делает `init.d stop` (flush.sh снимает kill-switch → LAN падает на direct), а затем
 # периодически пробует поднять VPN обратно. Так связь не «отражается на устройстве в целом».
 #
+# КРИТЕРИЙ ЗДОРОВЬЯ: exit-IP через socks (трафик в туннеле) НЕ равен домашнему IP (direct).
+# Это буквальное «туннель несёт трафик» — не зависит от geoip, имени сервера и от того, что
+# цель пробы попала в direct-лист. Цель — echo-IP сервис, который маршрутизируется через proxy
+# (см. PROBE_URLS), с фолбэком на случай отказа одного хоста.
+#
 # КОНТРАКТ (env-override для тестов; дефолты — боевые):
 #   MB_WD_FAIL_LIMIT(5) MB_WD_POLL(60) MB_WD_BACKOFF(600) MB_WD_RECOVERY_TRIES(5)
 #   MB_WD_TIMEOUT(10) MB_WD_REC_TIMEOUT(6) MB_WD_LOG_MAX(65536)
@@ -19,8 +24,8 @@ set -u
 CONFIG=monkey-business
 INIT=/etc/init.d/monkey-business
 SOCKS=127.0.0.1:10808
-PROBE_PATH='/json?fields=status,message,query,country,countryCode'
-PROBE_HOST='ip-api.com'
+# echo-IP цели (plaintext IP в теле). Должны идти через proxy: НЕ держать в direct-листе.
+PROBE_URLS='https://api.ipify.org https://ifconfig.me/ip https://icanhazip.com'
 
 STATE_DIR=/tmp/mb-watchdog
 STATE="$STATE_DIR/state"
@@ -45,29 +50,20 @@ vpn_running() { pidof xray >/dev/null 2>&1; }
 vpn_start() { $INIT start >/dev/null 2>&1; sleep 5; }
 vpn_stop() { $INIT stop >/dev/null 2>&1; }
 
-vpn_probe() { curl -s -x "socks5h://$SOCKS" --max-time "$1" "http://$PROBE_HOST$PROBE_PATH" 2>/dev/null; }
-direct_probe() { curl -s --max-time "$TIMEOUT" "http://$PROBE_HOST$PROBE_PATH" 2>/dev/null; }
+extract_ip() { printf '%s' "${1:-}" | grep -oE '([0-9]{1,3}\.){3}[0-9]{1,3}' | head -1; }
 
-jfield() { printf '%s' "${1:-}" | grep -oE "\"$2\":\"[^\"]*\"" | head -1 | cut -d'"' -f4; }
-
-# Подсказка ожидаемого countryCode из имени сервера (поддержка «сверки со страной сервера»).
-hint_cc() {
-	t=$(printf '%s' "$(selected_tag)" | tr '[:upper:]' '[:lower:]')
-	case "$t" in
-		*estonia*|*tallinn*|*🇪🇪*) echo EE ;;
-		*netherland*|*amsterdam*|*🇳🇱*) echo NL ;;
-		*german*|*frankfurt*|*🇩🇪*) echo DE ;;
-		*finland*|*helsinki*|*🇫🇮*) echo FI ;;
-		*sweden*|*stockholm*|*🇸🇪*) echo SE ;;
-		*latvia*|*riga*|*🇱🇻*) echo LV ;;
-		*lithuania*|*🇱🇹*) echo LT ;;
-		*poland*|*warsaw*|*🇵🇱*) echo PL ;;
-		*france*|*paris*|*🇫🇷*) echo FR ;;
-		*"united kingdom"*|*london*|*🇬🇧*) echo GB ;;
-		*"united states"*|*🇺🇸*) echo US ;;
-		*) echo '' ;;
-	esac
+# Первый echo-хост, отдавший валидный IPv4. $1 — доп. аргументы curl (напр. -x socks5h://...),
+# $2 — таймаут. Форсим -4: домашний и exit-IP сравнимы, xray-аутбаунд дилит по IPv4. Печатает IP.
+probe_via() {
+	for u in $PROBE_URLS; do
+		# shellcheck disable=SC2086
+		ip=$(extract_ip "$(curl -s -4 $1 --max-time "$2" "$u" 2>/dev/null)")
+		[ -n "$ip" ] && { printf '%s' "$ip"; return; }
+	done
 }
+
+vpn_probe() { probe_via "-x socks5h://$SOCKS" "$1"; }              # exit-IP через туннель
+direct_probe() { probe_via "" "$TIMEOUT"; }                       # домашний (direct) IP
 
 log_event() {
 	mkdir -p "$(dirname "$LOG")" 2>/dev/null || true
@@ -79,7 +75,7 @@ log_event() {
 }
 
 load_state() {
-	WD_PHASE=healthy; WD_FAILS=0; WD_BASE_IP=; WD_BASE_CC=; WD_TAGSIG=0; WD_NEXT=0; WD_DOWNKIND=
+	WD_PHASE=healthy; WD_FAILS=0; WD_BASE_IP=; WD_HOME_IP=; WD_TAGSIG=0; WD_NEXT=0; WD_DOWNKIND=
 	# shellcheck disable=SC1090
 	[ -f "$STATE" ] && . "$STATE"
 }
@@ -89,27 +85,24 @@ save_state() {
 		echo "WD_PHASE=$(sane "$WD_PHASE")"
 		echo "WD_FAILS=$(sane "$WD_FAILS")"
 		echo "WD_BASE_IP=$(sane "$WD_BASE_IP")"
-		echo "WD_BASE_CC=$(sane "$WD_BASE_CC")"
+		echo "WD_HOME_IP=$(sane "$WD_HOME_IP")"
 		echo "WD_TAGSIG=$(sane "$WD_TAGSIG")"
 		echo "WD_NEXT=$(sane "$WD_NEXT")"
 		echo "WD_DOWNKIND=$(sane "$WD_DOWNKIND")"
 	} > "$STATE"
 }
 
-# Проба считается успешной если status=success И countryCode совпал с baseline ИЛИ с hint.
-# Пустой baseline и пустой hint → принять (захват baseline). Печатает "ok cc ip" | "fail".
-eval_probe() {
-	resp="$1"
-	[ "$(jfield "$resp" status)" = success ] || { echo fail; return; }
-	cc=$(sane "$(jfield "$resp" countryCode)")
-	ip=$(sane "$(jfield "$resp" query)")
-	[ -n "$cc" ] || { echo fail; return; }
-	hc=$(hint_cc)
-	if [ -z "$WD_BASE_CC" ] && [ -z "$hc" ]; then echo "ok $cc $ip"; return; fi
-	[ "$cc" = "$WD_BASE_CC" ] && { echo "ok $cc $ip"; return; }
-	[ -n "$hc" ] && [ "$cc" = "$hc" ] && { echo "ok $cc $ip"; return; }
-	echo fail
+# Здоров, если exit-IP валиден И отличается от домашнего (трафик реально в туннеле, не утёк
+# direct). Пустой WD_HOME_IP (домашний ещё не известен) → принять любой валидный exit-IP.
+# Печатает "ok <ip>" | "fail".
+eval_exit() {
+	ip=$(sane "${1:-}")
+	[ -n "$ip" ] || { echo fail; return; }
+	[ -n "$WD_HOME_IP" ] && [ "$ip" = "$WD_HOME_IP" ] && { echo fail; return; }
+	echo "ok $ip"
 }
+
+refresh_home() { h=$(direct_probe); [ -n "$h" ] && WD_HOME_IP=$(sane "$h"); }
 
 tick() {
 	[ "$(read_intent)" = 1 ] || { rm -f "$STATE" 2>/dev/null || true; return 0; }
@@ -120,7 +113,7 @@ tick() {
 
 	tagsig=$(sig "$(selected_tag)")
 	if [ "$tagsig" != "$WD_TAGSIG" ]; then
-		WD_TAGSIG=$tagsig; WD_BASE_IP=; WD_BASE_CC=; WD_FAILS=0; WD_PHASE=healthy
+		WD_TAGSIG=$tagsig; WD_BASE_IP=; WD_FAILS=0; WD_PHASE=healthy
 	fi
 
 	case "$WD_PHASE" in
@@ -133,11 +126,11 @@ tick() {
 
 tick_healthy() {
 	vpn_running || vpn_start
-	res=$(eval_probe "$(vpn_probe "$TIMEOUT")")
+	refresh_home
+	res=$(eval_exit "$(vpn_probe "$TIMEOUT")")
 
 	if [ "${res%% *}" = ok ]; then
-		rest=${res#ok }; cc=${rest%% *}; ip=${rest##* }
-		[ -z "$WD_BASE_CC" ] && { WD_BASE_CC=$cc; WD_BASE_IP=$ip; }
+		WD_BASE_IP=${res#ok }
 		WD_FAILS=0; WD_NEXT=$((t + POLL))
 		return
 	fi
@@ -148,9 +141,9 @@ tick_healthy() {
 	fi
 
 	vpn_stop
-	if [ "$(jfield "$(direct_probe)" status)" = success ]; then
+	if [ -n "$(direct_probe)" ]; then
 		WD_DOWNKIND=vpn
-		log_event "VPN exit failing ${FAIL_LIMIT}x (baseline ${WD_BASE_CC:-?}/${WD_BASE_IP:-?}). VPN stopped, LAN on direct."
+		log_event "VPN exit failing ${FAIL_LIMIT}x (home ${WD_HOME_IP:-?}, last exit ${WD_BASE_IP:-?}). VPN stopped, LAN on direct."
 	else
 		WD_DOWNKIND=net
 		log_event "No connectivity: VPN and direct probes both failing. VPN stopped."
@@ -159,27 +152,27 @@ tick_healthy() {
 }
 
 tick_down() {
-	if [ "$(jfield "$(direct_probe)" status)" != success ]; then
+	home_now=$(direct_probe)
+	if [ -z "$home_now" ]; then
 		[ "$WD_DOWNKIND" = vpn ] && { log_event "Network now fully down (direct probe lost)."; WD_DOWNKIND=net; }
 		WD_NEXT=$((t + BACKOFF)); return
 	fi
+	WD_HOME_IP=$(sane "$home_now")
 
 	[ "$WD_DOWNKIND" = net ] && log_event "Network recovered (direct ok). Attempting VPN."
 
 	vpn_start
 	i=0; ok=0
 	while [ "$i" -lt "$RECOVERY_TRIES" ]; do
-		res=$(eval_probe "$(vpn_probe "$REC_TIMEOUT")")
+		res=$(eval_exit "$(vpn_probe "$REC_TIMEOUT")")
 		if [ "${res%% *}" = ok ]; then
-			rest=${res#ok }; cc=${rest%% *}; ip=${rest##* }
-			[ -z "$WD_BASE_CC" ] && { WD_BASE_CC=$cc; WD_BASE_IP=$ip; }
-			ok=1; break
+			WD_BASE_IP=${res#ok }; ok=1; break
 		fi
 		i=$((i + 1)); sleep 2
 	done
 
 	if [ "$ok" = 1 ]; then
-		log_event "VPN restored (exit ${WD_BASE_CC:-?}/${WD_BASE_IP:-?}). Resuming monitoring."
+		log_event "VPN restored (exit ${WD_BASE_IP:-?}). Resuming monitoring."
 		WD_PHASE=healthy; WD_FAILS=0; WD_DOWNKIND=; WD_NEXT=$((t + POLL))
 	else
 		vpn_stop
