@@ -60,6 +60,8 @@ cp scripts/firewall/apply.sh scripts/firewall/flush.sh "$stage/usr/share/monkey-
 chmod 755 "$stage/usr/share/monkey-business/firewall/"*.sh
 cpf root/usr/share/monkey-business/geo.sh "$stage/usr/share/monkey-business/geo.sh"
 chmod 755 "$stage/usr/share/monkey-business/geo.sh"
+cpf root/usr/share/monkey-business/ruset.sh "$stage/usr/share/monkey-business/ruset.sh"
+chmod 755 "$stage/usr/share/monkey-business/ruset.sh"
 cpf root/usr/share/monkey-business/watchdog.sh "$stage/usr/share/monkey-business/watchdog.sh"
 chmod 755 "$stage/usr/share/monkey-business/watchdog.sh"
 cpf root/usr/share/monkey-business/probes.sh "$stage/usr/share/monkey-business/probes.sh"
@@ -145,6 +147,17 @@ $SSH $SSH_OPTS -p "$PORT" "$HOST" "MB_RESPAWN='$RESPAWN' sh -s" <<'REMOTE'
 		[ -n "${MISS:-}" ] && { echo ">> installing missing (opkg):$MISS"; { opkg update >/dev/null 2>&1 && opkg install $MISS >/dev/null 2>&1; } || echo "   (opkg install не прошёл — нет сети/пакета?)"; }
 	else
 		echo ">> warn: ни apk, ни opkg не найдены — проверь рантайм-зависимости вручную"
+	fi
+
+	# geo-базы + RU-сет из коробки: без geoip.dat/geosite.dat правила geoip:ru/geosite:category-ru не
+	# матчат -> direct ломается. Идемпотентно (geo.sh sha-skip), не фатально (UI позволит обновить позже).
+	if command -v xray >/dev/null 2>&1; then
+		if [ ! -s /usr/share/xray/geoip.dat ] || [ ! -s /usr/share/xray/geosite.dat ]; then
+			echo ">> downloading geo databases…"
+			sh /usr/share/monkey-business/geo.sh download || echo "   (geo download failed — update later in UI)"
+		fi
+		echo ">> building RU direct-bypass set…"
+		sh /usr/share/monkey-business/ruset.sh build || echo "   (ru-set build failed — direct-bypass falls back to xray)"
 	fi
 
 	# dev-VM: убить любые stale/detached rpcd (от прошлого respawn) -> ровно один свежий инстанс,

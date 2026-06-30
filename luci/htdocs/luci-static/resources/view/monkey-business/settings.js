@@ -56,7 +56,7 @@ return view.extend({
 
 		var direct = d.option(form.Value, 'direct_dns', _('Direct DNS'),
 			_('Resolver for local-region domains (queried directly).'));
-		direct.default = '223.5.5.5';
+		direct.default = '77.88.8.8';
 
 		var doh = d.option(form.Value, 'doh_url', _('DoH URL'),
 			_('DNS-over-HTTPS endpoint for everything routed through the VPN.'));

@@ -113,8 +113,16 @@ function serversList(ctx) {
 }
 
 function serverKey(s) {
-	let tr = (s.transport != null) ? (s.transport.type || "") : "";
-	return (s.address || "") + ":" + (s.port || "") + ":" + (s.uuid || "") + ":" + tr;
+	let tr = (type(s.transport) == "object") ? s.transport : {};
+	let re = (type(s.reality) == "object") ? s.reality : {};
+	let alpn = (type(s.alpn) == "array") ? join(",", s.alpn) : "";
+	return join("|", [
+		s.tag || "",
+		s.address || "", "" + (s.port || ""), s.uuid || "",
+		s.security || "", s.flow || "", s.sni || "", s.fingerprint || "", alpn,
+		re.publicKey || "", re.shortId || "", re.spiderX || "",
+		tr.type || "", tr.path || "", tr.host || "", tr.mode || "", tr.serviceName || "",
+	]);
 }
 
 function subscriptionUpdate(ctx, args) {

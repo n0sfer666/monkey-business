@@ -53,7 +53,7 @@ function buildDnsInbound(port, dns) {
 		listen: "0.0.0.0",
 		port: port,
 		protocol: "dokodemo-door",
-		settings: { address: dns.direct_dns || "223.5.5.5", port: 53, network: "tcp,udp" },
+		settings: { address: dns.direct_dns || "77.88.8.8", port: 53, network: "tcp,udp" },
 	};
 }
 
@@ -116,7 +116,7 @@ function buildDns(dns, region, ipv6Blocked) {
 		: ["geosite:private", "geosite:" + geositeRegion(region)];
 	return {
 		servers: [
-			{ address: dns.direct_dns || "223.5.5.5", domains: directDomains, skipFallback: true },
+			{ address: dns.direct_dns || "77.88.8.8", domains: directDomains, skipFallback: true },
 			dns.doh_url || "https://1.1.1.1/dns-query",
 		],
 		queryStrategy: queryStrategy,
