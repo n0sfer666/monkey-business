@@ -77,7 +77,28 @@ return view.extend({
 		sec.value('tls', 'TLS');
 		sec.value('none', _('None'));
 
-		return m.render();
+		return m.render().then(function(node) {
+			node.appendChild(E('style', { 'type': 'text/css' },
+				'#cbi-monkey-business-server .cbi-section-table-titles > * {' +
+				' position: sticky; top: 0; z-index: 2;' +
+				' background: var(--background-color-medium, var(--background-color, #2b2b2b)); }'));
+
+			function wrapTable() {
+				var sec = node.querySelector('#cbi-monkey-business-server');
+				if (!sec) return;
+				var tbl = sec.querySelector(':scope > table.cbi-section-table');
+				if (!tbl) return;
+				var wrap = E('div', { 'class': 'mb-scroll', 'style': 'max-height:55vh;overflow-y:auto' });
+				tbl.parentNode.insertBefore(wrap, tbl);
+				wrap.appendChild(tbl);
+			}
+
+			wrapTable();
+			var sec = node.querySelector('#cbi-monkey-business-server');
+			if (sec)
+				new MutationObserver(wrapTable).observe(sec, { childList: true });
+			return node;
+		});
 	},
 
 	// Save & Apply: commit формы (порядок/серверы/URL), и если VPN включён — переприменить конфиг,

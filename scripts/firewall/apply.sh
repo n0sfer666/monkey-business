@@ -23,9 +23,29 @@ LAN="${MB_LAN_IFACE:-br-lan}"
 KILL="${MB_KILL_SWITCH:-1}"
 DNS_PORT="${MB_DNS_PORT:-5300}"
 COUNTER="${MB_NFT_COUNTER:-}"
+BYPASS="${MB_DIRECT_BYPASS:-1}"
+RUSET_DIR="${MB_RUSET_DIR:-/usr/share/monkey-business}"
 
 V4_LOCAL="{ 127.0.0.0/8, 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, 100.64.0.0/10, 224.0.0.0/4, 240.0.0.0/4 }"
 V6_LOCAL="{ ::1, fc00::/7, fe80::/10 }"
+
+# direct-bypass (MB_DIRECT_BYPASS=1): RU-CIDR минует Xray, маршрутизируется ядром нативно.
+# Сеты mb_ru4/mb_ru6 объявляются в таблице, элементы подгружаются из ru4.nft/ru6.nft после создания.
+# prerouting: @mb_ru4/6 -> return (не в tproxy). forward: @mb_ru4/6 -> accept (kill-switch не дропает RU).
+BYPASS_SETS=""
+BYPASS_PRE=""
+BYPASS_FWD=""
+if [ "$BYPASS" = 1 ]; then
+	BYPASS_SETS="
+	set mb_ru4 { type ipv4_addr; flags interval; auto-merge; }
+	set mb_ru6 { type ipv6_addr; flags interval; auto-merge; }"
+	BYPASS_PRE="
+		iifname \"$LAN\" ip daddr @mb_ru4 return
+		iifname \"$LAN\" ip6 daddr @mb_ru6 return"
+	BYPASS_FWD="
+		iifname \"$LAN\" ip daddr @mb_ru4 accept
+		iifname \"$LAN\" ip6 daddr @mb_ru6 accept"
+fi
 
 # Kill-switch leak-guard собирается в forward-цепочку только при MB_KILL_SWITCH=1.
 FORWARD=""
@@ -34,7 +54,7 @@ if [ "$KILL" = 1 ]; then
 	chain forward {
 		type filter hook forward priority filter; policy accept;
 		iifname \"$LAN\" ip daddr $V4_LOCAL accept
-		iifname \"$LAN\" ip6 daddr $V6_LOCAL accept
+		iifname \"$LAN\" ip6 daddr $V6_LOCAL accept$BYPASS_FWD
 		iifname \"$LAN\" $COUNTER drop
 	}"
 fi
@@ -44,11 +64,11 @@ nft delete table inet monkey_business 2>/dev/null || true
 
 # Сначала nft (set -e прервёт при сбое ДО policy-routing -> нет окна утечки с ip-rule без nft).
 nft -f - <<EOF
-table inet monkey_business {
+table inet monkey_business {$BYPASS_SETS
 	chain prerouting {
 		type filter hook prerouting priority mangle; policy accept;
 		ip daddr $V4_LOCAL return
-		ip6 daddr $V6_LOCAL return
+		ip6 daddr $V6_LOCAL return$BYPASS_PRE
 		iifname "$LAN" meta l4proto { tcp, udp } th dport 53 return
 		iifname "$LAN" meta l4proto { tcp, udp } $COUNTER tproxy to :$PORT meta mark set $MARK
 	}
@@ -59,7 +79,13 @@ table inet monkey_business {
 }
 EOF
 
+# direct-bypass: подгрузить элементы RU-сетов в уже созданную таблицу (guarded, не фатально).
+if [ "$BYPASS" = 1 ]; then
+	[ -f "$RUSET_DIR/ru4.nft" ] && nft -f "$RUSET_DIR/ru4.nft" 2>/dev/null || true
+	[ -f "$RUSET_DIR/ru6.nft" ] && nft -f "$RUSET_DIR/ru6.nft" 2>/dev/null || true
+fi
+
 ip rule add fwmark "$MARK" lookup "$TABLE" 2>/dev/null || true
 ip route add local 0.0.0.0/0 dev lo table "$TABLE" 2>/dev/null || true
 
-echo "tproxy firewall applied (port=$PORT mark=$MARK lan=$LAN kill_switch=$KILL dns=>:$DNS_PORT)"
+echo "tproxy firewall applied (port=$PORT mark=$MARK lan=$LAN kill_switch=$KILL bypass=$BYPASS dns=>:$DNS_PORT)"

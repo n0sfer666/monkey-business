@@ -24,6 +24,7 @@ start_service() {
 
 	MB_LAN_IFACE="$(uci -q get monkey-business.global.lan_iface || echo br-lan)" \
 	MB_KILL_SWITCH="$(uci -q get monkey-business.global.kill_switch || echo 1)" \
+	MB_DIRECT_BYPASS="$(uci -q get monkey-business.global.direct_bypass || echo 1)" \
 		sh "$FW/apply.sh" 2>&1 | logger -t monkey-business
 }
 

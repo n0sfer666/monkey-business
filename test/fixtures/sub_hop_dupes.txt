@@ -1,0 +1,10 @@
+# synthetic, по образцу реальной VPNON-подписки:
+#  - 🛡️ (обход) NL/FR байт-идентичны (общий hop-endpoint hop:10444, всё одинаково КРОМЕ tag);
+#  - 🚀 (скорость) NL/FR — разные порты (tds:10444 / tds:10445);
+#  - последняя строка — точный дубль 🛡️ NL (совпал и tag) -> схлоп.
+# serverKey = полная идентичность подключения + tag. Ожидание: 4 записи (точный дубль убран).
+vless://11111111-2222-3333-4444-555555555555@hop.example.com:10444?type=xhttp&security=reality&sni=fortwine.ru&pbk=PUBKEYA&sid=ab12&mode=stream-one&path=%2F#%F0%9F%9B%A1%20NL
+vless://11111111-2222-3333-4444-555555555555@hop.example.com:10444?type=xhttp&security=reality&sni=fortwine.ru&pbk=PUBKEYA&sid=ab12&mode=stream-one&path=%2F#%F0%9F%9B%A1%20FR
+vless://11111111-2222-3333-4444-555555555555@tds.example.com:10444?type=xhttp&security=reality&sni=fortwine.ru&pbk=PUBKEYA&sid=ab12&mode=stream-one&path=%2F#%F0%9F%9A%80%20NL
+vless://11111111-2222-3333-4444-555555555555@tds.example.com:10445?type=xhttp&security=reality&sni=fortwine.ru&pbk=PUBKEYA&sid=ab12&mode=stream-one&path=%2F#%F0%9F%9A%80%20FR
+vless://11111111-2222-3333-4444-555555555555@hop.example.com:10444?type=xhttp&security=reality&sni=fortwine.ru&pbk=PUBKEYA&sid=ab12&mode=stream-one&path=%2F#%F0%9F%9B%A1%20NL

@@ -3,6 +3,7 @@ import * as h from "../../src/rpcd/handlers.uc";
 import { readfile } from "fs";
 
 const SUB = readfile("test/fixtures/sub_urilist.txt");
+const SUB_HOPS = readfile("test/fixtures/sub_hop_dupes.txt");
 const USERINFO = "upload=10; download=20; total=300; expire=1796738263";
 
 function mockCtx(state) {
@@ -107,6 +108,25 @@ test("subscriptionUpdate preserves manual order on re-fetch", function() {
 	h.subscriptionUpdate(ctx, {});
 	assertEq(st.servers[0].tag, firstTag);
 	assertEq(length(st.servers), 2);
+});
+
+test("subscriptionUpdate keeps distinct servers, collapses exact dupes (5-vs-7 fix)", function() {
+	let st = freshState();
+	st.fetchResult = { body: SUB_HOPS, userinfo: "" };
+	let ctx = mockCtx(st);
+	h.subscriptionUpdate(ctx, {});
+	// 5 ссылок: 🛡️NL/🛡️FR (один hop, отличие только tag), 🚀NL/🚀FR (разные порты), дубль 🛡️NL.
+	// serverKey = идентичность подключения + tag -> 4 уникальных, точный дубль 🛡️NL схлопнут.
+	assertEq(length(st.servers), 4);
+	let hop = 0, tds = 0;
+	for (let s in st.servers) {
+		if (s.address == "hop.example.com") hop++;
+		if (s.address == "tds.example.com") tds++;
+	}
+	// hop==2: два байт-идентичных 🛡️ (NL/FR) различены по tag, но точный дубль 🛡️NL схлопнут
+	// (без tag в ключе было бы 1; без дедупа дубля — 3). tds==2: 🚀 различены по порту.
+	assertEq(hop, 2);
+	assertEq(tds, 2);
 });
 
 test("subscriptionUpdate falls back to saved url when arg empty", function() {
