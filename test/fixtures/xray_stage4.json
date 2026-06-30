@@ -115,6 +115,7 @@
 			{
 				"address": "223.5.5.5",
 				"domains": [
+					"full:a.example.com",
 					"geosite:private",
 					"geosite:category-ru"
 				],

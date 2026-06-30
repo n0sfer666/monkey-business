@@ -208,6 +208,29 @@ test("dns mode doh: single DoH server, no direct region resolve", function() {
 	assertEq(d.queryStrategy, "UseIPv4");
 });
 
+test("dns resolves VPN server domain directly (bootstrap, split)", function() {
+	let d = buildDns({ direct_dns: "77.88.8.8", doh_url: "https://1.1.1.1/dns-query" }, "ru", "1",
+		{ address: "tds.vpnon-connect.tech" });
+	// домен сервера — первым в direct-резолвере, чтобы туннель поднялся без резолва через себя
+	assertEq(d.servers[0].address, "77.88.8.8");
+	assertEq(d.servers[0].domains[0], "full:tds.vpnon-connect.tech");
+	assert(index(d.servers[0].domains, "geosite:category-ru") >= 0, "region resolve kept");
+});
+
+test("dns bootstrap also in doh mode", function() {
+	let d = buildDns({ mode: "doh", direct_dns: "77.88.8.8", doh_url: "https://1.1.1.1/dns-query" }, "ru", "1",
+		{ address: "tds.vpnon-connect.tech" });
+	assertEq(d.servers[0].domains, ["full:tds.vpnon-connect.tech"]);
+	assertEq(d.servers[0].address, "77.88.8.8");
+	assertEq(d.servers[1], "https://1.1.1.1/dns-query");
+});
+
+test("dns no bootstrap entry for IP-address server", function() {
+	let d = buildDns({ direct_dns: "77.88.8.8", doh_url: "https://1.1.1.1/dns-query" }, "ru", "1",
+		{ address: "203.0.113.5" });
+	assertEq(d.servers[0].domains, ["geosite:private", "geosite:category-ru"]);
+});
+
 test("xhttp padding omitted by default", function() {
 	let out = generate(cfg({ tproxy_port: 1 }, SERVER_A));
 	assert(!exists(out.outbounds[0].streamSettings.xhttpSettings, "xPaddingBytes"), "no padding by default");
