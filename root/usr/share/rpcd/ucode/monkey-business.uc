@@ -102,9 +102,14 @@ function fetchSubscription(url) {
 }
 
 function tcpPing(server) {
-	// server.address — внешний вход из подписки -> shq (иначе shell-инъекция в popen)
-	let r = runCapture(sprintf('nc -z -w2 %s %d 2>/dev/null && echo ok', shq(server.address), int(server.port)));
-	return (index(r.out, 'ok') >= 0) ? 1 : null;
+	// busybox nc на устройстве без флагов -z/-w -> curl: %{time_connect} = время TCP-connect (сек);
+	// awk даёт целые мс (0 если connect не состоялся). server.address — внешний вход -> shq.
+	let cmd = 'curl -s -o /dev/null --connect-timeout 2 --max-time 4 -w "%{time_connect}" ' +
+		'http://' + shq(server.address) + ':' + int(server.port) +
+		" 2>/dev/null | awk '{printf \"%d\", ($1+0)*1000}'";
+	let r = runCapture(cmd);
+	let ms = int(split(r.out, 'MB_EXIT')[0]);
+	return (ms > 0) ? ms : null;
 }
 
 // Валидирует конфиг реальным xray, при успехе устанавливает + перезапускает сервис.
