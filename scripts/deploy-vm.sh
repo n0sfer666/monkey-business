@@ -194,6 +194,16 @@ $SSH $SSH_OPTS -p "$PORT" "$HOST" "MB_RESPAWN='$RESPAWN' sh -s" <<'REMOTE'
 	else
 		echo ">> WARN: ubus-объект не поднялся. Диагностика: logread | grep -i ucode"
 	fi
+
+	# Если VPN сейчас ЗАПУЩЕН — перегенерировать конфиг свежим генератором и переприменить: деплой
+	# обновляет код, но живой xray крутится со старым /etc/monkey-business/xray.json до config_apply
+	# (обычный рестарт переиспользует старый конфиг). НЕ трогаем, если VPN выключен (не включаем сами).
+	if ubus list 2>/dev/null | grep -q "^monkey-business$"; then
+		if ubus call monkey-business status 2>/dev/null | grep -q '"running": *true'; then
+			echo ">> VPN запущен — переприменяю конфиг новым генератором (config_apply)…"
+			ubus call monkey-business config_apply 2>&1 | grep -oE '"(server|error)": *"[^"]*"' || true
+		fi
+	fi
 REMOTE
 # Ссылка на LuCI выводится из окружения: localhost (dev-VM, проброс QEMU) -> :$HTTP_PORT;
 # реальный хост -> http://<host> (LuCI на :80). MB_LUCI_URL переопределяет явно.

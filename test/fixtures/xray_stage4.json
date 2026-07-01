@@ -67,19 +67,24 @@
 		{
 			"tag": "direct",
 			"protocol": "freedom",
-			"settings": {
-			}
+			"settings": {}
 		},
 		{
 			"tag": "block",
 			"protocol": "blackhole",
-			"settings": {
-			}
+			"settings": {}
 		}
 	],
 	"routing": {
 		"domainStrategy": "IPIfNonMatch",
 		"rules": [
+			{
+				"type": "field",
+				"ip": [
+					"223.5.5.5"
+				],
+				"outboundTag": "direct"
+			},
 			{
 				"type": "field",
 				"ip": [

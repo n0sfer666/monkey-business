@@ -177,7 +177,7 @@ function customRules(g) {
 	return rules;
 }
 
-function buildRouting(g) {
+function buildRouting(g, directDns) {
 	let region = g.local_region || "ru";
 	let mode = g.routing_mode || "bypass-local";
 	// local_region "other": нет geo-категории региона (geosite:other/geoip:other невалидны,
@@ -191,6 +191,12 @@ function buildRouting(g) {
 	if (mode != "global")
 		for (let r in customRules(g))
 			push(rules, r);
+
+	// direct_dns-резолвер жёстко в direct: bootstrap туннеля резолвит домен сервера через него,
+	// и этот резолв НЕ должен уходить в ещё не поднятый туннель (не полагаемся на geoip:ru — geoip.dat
+	// может быть не загружен на свежей установке).
+	if (directDns != null && directDns != "" && isIpLike(directDns))
+		push(rules, { type: "field", ip: [directDns], outboundTag: "direct" });
 
 	if (isTrue(g.ipv6_block))
 		push(rules, { type: "field", ip: ["::/0"], outboundTag: "block" });
@@ -240,7 +246,7 @@ function generate(config) {
 		{ tag: "block", protocol: "blackhole", settings: {} },
 	];
 
-	let routing = buildRouting(g);
+	let routing = buildRouting(g, config.dns != null ? (config.dns.direct_dns || "77.88.8.8") : null);
 
 	// прозрачный DNS: dns-инбаунд -> dns-аутбаунд (резолв через dns-модуль со сплитом).
 	// правило dns-in ставится ПЕРВЫМ, чтобы DNS всегда уходил в dns-out (а не под общие правила).
