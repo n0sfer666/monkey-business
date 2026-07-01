@@ -172,6 +172,31 @@ test("no ipv6 rule when ipv6_block off", function() {
 	assertEq(r.rules[0].outboundTag, "direct");
 });
 
+test("routing pins direct_dns resolver to direct (bootstrap)", function() {
+	let r = buildRouting({ routing_mode: "bypass-local", local_region: "ru", ipv6_block: "1" }, "77.88.8.8");
+	// direct_dns-правило идёт ПЕРЕД ipv6-block и geo -> первым
+	assertEq(r.rules[0].ip, ["77.88.8.8"]);
+	assertEq(r.rules[0].outboundTag, "direct");
+});
+
+test("routing without direct_dns arg unchanged (backward compat)", function() {
+	let r = buildRouting({ routing_mode: "bypass-local", local_region: "ru" });
+	assertEq(r.rules[0].ip, ["geoip:private", "geoip:ru"]);
+});
+
+test("generate pins direct_dns from dns config to direct", function() {
+	let out = generate({
+		global: { routing_mode: "bypass-local", local_region: "ru" },
+		server: SERVER_A,
+		dns: { direct_dns: "77.88.8.8", doh_url: "https://1.1.1.1/dns-query" },
+	});
+	let pinned = false;
+	for (let rule in out.routing.rules)
+		if (exists(rule, "ip") && index(rule.ip, "77.88.8.8") >= 0 && rule.outboundTag == "direct")
+			pinned = true;
+	assert(pinned, "direct_dns pinned to direct outbound");
+});
+
 test("custom direct precedes ipv6 block (whitelist overrides ::/0)", function() {
 	let r = buildRouting({
 		routing_mode: "bypass-local", local_region: "ru", ipv6_block: "1",
