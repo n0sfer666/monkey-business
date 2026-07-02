@@ -269,8 +269,38 @@ function generate(config) {
 	return out;
 }
 
+// Лёгкий конфиг для эфемерной пробы одного кандидата: socks-inbound -> proxy(candidate), без tproxy/
+// firewall/kill-switch. Резолв домена сервера идёт напрямую (direct_dns в direct + full:<домен> в dns),
+// всё остальное из socks -> в туннель. Проба (curl через socks к иностранному IP) проверяет реальный
+// проход трафика, а не только TCP-connect. probe_port по умолчанию 10809 (боевой socks-test = 10808).
+function generateProbe(config) {
+	let s = config.server;
+	if (s == null)
+		die("generateProbe: missing server");
+	let g = config.global || {};
+	let dns = config.dns || {};
+	let region = g.local_region || "ru";
+	let directDns = dns.direct_dns || "77.88.8.8";
+	return {
+		log: { loglevel: "warning" },
+		inbounds: [{
+			tag: "probe", listen: "127.0.0.1", port: config.probe_port || 10809,
+			protocol: "socks", settings: { udp: false },
+		}],
+		outbounds: [
+			buildProxyOutbound(s, {}),
+			{ tag: "direct", protocol: "freedom", settings: {} },
+		],
+		routing: { domainStrategy: "IPIfNonMatch", rules: [
+			{ type: "field", ip: [directDns], outboundTag: "direct" },
+			{ type: "field", inboundTag: ["probe"], outboundTag: "proxy" },
+		] },
+		dns: buildDns(dns, region, g.ipv6_block, s),
+	};
+}
+
 function generateJson(config) {
 	return sprintf("%.J", generate(config));
 }
 
-export { generate, generateJson, buildRouting, buildStreamSettings, buildDns };
+export { generate, generateJson, generateProbe, buildRouting, buildStreamSettings, buildDns };

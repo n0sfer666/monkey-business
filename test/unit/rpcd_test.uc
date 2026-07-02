@@ -30,6 +30,7 @@ function mockCtx(state) {
 		},
 		fetchSubscription: function(_url) { return state.fetchResult; },
 		pingServer: function(s) { return state.pings[s.tag]; },
+		probeServer: function(s) { return (state.probeFail == null) || (state.probeFail[s.tag] !== true); },
 		applyConfig: function(j) { state.applied = j; return state.applyErr; },
 		stopService: function() { state.stopped = true; },
 		serviceRunning: function() { return state.running; },
@@ -233,6 +234,35 @@ test("configApply surfaces apply/validation error", function() {
 	st.applyErr = "xray: invalid config";
 	let r = h.configApply(ctx);
 	assertEq(r.error, "xray: invalid config");
+});
+
+test("configApply fails over past unreachable server to next working", function() {
+	let st = freshState();
+	st.fetchResult = { body: SUB, userinfo: "" };
+	let ctx = mockCtx(st);
+	h.subscriptionUpdate(ctx, {});
+	// первый по приоритету не проходит пробу -> failover на второй (имя-агностично)
+	st.probeFail = {};
+	st.probeFail[st.servers[0].tag] = true;
+	let r = h.configApply(ctx);
+	assertEq(r.probed, true);
+	assertEq(r.server, st.servers[1].tag);
+	assertEq(st.selected, st.servers[1].tag);
+	assert(index(st.applied, st.servers[1].address) >= 0, "applied uses second server");
+});
+
+test("configApply falls back to top when all probes fail (kill-switch preserved)", function() {
+	let st = freshState();
+	st.fetchResult = { body: SUB, userinfo: "" };
+	let ctx = mockCtx(st);
+	h.subscriptionUpdate(ctx, {});
+	st.probeFail = {};
+	for (let s in st.servers)
+		st.probeFail[s.tag] = true;
+	let r = h.configApply(ctx);
+	assertEq(r.probed, false);
+	assertEq(r.server, st.servers[0].tag);
+	assert(index(st.applied, st.servers[0].address) >= 0, "applied uses top server as fallback");
 });
 
 test("serviceToggle on connects (selects+applies+enables)", function() {

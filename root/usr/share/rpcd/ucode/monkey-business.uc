@@ -13,6 +13,7 @@ import { popen, writefile, readfile, stat } from 'fs';
 // поэтому относительный import не резолвится. Транзитивные импорты в lib/ грузятся из
 // файла и остаются относительными. Путь = место установки (см. шапку и deploy/packaging).
 import * as h from '/usr/share/rpcd/ucode/lib/monkey-business/rpcd/handlers.uc';
+import { generateProbe } from '/usr/share/rpcd/ucode/lib/monkey-business/generator/xray.uc';
 
 const CONFIG = 'monkey-business';
 const CONF_DIR = '/etc/monkey-business';
@@ -112,6 +113,23 @@ function tcpPing(server) {
 	return (ms > 0) ? ms : null;
 }
 
+// Эфемерная проба кандидата для failover: временный xray (socks 10809) -> реальный проход трафика
+// через туннель (curl к иностранному IP), затем kill. Боевой сервис/kill-switch не трогаются (pkill
+// матчит только /tmp/mb-probe.json, не /etc/monkey-business/xray.json). true = сервер живой.
+function probeServer(global, dns, server) {
+	let cfg = generateProbe({ global: global, dns: dns, server: server, probe_port: 10809 });
+	writefile('/tmp/mb-probe.json', sprintf('%.J', cfg));
+	let sh = "pkill -f 'xray run -c /tmp/mb-probe.json' 2>/dev/null; " +
+		"XRAY_LOCATION_ASSET=" + GEO_DIR + " /usr/bin/xray run -c /tmp/mb-probe.json >/dev/null 2>&1 & P=$!; " +
+		"sleep 2; R=fail; " +
+		"for u in https://1.1.1.1 https://8.8.8.8; do " +
+		"curl -s -4 -o /dev/null -x socks5://127.0.0.1:10809 --max-time 4 \"$u\" && { R=ok; break; }; done; " +
+		"kill \"$P\" 2>/dev/null; echo \"PROBE:$R\"";
+	let r = runCapture(sh);
+	system('rm -f /tmp/mb-probe.json');
+	return index(r.out, 'PROBE:ok') >= 0;
+}
+
 // Валидирует конфиг реальным xray, при успехе устанавливает + перезапускает сервис.
 // Возврат: строка-ошибка | null(успех).
 function applyConfig(jsonStr) {
@@ -177,6 +195,7 @@ function buildCtx() {
 		},
 		fetchSubscription: function(url) { return fetchSubscription(url); },
 		pingServer: function(s) { return tcpPing(s); },
+		probeServer: function(s) { return probeServer(loadSection(cursor, 'global'), loadSection(cursor, 'dns'), s); },
 		applyConfig: function(jsonStr) { return applyConfig(jsonStr); },
 		stopService: function() { system('/etc/init.d/monkey-business stop'); },
 		serviceRunning: function() {

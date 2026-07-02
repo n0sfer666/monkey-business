@@ -65,6 +65,26 @@ function selectBest(ctx) {
 	return chosen;
 }
 
+// Failover по приоритету: идём по порядку, для каждого кандидата ctx.probeServer поднимает эфемерный
+// туннель и гоняет реальную пробу связности; первый прошедший — активный. Имя-агностично (только
+// порядок + результат пробы), работает на любой подписке. Если ни один не прошёл — фолбэк на servers[0]
+// (kill-switch должен остаться, а watchdog разберётся дальше). Возврат: { server, probed }.
+function selectWorking(ctx) {
+	let servers = orderedServers(ctx);
+	if (length(servers) == 0)
+		return null;
+	let cap = ctx.failoverCap ? ctx.failoverCap() : length(servers);
+	let n = (length(servers) < cap) ? length(servers) : cap;
+	for (let i = 0; i < n; i++) {
+		if (ctx.probeServer(servers[i])) {
+			ctx.setSelected(servers[i].tag);
+			return { server: servers[i], probed: true };
+		}
+	}
+	ctx.setSelected(servers[0].tag);
+	return { server: servers[0], probed: false };
+}
+
 function genConfig(ctx, server) {
 	return {
 		global: ctx.getGlobal(),
@@ -183,14 +203,14 @@ function serversPing(ctx) {
 }
 
 function configApply(ctx) {
-	let s = selectBest(ctx);
-	if (s == null)
+	let sel = selectWorking(ctx);
+	if (sel == null)
 		return { error: "no servers — add a subscription or a manual server first" };
-	let jsonStr = generateJson(genConfig(ctx, s));
+	let jsonStr = generateJson(genConfig(ctx, sel.server));
 	let err = ctx.applyConfig(jsonStr);
 	if (err != null)
 		return { error: err };
-	return { ok: true, server: s.tag, bytes: length(jsonStr) };
+	return { ok: true, server: sel.server.tag, probed: sel.probed, bytes: length(jsonStr) };
 }
 
 function serviceToggle(ctx, args) {
@@ -200,15 +220,15 @@ function serviceToggle(ctx, args) {
 		ctx.stopService();
 		return { enabled: false };
 	}
-	let s = selectBest(ctx);
-	if (s == null)
+	let sel = selectWorking(ctx);
+	if (sel == null)
 		return { error: "no servers — add a subscription first", enabled: false };
-	let jsonStr = generateJson(genConfig(ctx, s));
+	let jsonStr = generateJson(genConfig(ctx, sel.server));
 	let err = ctx.applyConfig(jsonStr);
 	if (err != null)
 		return { error: err, enabled: false };
 	ctx.setEnabled(true);
-	return { enabled: true, server: s.tag };
+	return { enabled: true, server: sel.server.tag, probed: sel.probed };
 }
 
 function geoUpdate(ctx, args) {
@@ -241,4 +261,4 @@ function checkExit(ctx, args) {
 	return ctx.checkExit(domain);
 }
 
-export { status, serversList, subscriptionUpdate, serversPing, configApply, serviceToggle, geoUpdate, setRouting, geoStatus, geoInstall, checkExit, maskUuid, parseUserinfo, selectBest };
+export { status, serversList, subscriptionUpdate, serversPing, configApply, serviceToggle, geoUpdate, setRouting, geoStatus, geoInstall, checkExit, maskUuid, parseUserinfo, selectBest, selectWorking };
