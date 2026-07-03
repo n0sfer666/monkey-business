@@ -45,6 +45,13 @@ vpn_reconnect() {
 	sleep "$RECONNECT_WAIT"
 	vpn_running || vpn_start
 }
+# Failover: rpcd пересобирает конфиг на ПЕРВЫЙ рабочий сервер по приоритету (config_apply ->
+# selectWorking с реальными эфемерными пробами). probed:true = нашёлся сервер, прошедший пробу.
+# Возврат 0 = переключились (сервис уже перезапущен с новым сервером). Имя-агностично.
+failover_switch() {
+	res=$(ubus call "$CONFIG" config_apply 2>/dev/null) || return 1
+	printf '%s' "$res" | grep -q '"probed": *true'
+}
 
 log_event() {
 	mkdir -p "$(dirname "$LOG")" 2>/dev/null || true
@@ -156,8 +163,21 @@ tick_reconnecting() {
 		WD_NEXT=$((t + POLL)); return
 	fi
 
+	# Текущий сервер устойчиво не поднимается -> failover на следующий рабочий по приоритету.
+	# config_apply сам пробует кандидатов и перезапускает сервис; подтверждаем health-проверкой.
+	if failover_switch; then
+		i=0
+		while [ "$i" -lt "$REC_TRIES" ]; do
+			if health_check 1 "$REC_TIMEOUT"; then
+				log_event "Failover switched server (exit ${WD_BASE_IP:-?}). Resuming monitoring."
+				WD_PHASE=healthy; WD_FAILS=0; WD_RECTRIES=0; WD_NEXT=$((t + POLL)); return
+			fi
+			i=$((i + 1)); sleep 2
+		done
+	fi
+
 	vpn_stop; WD_DOWNKIND=vpn
-	log_event "Reconnect failed ${RECONNECT_LIMIT}x. VPN stopped, LAN on direct."
+	log_event "Reconnect failed ${RECONNECT_LIMIT}x (no working failover server). VPN stopped, LAN on direct."
 	WD_PHASE=down; WD_RECTRIES=0; WD_NEXT=$((t + BACKOFF))
 }
 
