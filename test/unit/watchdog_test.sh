@@ -32,6 +32,8 @@ vpn_running() { [ -f "$T/running" ]; }
 vpn_start() { : > "$T/running"; echo start >> "$T/actions"; }
 vpn_stop() { rm -f "$T/running"; echo stop >> "$T/actions"; }
 vpn_reconnect() { echo reconnect >> "$T/actions"; }
+# failover: при наличии $T/failover_ok «переключает» на рабочий сервер (включает live + exit EXIT2)
+failover_switch() { [ -f "$T/failover_ok" ] && { : > "$T/live"; enq "$EXIT2"; echo failover >> "$T/actions"; return 0; }; return 1; }
 live_probe() { [ -f "$T/live" ]; }            # файл = liveness ok
 vpn_probe() { _pop "$T/vpn_q"; }              # exit-IP из очереди (пусто = провал пробы)
 direct_probe() { cat "$T/direct" 2>/dev/null || echo ''; }
@@ -106,6 +108,14 @@ eq "failover.phase" "$(sval WD_PHASE)" down
 eq "failover.kind" "$(sval WD_DOWNKIND)" vpn
 has "failover.stop" "$T/actions" stop
 has "failover.log" "$T/log" "Reconnect failed"
+
+# 5b. RECONNECTING исчерпан + failover нашёл рабочий сервер -> HEALTHY (без down).
+reset; seed_reconnecting; rm -f "$T/live"; : > "$T/failover_ok"
+runtick 5000                                  # попытка 1: rectries 0->1 (reconnect не помог, live off)
+runtick 5100                                  # попытка 2: limit -> failover_switch -> live+exit -> healthy
+eq "foswitch.phase" "$(sval WD_PHASE)" healthy
+has "foswitch.did" "$T/actions" failover
+has "foswitch.log" "$T/log" "Failover switched server"
 
 # 6. HEALTHY: 3 провала + direct мёртв -> DOWN(net) напрямую, без reconnect.
 reset; enq "$EXIT1"; runtick 1000; rm -f "$T/live"; : > "$T/direct"
