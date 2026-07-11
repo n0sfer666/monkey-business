@@ -9,4 +9,6 @@ __pycache__/
 *.qcow2
 *.img
 *.log
-.claude/.verify-state.json
+.claude/
+.context/notes/
+.context/investigations/
