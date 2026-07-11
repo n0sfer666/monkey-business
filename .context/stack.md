@@ -13,9 +13,14 @@
 - **UI:** LuCI client-side JS (luci-base, ubus/rpcd).
 - **Конфиг:** UCI `/etc/config/monkey-business` → генератор → Xray JSON.
 - **Перехват трафика:** nftables TPROXY (fw4 include).
+- **Direct-bypass:** nft-сеты `mb_ru4`/`mb_ru6` (`ruset.sh`) — RU-CIDR минуют TPROXY в ядре и
+  проходят leak-guard. Список — текстовый CIDR-дамп Loyalsoldier/geoip (не `.dat`), UCI-опция
+  `global.direct_bypass` (дефолт `1`). Xray-правило `geoip:<регион> → direct` остаётся safety-net.
 - **DNS:** прозрачный через Xray (клиентский :53 → dns-инбаунд :5300 → dns-модуль со сплитом:
   регион direct / остальное DoH в туннеле). dnsmasq — резолвер самого роутера.
 - **Geo:** geoip.dat/geosite.dat (скачивание при установке + кнопка обновить).
+- **Отказоустойчивость:** watchdog (cron 1/мин) + failover при подключении (`selectWorking` —
+  эфемерная xray-проба каждого сервера по порядку списка).
 
 ## Инструменты разработки
 - **Тесты:** ucode-харнесс (`test/harness.uc`) + bash netns-харнесс.

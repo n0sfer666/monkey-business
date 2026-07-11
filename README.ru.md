@@ -14,6 +14,14 @@ LuCI (JS) → rpcd (ucode) → UCI → генератор конфига → Xra
 kill-switch, блокировка утечки IPv6, split-DNS поверх DoH, anti-DPI (uTLS + XHTTP-паддинг) и
 дашборд на одном экране.
 
+Две вещи происходят без вашего участия. **Трафик локального региона минует прокси прямо в ядре**:
+его CIDR-диапазоны лежат в nftables-сетах (`mb_ru4`/`mb_ru6`), исключённых из TPROXY, поэтому он не
+платит за лишний хоп через Xray — а правило `geoip:<регион> → direct` внутри Xray остаётся
+подстраховкой. И **упавший туннель чинит себя сам**: cron-watchdog раз в минуту пробит туннель и
+эскалирует *reconnect → переключение на следующий рабочий сервер → откат на direct*, вместо того
+чтобы оставить LAN за fail-closed kill-switch'ем. Такая же проба выбирает сервер при подключении:
+кандидаты перебираются по порядку списка, побеждает первый, через который реально идёт трафик.
+
 > ⚠️ **В разработке.** Бэкенд (парсер подписки, генератор конфига, rpcd-хендлеры) покрыт
 > host-юнит-тестами; сетевой путь (TPROXY/DNS) — netns-харнессом и валидацией конфига реальным
 > `xray`. Реальная пропускная способность VPN проверяется на железе.
@@ -113,8 +121,10 @@ make test-integ  # netns TPROXY-перехват + сгенерированны�
 | `src/rpcd/` | чистые rpcd-хендлеры (host-тестируемые; привязка ubus/uci в `root/…/rpcd/ucode`) |
 | `src/lib/` | общие утилиты (разбор URI) |
 | `luci/` | LuCI client-side JS-вьюшки (dashboard / servers / settings) + меню + ACL |
-| `root/` | файлы на устройстве: UCI-дефолты, procd-init, рантайм rpcd-плагин, geo-скрипт |
+| `root/` | файлы на устройстве: UCI-дефолты, procd-init, рантайм rpcd-плагин |
+| `root/usr/share/monkey-business/` | shell на устройстве: `watchdog.sh` + `probes.sh` (самовосстановление), `ruset.sh` (nft-сеты direct-bypass), `geo.sh`, `boothealth.sh` |
 | `scripts/firewall/` | nftables TPROXY apply/flush |
+| `scripts/expand-sd.sh` | расширение ext4-раздела SD-карты с macOS ([док](docs/sd-expand-macos.ru.md)) |
 | `test/` | ucode-харнесс + unit/snapshot-тесты + netns-интеграция |
 
 Чистая логика (`parser`, `generator`) не зависит от `uci`/`ubus`, поэтому host-тестируема;
@@ -204,6 +214,29 @@ make dev-test-split # проверить сплит-маршрутизацию: 
   VPN включён и сервис запущен.
 - **Изменения настроек/маршрутизации не применяются из LuCI.** Save & Apply коммитит на стороне
   сервера (`config_apply` / `set_routing`), чтобы ничего не оставалось в «Unsaved Changes» LuCI.
+- **LAN-клиент пингует IP локального региона, но не зарубежные.** Так и задумано — при включённом
+  kill-switch (дефолт). ICMP никогда не проксируется (перехватывается только TCP/UDP), поэтому
+  зарубежный IP дропается kill-switch'ем, а IP локального региона проходит, потому что лежит в
+  bypass-сетах `mb_ru4`/`mb_ru6`. То есть ping показывает членство в сете, а не здоровье туннеля —
+  проверяйте через `nft list set inet monkey_business mb_ru4`.
+- **Bypass-сеты пустые / локальный трафик всё равно идёт через Xray.** CIDR-список собирается на
+  этапе деплоя; пересоберите вручную — `sh /usr/share/monkey-business/ruset.sh build` (cron-задания
+  нет, а кнопка *Update geo databases* его **не** пересобирает — она обновляет только `.dat`-файлы).
+  Пустой сет — это не утечка: правило Xray `geoip:<регион> → direct` всё равно уведёт такой трафик
+  напрямую, просто медленнее. Отключить механизм целиком:
+  ```sh
+  # uci set monkey-business.global.direct_bypass=0
+  # uci commit monkey-business
+  # /etc/init.d/monkey-business restart
+  ```
+- **Туннель упал, и роутер сам переключил сервер.** Это watchdog. Он пишет только переходы, и не в
+  `logread`, а в `/usr/local/server.main.log` — `tail -f` покажет `Reconnecting…` /
+  `Failover switched server…` / `VPN stopped, LAN on direct`. Текущее состояние —
+  в `/tmp/mb-watchdog/state`. Лестница эскалации, тюнинг и отключение — в
+  [руководстве по установке](docs/install-nanopi.ru.md#8-самовосстановление-watchdog-и-failover).
+- **Direct-сайты (мимо туннеля) тормозят при живом туннеле.** Обычно это `odhcp6c` в busy-loop на
+  `wan6`, когда провайдер не выдаёт IPv6 — см.
+  [руководство по установке](docs/install-nanopi.ru.md#7-заметки-по-nanopi-r2s-и-решение-проблем).
 
 ---
 
