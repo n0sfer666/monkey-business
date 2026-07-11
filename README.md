@@ -13,6 +13,14 @@ Subscription import (auto-detected format) or manual `vless://` servers; split r
 geoip/geosite (local region direct, the rest through the tunnel), kill-switch, IPv6-leak block,
 DoH split-DNS, anti-DPI (uTLS + XHTTP padding), and a one-screen dashboard.
 
+Two things happen without you asking. **Local-region traffic skips the proxy in the kernel**: its
+CIDRs live in nftables sets (`mb_ru4`/`mb_ru6`) that are excluded from TPROXY, so it never pays the
+Xray hop — the `geoip:<region> → direct` rule inside Xray stays as a safety net. And **a dead tunnel
+heals itself**: a cron watchdog probes the tunnel every minute and escalates *reconnect → fail over
+to the next working server → fall back to direct* rather than leaving the LAN behind a fail-closed
+kill-switch. The same kind of probe picks the server when you connect: candidates are tried in list
+order and the first one that actually carries traffic wins.
+
 > ⚠️ **Work in progress.** The backend (subscription parser, config generator, rpcd handlers) is
 > covered by host unit tests; the network path (TPROXY/DNS) by a netns harness and real-`xray`
 > config validation. Real VPN throughput is validated on hardware.
@@ -112,8 +120,10 @@ Layout:
 | `src/rpcd/` | pure rpcd handlers (host-tested; ubus/uci bound in `root/…/rpcd/ucode`) |
 | `src/lib/` | shared utils (URI parsing) |
 | `luci/` | LuCI client-side JS views (dashboard / servers / settings) + menu + ACL |
-| `root/` | on-device files: UCI default, procd init, runtime rpcd plugin, geo script |
+| `root/` | on-device files: UCI default, procd init, runtime rpcd plugin |
+| `root/usr/share/monkey-business/` | on-device shell: `watchdog.sh` + `probes.sh` (self-healing), `ruset.sh` (nft direct-bypass sets), `geo.sh`, `boothealth.sh` |
 | `scripts/firewall/` | nftables TPROXY apply/flush |
+| `scripts/expand-sd.sh` | grow the SD card's ext4 partition from macOS ([docs](docs/sd-expand-macos.md)) |
 | `test/` | ucode harness + unit/snapshot tests + netns integration |
 
 Pure logic (`parser`, `generator`) stays free of `uci`/`ubus` so it is host-testable; the only
@@ -202,6 +212,29 @@ can target a NanoPi R2S over SSH (see Install → Option A).
   the VPN is on and the service is running.
 - **Settings/routing changes don't apply from LuCI.** Save & Apply commits server-side
   (`config_apply` / `set_routing`) so nothing is left in LuCI's "Unsaved Changes" limbo.
+- **A LAN client can ping local-region IPs but not foreign ones.** Expected, with the kill-switch on
+  (the default). ICMP is never proxied (only TCP/UDP is intercepted), so a foreign IP is dropped by
+  the kill-switch, while a local-region IP is accepted because it sits in the `mb_ru4`/`mb_ru6`
+  bypass sets. Ping therefore tells you set membership, not tunnel health — check with
+  `nft list set inet monkey_business mb_ru4`.
+- **The bypass sets are empty / local traffic still goes through Xray.** The CIDR list is built at
+  deploy time; rebuild it by hand with `sh /usr/share/monkey-business/ruset.sh build` (there is no
+  cron job and *Update geo databases* does **not** rebuild it — it only refreshes the `.dat` files).
+  An empty set is not a leak: Xray's `geoip:<region> → direct` rule still routes that traffic
+  directly, just more slowly. To disable the mechanism entirely:
+  ```sh
+  # uci set monkey-business.global.direct_bypass=0
+  # uci commit monkey-business
+  # /etc/init.d/monkey-business restart
+  ```
+- **The tunnel died and the router switched servers on its own.** That's the watchdog. It logs only
+  transitions to `/usr/local/server.main.log` (not `logread`) — `tail -f` it to see
+  `Reconnecting…` / `Failover switched server…` / `VPN stopped, LAN on direct`. Live state is in
+  `/tmp/mb-watchdog/state`. See [the install guide](docs/install-nanopi.md#8-self-healing-watchdog--failover)
+  for the escalation ladder and how to tune or disable it.
+- **Direct (non-tunnelled) sites are slow while the tunnel itself is fine.** Usually `odhcp6c`
+  busy-looping on `wan6` when the ISP hands out no IPv6 — see
+  [the install guide](docs/install-nanopi.md#7-nanopi-r2s-notes--troubleshooting).
 
 ---
 

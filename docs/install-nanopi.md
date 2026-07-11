@@ -113,11 +113,23 @@ What this does:
   - rpcd plugin → `/usr/share/rpcd/ucode/monkey-business.uc` (+ `lib/monkey-business/` from `src/`),
   - LuCI views → `/www/luci-static/resources/view/monkey-business/`, menu + ACL,
   - `/etc/config/monkey-business` (UCI), `/etc/init.d/monkey-business` (procd),
-  - firewall scripts → `/usr/share/monkey-business/firewall/`, geo script → `/usr/share/monkey-business/geo.sh`.
+  - firewall scripts → `/usr/share/monkey-business/firewall/`, geo script → `/usr/share/monkey-business/geo.sh`,
+  - watchdog → `/usr/share/monkey-business/watchdog.sh` + `probes.sh`, bypass-set builder →
+    `ruset.sh`.
+- **Registers two cron entries** and enables `cron` — idempotent, so re-deploys don't duplicate them:
+  `* * * * * …/watchdog.sh` (self-healing, Section 8) and `*/5 * * * * …/boothealth.sh beat`
+  (flash-safety heartbeat for the ext4 rootfs). It also enables the `mb-boothealth` init script.
+- **Downloads the geo databases** if `/usr/share/xray/{geoip,geosite}.dat` are missing, then builds
+  the kernel bypass sets (`ruset.sh build`). Neither is fatal: if the download fails you can still
+  do it later from the UI, and without the sets local traffic simply goes direct *through* Xray.
 - **Preserves your existing `/etc/config/monkey-business`** across re-deploys (treated as a conffile).
 - Installs any missing runtime deps via `apk` (idempotent).
 - Restarts `rpcd` and verifies the ubus object registered:
   `>> OK: ubus-объект monkey-business зарегистрирован`.
+
+> This is currently the **only** way to install: `scripts/package.sh` is a stub that always exits
+> non-zero, so there is no `.ipk` to build yet (the "Alternative" below is a placeholder for when
+> there is).
 
 > **Do not set `MB_UBUS_RESPAWN=1` for real hardware.** That flag (used only by `make dev-deploy`
 > for the QEMU dev VM) force-respawns `ubusd`/`rpcd` to work around an emulator bug. The R2S doesn't
@@ -217,6 +229,15 @@ Press **Save & Apply**.
 **Dashboard → Turn on.** The status goes *Starting…* → *Connected* once Xray is up (the UI polls
 and surfaces errors instead of hanging).
 
+Connecting is not blind: the servers are tried **in list order**, each on a throwaway Xray instance
+that must actually carry traffic, and the first one that works becomes the selected server. Reorder
+the list to express your preference — a dead entry near the top is skipped rather than connected to.
+
+Probing is not free, though: each candidate costs up to ~10 s, the whole list is tried, and there is
+no cap. With many servers and most of them dead, *Turn on* can therefore exceed the ubus timeout and
+surface an error instead of a graceful fallback. Keep known-dead servers out of the list, or put a
+reliable one first.
+
 Verify the exit path:
 
 - **Dashboard → Check exit IP** — probes ip-api.com *through the split rules*; you should see your
@@ -240,12 +261,28 @@ Verify the exit path:
   and prefer Reality over heavier TLS stacks.
 - **Two NICs.** One R2S Ethernet port is behind USB3; make sure your LAN bridge (`br-lan`) is the
   one clients are on. The firewall intercepts `iifname "br-lan"` by default — if your LAN interface
-  differs, set `uci set monkey-business.global.lan_iface=<iface>` and re-apply.
-- **A *Direct* entry looks ignored (e.g. `ping <IP>` from a LAN client times out).** `ping`/ICMP
-  is not a valid test: only TCP/UDP is intercepted, so ICMP to any public IP is dropped by the
-  kill-switch whether or not the address is on the *Direct* list. Direct routing happens inside
-  Xray (there is no kernel-level bypass), so test with `curl`/`nc` (TCP), or add the host to *Direct*
-  and confirm with **Dashboard → Check exit IP** — not with ping.
+  differs:
+  ```sh
+  # uci set monkey-business.global.lan_iface=<iface>
+  # uci commit monkey-business          # without commit it reverts on reboot
+  # /etc/init.d/monkey-business restart
+  ```
+- **A *Direct* entry looks ignored (e.g. `ping <IP>` from a LAN client times out).** `ping`/ICMP is
+  not a valid test of your *Direct* list: only TCP/UDP is intercepted, and ICMP to a public IP is
+  dropped by the kill-switch. Custom *Direct* entries live in Xray's routing only — there is no
+  kernel bypass for them — so test with `curl`/`nc` (TCP), or add the host to *Direct* and confirm
+  with **Dashboard → Check exit IP**, not with ping.
+  The one exception is the **local region**: its CIDRs *are* in the kernel bypass sets
+  (`mb_ru4`/`mb_ru6`, enabled by `direct_bypass`, on by default), which the leak-guard accepts — so
+  those addresses do answer ping. A local-region IP that doesn't is simply missing from the set:
+  ```sh
+  # nft list set inet monkey_business mb_ru4 | head        # is the address in there?
+  # sh /usr/share/monkey-business/ruset.sh build           # rebuild the sets from the CIDR list
+  # sh /usr/share/monkey-business/ruset.sh status          # {"state":…,"v4":N,"v6":N}
+  ```
+  The sets are built at deploy time and **never refreshed automatically** (no cron, and *Update geo
+  databases* only touches the `.dat` files) — rebuild them by hand once in a while. An empty set is
+  not a leak: Xray's `geoip:<region> → direct` rule still sends that traffic direct, just slower.
 - **`geo databases missing` on Turn on.** Do Section 3 first.
 - **Stuck on "Starting…".** Xray crashed — `logread | grep xray`. Usual causes: wrong Reality
   params on the server entry, or a TPROXY port already in use.
@@ -260,6 +297,70 @@ Verify the exit path:
   `reboot` (the boot itself is fine on hardware; only the QEMU dev-VM has the separate boot-hang).
 - **`apk` vs `opkg`.** `deploy-vm.sh` installs runtime deps via whichever your build has. If neither is
   found, install `xray-core kmod-nft-tproxy rpcd-mod-ucode ucode-mod-uci ucode-mod-fs curl` by hand.
+- **Direct (non-tunnelled) traffic is slow — seconds to first byte — while the tunnel itself is
+  fine.** One known cause: if your ISP hands out no IPv6, `odhcp6c` on `wan6` keeps retrying, burns
+  CPU and causes SYN retransmits on direct traffic. It looks like CGNAT or a monkey-business routing
+  bug; it is neither. **Confirm before changing anything** — the process should be visibly spinning
+  and the log full of retries:
+  ```sh
+  # top -b -n1 | grep odhcp6c        # noticeable CPU on a supposedly idle router
+  # logread | grep -i odhcp6c | tail
+  # ip -6 addr show dev $(uci -q get network.wan.device)   # no global IPv6 = nothing to wait for
+  ```
+  If that matches, disable WAN IPv6. This turns off IPv6 on the WAN entirely — fine when the ISP
+  gives you none, but don't do it if you actually have working IPv6:
+  ```sh
+  # uci set network.wan6.disabled='1'
+  # uci commit network
+  # /etc/init.d/network restart
+  ```
+  Verified on one ISP/device; if the symptoms don't match the checks above, look elsewhere.
+- **Out of space on the overlay.** A stock ImmortalWrt image leaves a small rootfs; xray-core plus the
+  two `.dat` files fill it quickly. You can grow the SD card's ext4 partition from macOS — see
+  [docs/sd-expand-macos.md](sd-expand-macos.md).
+
+---
+
+## 8. Self-healing (watchdog & failover)
+
+`make deploy` installs a cron watchdog that runs every minute. It is what keeps a fail-closed
+kill-switch from turning a dead tunnel into a dead LAN.
+
+Each tick it checks liveness cheaply (a TLS handshake through the tunnel's SOCKS port) and, every
+few ticks, verifies that the exit IP still differs from your home IP — that catches traffic leaking
+*around* the tunnel, which a plain "is xray running" check misses. After **3 consecutive failures**
+it escalates:
+
+0. **Is the internet up at all?** If a probe *without* the proxy also fails, the problem is your
+   uplink, not the tunnel — reconnecting or switching servers would be pointless. The VPN is stopped
+   immediately (LAN falls back to direct) and retried every 10 minutes until the link returns.
+1. **Reconnect** — otherwise, bounce Xray (`kill`; procd respawns it). The kill-switch is *held*
+   throughout, so nothing leaks while the tunnel is down. Up to 2 attempts.
+2. **Failover** — ask the backend to re-apply the config, which re-probes the servers in list order
+   and selects the first working one.
+3. **Fall back to direct** — if no server works, stop the service. This flushes the firewall and
+   removes the kill-switch, so the LAN keeps working *without* the VPN. The watchdog then retries
+   every 10 minutes and restores the tunnel when it comes back.
+
+Transitions (only transitions — this is flash-friendly) are logged to `/usr/local/server.main.log`,
+**not** to `logread`:
+
+```sh
+# tail -f /usr/local/server.main.log
+# cat /tmp/mb-watchdog/state          # phase, fail counters, exit/home IP
+```
+
+There are no UCI options and no LuCI switch. Tuning is env-only (`MB_WD_*`, defaults at the top of
+`watchdog.sh`), and since cron passes no environment, you tune it by editing the crontab line
+itself — e.g. to fail over sooner:
+
+```sh
+# sed -i 's#^\* \* \* \* \* /usr/share/monkey-business/watchdog.sh#* * * * * MB_WD_FAIL_LIMIT=2 /usr/share/monkey-business/watchdog.sh#' /etc/crontabs/root
+# /etc/init.d/cron restart
+```
+
+To disable it, delete the **`watchdog.sh`** line from `/etc/crontabs/root` (leave the
+`boothealth.sh beat` line — that one is flash-safety, not VPN).
 
 ---
 
