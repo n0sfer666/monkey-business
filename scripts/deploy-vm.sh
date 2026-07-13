@@ -30,9 +30,11 @@ if [ -n "$PASS" ]; then
 	fi
 fi
 
-# MB_UBUS_RESPAWN раскрывается в удалённую shell-строку -> допускаем только 0/1 (без инъекции)
+# раскрываются в удалённую shell-строку под root -> допускаем только 0/1 (без инъекции)
 RESPAWN="${MB_UBUS_RESPAWN:-0}"
 case "$RESPAWN" in 0|1) ;; *) RESPAWN=0 ;; esac
+ALLOW_MISSING="${MB_ALLOW_MISSING:-0}"
+case "$ALLOW_MISSING" in 0|1) ;; *) ALLOW_MISSING=0 ;; esac
 
 stage=$(mktemp -d)
 tarball=$(mktemp)
@@ -58,6 +60,8 @@ chmod 755 "$stage/etc/init.d/monkey-business"
 mkdir -p "$stage/usr/share/monkey-business/firewall"
 cp scripts/firewall/apply.sh scripts/firewall/flush.sh "$stage/usr/share/monkey-business/firewall/"
 chmod 755 "$stage/usr/share/monkey-business/firewall/"*.sh
+cpf root/usr/share/monkey-business/fetch.sh "$stage/usr/share/monkey-business/fetch.sh"
+chmod 644 "$stage/usr/share/monkey-business/fetch.sh"
 cpf root/usr/share/monkey-business/geo.sh "$stage/usr/share/monkey-business/geo.sh"
 chmod 755 "$stage/usr/share/monkey-business/geo.sh"
 cpf root/usr/share/monkey-business/ruset.sh "$stage/usr/share/monkey-business/ruset.sh"
@@ -68,6 +72,13 @@ cpf root/usr/share/monkey-business/probes.sh "$stage/usr/share/monkey-business/p
 chmod 644 "$stage/usr/share/monkey-business/probes.sh"
 cpf root/usr/share/monkey-business/boothealth.sh "$stage/usr/share/monkey-business/boothealth.sh"
 chmod 755 "$stage/usr/share/monkey-business/boothealth.sh"
+cpf root/usr/share/monkey-business/nicwatch.sh "$stage/usr/share/monkey-business/nicwatch.sh"
+chmod 755 "$stage/usr/share/monkey-business/nicwatch.sh"
+cpf root/usr/share/monkey-business/nicfw.sh "$stage/usr/share/monkey-business/nicfw.sh"
+chmod 755 "$stage/usr/share/monkey-business/nicfw.sh"
+cpf root/usr/share/monkey-business/firmware/rtl8153b-2.fw \
+	"$stage/usr/share/monkey-business/firmware/rtl8153b-2.fw"
+chmod 644 "$stage/usr/share/monkey-business/firmware/rtl8153b-2.fw"
 cpf root/etc/init.d/mb-boothealth "$stage/etc/init.d/mb-boothealth"
 chmod 755 "$stage/etc/init.d/mb-boothealth"
 
@@ -93,7 +104,7 @@ echo ">> installing files + runtime deps + reloading rpcd"
 # MB_RESPAWN передаётся в удалённый шелл (значение раскрывается ЛОКАЛЬНО), сам скрипт — через
 # stdin-heredoc <<'REMOTE' (без локального раскрытия $ внутри).
 # shellcheck disable=SC2086
-$SSH $SSH_OPTS -p "$PORT" "$HOST" "MB_RESPAWN='$RESPAWN' sh -s" <<'REMOTE'
+$SSH $SSH_OPTS -p "$PORT" "$HOST" "MB_RESPAWN='$RESPAWN' MB_ALLOW_MISSING='$ALLOW_MISSING' sh -s" <<'REMOTE'
 	set -e
 	# сохранить пользовательский UCI-конфиг (url/серверы/выбор) между деплоями — как conffile
 	[ -f /etc/config/monkey-business ] && cp /etc/config/monkey-business /tmp/mb-cfg.keep
@@ -113,7 +124,8 @@ $SSH $SSH_OPTS -p "$PORT" "$HOST" "MB_RESPAWN='$RESPAWN' sh -s" <<'REMOTE'
 	chmod 644 /usr/share/rpcd/ucode/monkey-business.uc
 	chmod +x /etc/init.d/monkey-business /etc/init.d/mb-boothealth \
 		/usr/share/monkey-business/firewall/*.sh \
-		/usr/share/monkey-business/watchdog.sh /usr/share/monkey-business/boothealth.sh
+		/usr/share/monkey-business/watchdog.sh /usr/share/monkey-business/boothealth.sh \
+		/usr/share/monkey-business/nicwatch.sh /usr/share/monkey-business/nicfw.sh
 	rm -f /tmp/mb-deploy.tgz /tmp/luci-indexcache* 2>/dev/null || true
 
 	# boot-resilience: ранний init-хук (детект unclean/ro на загрузке, clean на стопе) + инициализация
@@ -126,39 +138,90 @@ $SSH $SSH_OPTS -p "$PORT" "$HOST" "MB_RESPAWN='$RESPAWN' sh -s" <<'REMOTE'
 	mkdir -p /etc/crontabs
 	WD_LINE='* * * * * /usr/share/monkey-business/watchdog.sh >/dev/null 2>&1'
 	BH_LINE='*/5 * * * * /usr/share/monkey-business/boothealth.sh beat >/dev/null 2>&1'
+	NW_LINE='* * * * * /usr/share/monkey-business/nicwatch.sh >/dev/null 2>&1'
 	grep -q 'monkey-business/watchdog.sh' /etc/crontabs/root 2>/dev/null \
 		|| printf '%s\n' "$WD_LINE" >> /etc/crontabs/root
 	grep -q 'monkey-business/boothealth.sh' /etc/crontabs/root 2>/dev/null \
 		|| printf '%s\n' "$BH_LINE" >> /etc/crontabs/root
+	grep -q 'monkey-business/nicwatch.sh' /etc/crontabs/root 2>/dev/null \
+		|| printf '%s\n' "$NW_LINE" >> /etc/crontabs/root
 	/etc/init.d/cron enable >/dev/null 2>&1 || true
 	/etc/init.d/cron restart >/dev/null 2>&1 || true
 
-	# рантайм-зависимости (идемпотентно; для UI хватает uci/fs+rpcd-mod-ucode из LuCI,
-	# xray/tproxy нужны только для запуска сервиса). ImmortalWrt/OpenWrt бывает и на apk (24.10+),
-	# и на opkg — поддерживаем оба. Не валим деплой при отсутствии сети/пакета.
-	PKGS="ucode-mod-uci ucode-mod-fs rpcd-mod-ucode xray-core kmod-nft-tproxy curl"
-	if command -v apk >/dev/null 2>&1; then
-		for p in $PKGS; do apk info -e "$p" >/dev/null 2>&1 || MISS="${MISS:-} $p"; done
-		[ -n "${MISS:-}" ] && { echo ">> installing missing (apk):$MISS"; apk add $MISS >/dev/null 2>&1 || echo "   (apk add не прошёл — нет сети/пакета?)"; }
-	elif command -v opkg >/dev/null 2>&1; then
-		opkg list-installed >/tmp/mb-pkgs 2>/dev/null || true
-		for p in $PKGS; do grep -q "^$p " /tmp/mb-pkgs 2>/dev/null || MISS="${MISS:-} $p"; done
-		rm -f /tmp/mb-pkgs
-		[ -n "${MISS:-}" ] && { echo ">> installing missing (opkg):$MISS"; { opkg update >/dev/null 2>&1 && opkg install $MISS >/dev/null 2>&1; } || echo "   (opkg install не прошёл — нет сети/пакета?)"; }
-	else
-		echo ">> warn: ни apk, ни opkg не найдены — проверь рантайм-зависимости вручную"
+	# Рантайм-зависимости (идемпотентно). REQUIRED — без них система нерабочая, деплой ПАДАЕТ:
+	# молча отдать роутер без xray/tproxy хуже, чем не задеплоить вовсе. curl тоже REQUIRED:
+	# probes.sh/watchdog/failover и socks-фолбэк fetch.sh умеют ТОЛЬКО его — без curl пробы
+	# всегда падают и watchdog зациклится на reconnect/failover.
+	REQUIRED="ucode-mod-uci ucode-mod-fs rpcd-mod-ucode xray-core kmod-nft-tproxy curl"
+
+	if command -v apk >/dev/null 2>&1; then PM=apk
+	elif command -v opkg >/dev/null 2>&1; then PM=opkg
+	else PM=""; echo ">> warn: ни apk, ни opkg не найдены — проверь рантайм-зависимости вручную"
 	fi
 
-	# geo-базы + RU-сет из коробки: без geoip.dat/geosite.dat правила geoip:ru/geosite:category-ru не
-	# матчат -> direct ломается. Идемпотентно (geo.sh sha-skip), не фатально (UI позволит обновить позже).
-	if command -v xray >/dev/null 2>&1; then
-		if [ ! -s /usr/share/xray/geoip.dat ] || [ ! -s /usr/share/xray/geosite.dat ]; then
-			echo ">> downloading geo databases…"
-			sh /usr/share/monkey-business/geo.sh download || echo "   (geo download failed — update later in UI)"
+	pkg_have() {
+		case "$PM" in
+			apk)  apk info -e "$1" >/dev/null 2>&1 ;;
+			opkg) opkg list-installed 2>/dev/null | grep -q "^$1 " ;;
+			*)    return 0 ;;
+		esac
+	}
+	pkg_add() {
+		case "$PM" in
+			apk)  apk add "$1" >/dev/null 2>&1 ;;
+			opkg) opkg install "$1" >/dev/null 2>&1 ;;
+			*)    return 1 ;;
+		esac
+	}
+
+	if [ -n "$PM" ]; then
+		# Индекс обновляем ЯВНО: иначе apk тянет его на лету, и недоступность любого репозитория
+		# (напр. kmods) роняет установку целиком — включая пакеты, доступные из других репо.
+		echo ">> refreshing package index ($PM)"
+		pkg_update() {
+			case "$PM" in
+				apk)  apk update >/dev/null 2>&1 ;;
+				opkg) opkg update >/dev/null 2>&1 ;;
+				*)    return 1 ;;
+			esac
+		}
+		if ! pkg_update; then
+			echo "   ! индекс не обновился — установка может не найти пакеты"
 		fi
-		echo ">> building RU direct-bypass set…"
-		sh /usr/share/monkey-business/ruset.sh build || echo "   (ru-set build failed — direct-bypass falls back to xray)"
+
+		# Ставим ПО ОДНОМУ: apk/opkg транзакционны, и один нерезолвимый пакет откатил бы всю
+		# установку разом (так xray-core и не встал из-за битого kmods-индекса).
+		for p in $REQUIRED; do
+			if pkg_have "$p"; then continue; fi
+			echo ">> installing $p"
+			if ! pkg_add "$p"; then echo "   ! $p: установка не удалась"; fi
+		done
+
+		for p in $REQUIRED; do
+			if ! pkg_have "$p"; then FAILED="${FAILED:-} $p"; fi
+		done
+		if [ -n "${FAILED:-}" ]; then
+			echo "!! КРИТИЧНЫЕ ПАКЕТЫ НЕ УСТАНОВЛЕНЫ:$FAILED" >&2
+			echo "!! без них monkey-business нерабочий (xray не стартует / нет TPROXY)." >&2
+			echo "!! почини сеть/репозитории и повтори деплой; MB_ALLOW_MISSING=1 — продолжить как есть." >&2
+			if [ "${MB_ALLOW_MISSING:-0}" != 1 ]; then exit 1; fi
+		fi
 	fi
+
+	# Прошивка USB-сетевухи: OpenWrt везёт rtl8153b-2 v2, подвешивающую TX-очередь на R2S
+	# (openwrt#22130). Скрипт сам решает, наше ли это железо, и идемпотентен.
+	sh /usr/share/monkey-business/nicfw.sh apply || echo "   (nicfw failed — сетевуха останется на пакетной прошивке)"
+
+	# geo-базы + RU-сет из коробки: без geoip.dat/geosite.dat правила geoip:ru/geosite:category-ru не
+	# матчат -> direct ломается. Идемпотентно (geo.sh sha-skip).
+	if [ ! -s /usr/share/xray/geoip.dat ] || [ ! -s /usr/share/xray/geosite.dat ]; then
+		echo ">> downloading geo databases…"
+		if ! sh /usr/share/monkey-business/geo.sh download; then
+			echo "   ! geo download failed — direct-маршрутизация будет неполной; обнови из UI"
+		fi
+	fi
+	echo ">> building RU direct-bypass set…"
+	sh /usr/share/monkey-business/ruset.sh build || echo "   (ru-set build failed — direct-bypass falls back to xray)"
 
 	# dev-VM: убить любые stale/detached rpcd (от прошлого respawn) -> ровно один свежий инстанс,
 	# иначе старый rpcd держит в памяти прежний код и отвечает на ubus устаревшими данными.
