@@ -15,14 +15,17 @@ DEFAULT_URL="https://raw.githubusercontent.com/Loyalsoldier/geoip/release/text/r
 RU4="$DIR/ru4.nft"
 RU6="$DIR/ru6.nft"
 
+LIB="${MB_LIB_DIR:-$(dirname "$0")}"
+# без fetch.sh падать нельзя: status дёргает rpcd на каждый рендер дашборда и ждёт JSON
+if [ -r "$LIB/fetch.sh" ]; then
+	# shellcheck source-path=SCRIPTDIR source=fetch.sh
+	. "$LIB/fetch.sh"
+else
+	mb_fetch() { echo "fetch.sh not found in $LIB" >&2; return 1; }
+fi
+
 uci_get() { uci -q get "monkey-business.geo.$1" 2>/dev/null || echo ""; }
 set_state() { echo "$1" >"$STATE"; }
-
-fetch() { # fetch <url> <out>
-	if command -v curl >/dev/null 2>&1; then curl -fsSL -m 120 -o "$2" "$1"
-	elif command -v uclient-fetch >/dev/null 2>&1; then uclient-fetch -q -T 120 -O "$2" "$1"
-	else wget -q -T 120 -O "$2" "$1"; fi
-}
 
 sha_of() { sha256sum "$1" 2>/dev/null | awk '{print $1}'; }
 
@@ -69,7 +72,7 @@ cmd_build() {
 	url="$(uci_get ru_set_url)"
 	[ -n "$url" ] || url="${MB_RUSET_URL:-$DEFAULT_URL}"
 	tmp="$(mktemp "${TMPDIR:-/tmp}/mb-ru.dl.XXXXXX")" || { set_state "error: mktemp failed"; return 1; }
-	if ! fetch "$url" "$tmp"; then set_state "error: download failed"; rm -f "$tmp"; return 1; fi
+	if ! mb_fetch "$url" "$tmp"; then set_state "error: download failed"; rm -f "$tmp"; return 1; fi
 	if [ ! -s "$tmp" ]; then set_state "error: empty source"; rm -f "$tmp"; return 1; fi
 	new="$(sha_of "$tmp")"
 	if [ -n "$new" ] && [ "$new" = "$old" ] && [ -f "$RU4" ]; then

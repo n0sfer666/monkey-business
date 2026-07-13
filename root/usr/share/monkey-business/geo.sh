@@ -11,18 +11,22 @@ DEST="${MB_GEO_DIR:-/usr/share/xray}"
 STATE="/tmp/mb-geo.state"
 DEFAULT_BASE="https://github.com/Loyalsoldier/v2ray-rules-dat/releases/latest/download"
 
+LIB="${MB_LIB_DIR:-$(dirname "$0")}"
+# без fetch.sh падать нельзя: status дёргает rpcd на каждый рендер дашборда и ждёт JSON
+if [ -r "$LIB/fetch.sh" ]; then
+	# shellcheck source-path=SCRIPTDIR source=fetch.sh
+	. "$LIB/fetch.sh"
+else
+	mb_fetch() { echo "fetch.sh not found in $LIB" >&2; return 1; }
+fi
+
 uci_get() { uci -q get "monkey-business.geo.$1" 2>/dev/null || echo ""; }
 set_state() { echo "$1" >"$STATE"; }
-
-fetch() { # fetch <url> <out>
-	if command -v curl >/dev/null 2>&1; then curl -fsSL -m 120 -o "$2" "$1"
-	elif command -v uclient-fetch >/dev/null 2>&1; then uclient-fetch -q -T 120 -O "$2" "$1"
-	else wget -q -T 120 -O "$2" "$1"; fi
-}
 
 # validate <which> <file> -> 0 если xray грузит .dat
 validate() {
 	which="$1"; file="$2"
+	command -v xray >/dev/null 2>&1 || { echo "xray not installed"; return 1; }
 	[ -s "$file" ] || { echo "empty file"; return 1; }
 	# уникальный каталог на вызов: без клоббера/TOCTOU при параллельных validate
 	dir="$(mktemp -d "${TMPDIR:-/tmp}/mb-geocheck.XXXXXX")" || { echo "mktemp failed"; return 1; }
@@ -38,8 +42,11 @@ EOF
 	XRAY_LOCATION_ASSET="$dir" xray run -test -c "$dir/test.json" >"$dir/err" 2>&1
 	rc=$?
 	if [ "$rc" != 0 ]; then
+		# НЕ подставлять заглушку "invalid .dat": xray падает и по причинам, не связанным с файлом
+		# (нет бинарника, нет прав, нет места) -> ложное обвинение файла уводит диагностику в сторону.
 		line="$(grep -iE 'failed|error|invalid|panic' "$dir/err" | head -1)"
-		[ -n "$line" ] || line="invalid geo .dat (xray test failed)"
+		[ -n "$line" ] || line="$(head -1 "$dir/err" 2>/dev/null)"
+		[ -n "$line" ] || line="xray -test exited with code $rc, no output"
 		rm -rf "$dir"
 		echo "$which.dat rejected: $line"
 		return 1
@@ -60,13 +67,18 @@ install_one() { # install_one <which> <src>
 sha_of() { sha256sum "$1" 2>/dev/null | awk '{print $1}'; }
 remote_sha() { # remote_sha <dat_url> -> печатает hash или пусто
 	t="$(mktemp "${TMPDIR:-/tmp}/mb-sum.XXXXXX")" || return 0
-	if fetch "$1.sha256sum" "$t" 2>/dev/null && [ -s "$t" ]; then
+	if mb_fetch "$1.sha256sum" "$t" 2>/dev/null && [ -s "$t" ]; then
 		awk '{print $1; exit}' "$t"
 	fi
 	rm -f "$t"
 }
 
 cmd_download() {
+	if ! command -v xray >/dev/null 2>&1; then
+		set_state "error: xray not installed (apk add xray-core)"
+		echo "xray not installed — cannot validate geo databases" >&2
+		return 1
+	fi
 	set_state "updating"
 	base="${MB_GEO_BASE:-$DEFAULT_BASE}"
 	gip="$(uci_get geoip_url)"; gst="$(uci_get geosite_url)"
@@ -82,7 +94,7 @@ cmd_download() {
 			continue
 		fi
 		tmp="$(mktemp "${TMPDIR:-/tmp}/mb-$which.dl.XXXXXX")" || { set_state "error: mktemp failed ($which)"; return 1; }
-		if ! fetch "$url" "$tmp"; then set_state "error: download failed ($which)"; rm -f "$tmp"; return 1; fi
+		if ! mb_fetch "$url" "$tmp"; then set_state "error: download failed ($which)"; rm -f "$tmp"; return 1; fi
 		# проверка целостности по контрольной сумме (если она доступна)
 		if [ -n "$rsum" ] && [ "$rsum" != "$(sha_of "$tmp")" ]; then
 			set_state "error: checksum mismatch ($which)"; rm -f "$tmp"; return 1
