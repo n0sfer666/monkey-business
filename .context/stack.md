@@ -3,8 +3,11 @@
 **Домен:** systems / networking / embedded (OpenWrt firmware app).
 
 ## Целевая платформа
-- ImmortalWrt (приоритет) + совместимость OpenWrt.
+- **Боевое устройство: OpenWrt 25.12.1** (apk, не opkg). ImmortalWrt поддерживается, но на железе
+  стоит именно OpenWrt — сверяться с ним.
 - Железо: NanoPi R2S — RK3328, ARMv8 **aarch64**, 2×Ethernet, ~1 ГБ RAM, без аппаратного AES.
+- **LAN = `eth1`** — USB-адаптер RTL8153B (драйвер `r8152`), единственный член `br-lan`; `eth0` = WAN.
+  Пакетная прошивка `rtl8153b-2 v2` вешает TX-очередь (openwrt#22130) → держим v1 (`nicfw.sh`).
 - Роль: основной шлюз LAN.
 
 ## Компоненты

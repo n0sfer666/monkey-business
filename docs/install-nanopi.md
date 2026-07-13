@@ -114,11 +114,18 @@ What this does:
   - LuCI views → `/www/luci-static/resources/view/monkey-business/`, menu + ACL,
   - `/etc/config/monkey-business` (UCI), `/etc/init.d/monkey-business` (procd),
   - firewall scripts → `/usr/share/monkey-business/firewall/`, geo script → `/usr/share/monkey-business/geo.sh`,
+  - NIC firmware → `nicfw.sh` + `firmware/rtl8153b-2.fw`, its watchdog → `nicwatch.sh`,
+    shared downloader → `fetch.sh`,
   - watchdog → `/usr/share/monkey-business/watchdog.sh` + `probes.sh`, bypass-set builder →
     `ruset.sh`.
-- **Registers two cron entries** and enables `cron` — idempotent, so re-deploys don't duplicate them:
-  `* * * * * …/watchdog.sh` (self-healing, Section 8) and `*/5 * * * * …/boothealth.sh beat`
-  (flash-safety heartbeat for the ext4 rootfs). It also enables the `mb-boothealth` init script.
+- **Checks runtime deps** (`xray-core`, `kmod-nft-tproxy`, `curl`, the ucode/rpcd modules) and
+  installs missing ones one at a time. If a required package fails, **the deploy fails**: silently
+  handing over a router without xray is worse than not deploying (override: `MB_ALLOW_MISSING=1`).
+- **Installs NIC firmware v1** (`nicfw.sh apply`) when the `r8152` driver is present — see Section 9.
+- **Registers three cron entries** and enables `cron` — idempotent, so re-deploys don't duplicate
+  them: `* * * * * …/watchdog.sh` (self-healing, Section 8), `*/5 * * * * …/boothealth.sh beat`
+  (flash-safety heartbeat for the ext4 rootfs) and `* * * * * …/nicwatch.sh` (USB NIC stall
+  safety net, Section 9). It also enables the `mb-boothealth` init script.
 - **Downloads the geo databases** if `/usr/share/xray/{geoip,geosite}.dat` are missing, then builds
   the kernel bypass sets (`ruset.sh build`). Neither is fatal: if the download fails you can still
   do it later from the UI, and without the sets local traffic simply goes direct *through* Xray.
@@ -366,3 +373,41 @@ To disable it, delete the **`watchdog.sh`** line from `/etc/crontabs/root` (leav
 
 For everything else (architecture, development, the dev VM), see the main
 [README](../README.md).
+
+---
+
+## 9. The RTL8153B USB NIC: firmware & watchdog
+
+On the R2S the entire LAN is `eth1` — an RTL8153B USB3 adapter on the `r8152` driver (the built-in
+`eth0` serves WAN). OpenWrt ships firmware `rtl8153b-2 v2 (04/27/23)`, which **hangs the TX queue**
+on this board ([openwrt#22130](https://github.com/openwrt/openwrt/issues/22130)): the log fills with
+`NETDEV WATCHDOG: transmit queue 0 timed out`, packets are dropped, connections take seconds to
+establish, and under load the controller goes into a USB reset and the LAN disappears entirely.
+FriendlyELEC ships `v1 (10/23/19)`, which does not have the bug.
+
+The deploy fixes this for you: `nicfw.sh apply` installs the v1 blob from the repo over the packaged
+one and pins it in `/etc/sysupgrade.conf` so it survives `sysupgrade`. The step is idempotent and
+guarded — on other hardware (no `r8152` driver) it does nothing at all.
+
+**The firmware only takes effect after a reboot** — the driver reads it at probe time, and
+re-binding the USB device during the deploy is not an option: the deploy travels over that same LAN.
+
+```sh
+# sh /usr/share/monkey-business/nicfw.sh status
+{"driver_r8152":"yes","v1_installed":"yes","kept_on_sysupgrade":"yes"}
+# reboot
+# ethtool -i eth1 | grep firmware      # after the reboot: rtl8153b-2 v1 10/23/19
+```
+
+On top of that sits a safety net: `nicwatch.sh`, run from cron every minute (in case the firmware
+was not applied, or v1 stalls too). A tick costs two sysfs reads and no network probes. It reacts
+**only** to a genuine stall: `tx_errors` grew while `tx_packets` did not. Growing `tx_errors` alone
+is not enough (the counter also rises from harmless errors) — otherwise the watchdog would drop a
+perfectly live LAN itself. Escalation: first strike bounces the link, further strikes re-bind the
+USB device; if the stall persists, attempts back off so the LAN isn't dropped every minute while
+you're trying to fix it by hand.
+
+```sh
+# cat /tmp/mb-nicwatch/state         # tx_errors tx_packets strikes
+# logread -e mb-nicwatch
+```

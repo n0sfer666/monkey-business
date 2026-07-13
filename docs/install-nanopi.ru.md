@@ -114,10 +114,16 @@ with-env { MB_VM_SSH_HOST: "root@<router-ip>", MB_VM_SSH_PORT: "22" } { sh scrip
   - `/etc/config/monkey-business` (UCI), `/etc/init.d/monkey-business` (procd),
   - firewall-скрипты → `/usr/share/monkey-business/firewall/`, geo-скрипт → `/usr/share/monkey-business/geo.sh`,
   - watchdog → `/usr/share/monkey-business/watchdog.sh` + `probes.sh`, сборщик bypass-сетов →
-    `ruset.sh`.
-- **Регистрирует две cron-строки** и включает `cron` — идемпотентно, повторные деплои их не
-  дублируют: `* * * * * …/watchdog.sh` (самовосстановление, Раздел 8) и
-  `*/5 * * * * …/boothealth.sh beat` (heartbeat для бережного обращения с ext4-rootfs). Заодно
+    `ruset.sh`, общая загрузка → `fetch.sh`,
+  - прошивка USB-сетевухи → `nicfw.sh` + `firmware/rtl8153b-2.fw`, её watchdog → `nicwatch.sh`.
+- **Проверяет рантайм-зависимости** (`xray-core`, `kmod-nft-tproxy`, `curl`, ucode/rpcd-модули) и
+  ставит недостающие по одному. Если критичный пакет не встал — **деплой падает**: отдать роутер
+  без xray молча хуже, чем не задеплоить (обойти осознанно: `MB_ALLOW_MISSING=1`).
+- **Ставит прошивку NIC v1** (`nicfw.sh apply`), если найден драйвер `r8152` — см. Раздел 9.
+- **Регистрирует три cron-строки** и включает `cron` — идемпотентно, повторные деплои их не
+  дублируют: `* * * * * …/watchdog.sh` (самовосстановление, Раздел 8),
+  `*/5 * * * * …/boothealth.sh beat` (heartbeat для бережного обращения с ext4-rootfs) и
+  `* * * * * …/nicwatch.sh` (страховка от залипания USB-сетевухи, Раздел 9). Заодно
   включается init-скрипт `mb-boothealth`.
 - **Скачивает geo-базы**, если `/usr/share/xray/{geoip,geosite}.dat` отсутствуют, и собирает
   bypass-сеты в ядре (`ruset.sh build`). Ни то, ни другое не фатально: скачать можно позже из UI, а
@@ -367,3 +373,40 @@ UCI-опций и переключателя в LuCI нет. Тюнинг тол
 
 Всё остальное (архитектура, разработка, dev-VM) — в основном
 [README](../README.ru.md).
+
+---
+
+## 9. USB-сетевуха RTL8153B: прошивка и watchdog
+
+На R2S весь LAN — это `eth1`, USB3-адаптер RTL8153B на драйвере `r8152` (встроенный `eth0` уходит
+под WAN). OpenWrt везёт прошивку `rtl8153b-2 v2 (04/27/23)`, на которой у R2S **зависает TX-очередь**
+([openwrt#22130](https://github.com/openwrt/openwrt/issues/22130)): в логе `NETDEV WATCHDOG:
+transmit queue 0 timed out`, пакеты теряются, соединения устанавливаются секундами, а под нагрузкой
+контроллер уходит в USB-reset и LAN пропадает целиком. FriendlyELEC штатно шлёт `v1 (10/23/19)` —
+на ней бага нет.
+
+Деплой чинит это сам: `nicfw.sh apply` кладёт v1 из репозитория поверх пакетной и пинит файл в
+`/etc/sysupgrade.conf`, чтобы он пережил `sysupgrade`. Шаг идемпотентный и защищён проверкой:
+на чужом железе (нет драйвера `r8152`) он просто ничего не делает.
+
+**Прошивка вступает в силу только после перезагрузки** — драйвер читает её при probe, а
+передёргивать USB-устройство прямо в деплое нельзя: деплой идёт по этому же LAN.
+
+```sh
+# sh /usr/share/monkey-business/nicfw.sh status
+{"driver_r8152":"yes","v1_installed":"yes","kept_on_sysupgrade":"yes"}
+# reboot
+# ethtool -i eth1 | grep firmware      # после перезагрузки: rtl8153b-2 v1 10/23/19
+```
+
+Сверху стоит страховка — `nicwatch.sh` в cron раз в минуту (на случай, если прошивка не применилась
+или v1 тоже словит залипание). Тик стоит два чтения sysfs, сетевых проб нет. Реагирует он **только**
+на настоящее залипание: `tx_errors` вырос, а `tx_packets` — нет. Одного роста `tx_errors` мало
+(счётчик растёт и от безобидных ошибок), иначе watchdog сам ронял бы живой LAN. Эскалация: первый
+страйк — передёрнуть линк, дальше — re-bind USB-устройства; если залипание устойчиво, попытки
+уходят в паузу, чтобы не ронять LAN каждую минуту и не мешать чинить руками.
+
+```sh
+# cat /tmp/mb-nicwatch/state         # tx_errors tx_packets страйки
+# logread -e mb-nicwatch
+```

@@ -121,7 +121,7 @@ Layout:
 | `src/lib/` | shared utils (URI parsing) |
 | `luci/` | LuCI client-side JS views (dashboard / servers / settings) + menu + ACL |
 | `root/` | on-device files: UCI default, procd init, runtime rpcd plugin |
-| `root/usr/share/monkey-business/` | on-device shell: `watchdog.sh` + `probes.sh` (self-healing), `ruset.sh` (nft direct-bypass sets), `geo.sh`, `boothealth.sh` |
+| `root/usr/share/monkey-business/` | on-device shell: `watchdog.sh` + `probes.sh` (self-healing), `ruset.sh` (nft direct-bypass sets), `geo.sh`, `fetch.sh` (shared downloader, socks fallback), `boothealth.sh`, `nicfw.sh` + `nicwatch.sh` (RTL8153B USB NIC, see [install guide §9](docs/install-nanopi.md#9-the-rtl8153b-usb-nic-firmware--watchdog)) |
 | `scripts/firewall/` | nftables TPROXY apply/flush |
 | `scripts/expand-sd.sh` | grow the SD card's ext4 partition from macOS ([docs](docs/sd-expand-macos.md)) |
 | `test/` | ucode harness + unit/snapshot tests + netns integration |
