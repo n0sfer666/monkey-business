@@ -234,22 +234,44 @@ $SSH $SSH_OPTS -p "$PORT" "$HOST" "MB_RESPAWN='$RESPAWN' MB_ALLOW_MISSING='$ALLO
 	sleep 2
 
 	# ubusd виснет при рестарте rpcd (жив, но не принимает соединения; openwrt#9492). Это случается
-	# НЕ только в QEMU, но и на железе (race). Если ubus недоступен — пересоздаём ubusd+rpcd свежими.
+	# НЕ только в QEMU, но и на железе (race). Если ubus недоступен — пересоздаём ubusd свежим.
 	# Срабатывает ТОЛЬКО при реально зависшем ubus (ретрай отсекает гонку рестарта), поэтому здоровую
-	# систему не трогает. Сам форвардинг трафика от ubus не зависит — клиенты сети не страдают.
+	# систему не трогает (gate `! ubus list` = ubusd не отвечает вовсе). Форвардинг трафика от ubus
+	# не зависит — клиенты сети не страдают.
 	ubus list >/dev/null 2>&1 || sleep 2
 	if ! ubus list >/dev/null 2>&1; then
-		echo ">> ubus не отвечает (wedge openwrt#9492) — пересоздаю ubusd+rpcd..."
+		echo ">> ubus не отвечает (wedge openwrt#9492) — пересоздаю ubusd и перезапускаю сервисы..."
 		killall rpcd 2>/dev/null || true
 		killall ubusd 2>/dev/null || true
 		sleep 1
 		rm -f /var/run/ubus/ubus.sock 2>/dev/null || true
 		start-stop-daemon -S -b -x /sbin/ubusd 2>/dev/null || setsid /sbin/ubusd </dev/null >/dev/null 2>&1 &
 		sleep 2
-		start-stop-daemon -S -b -x /sbin/rpcd 2>/dev/null || setsid /sbin/rpcd </dev/null >/dev/null 2>&1 &
-		sleep 3
+		# На зависшем ubusd ВСЕ клиенты отвалились и авто-reconnect их объекты не вернул. procd (pid 1)
+		# сам переподключается к свежему сокету и возвращает system/service; остальных перезапускаем
+		# ЯВНО, иначе критичные объекты не вернутся: netifd -> network.interface (без него WAN-аренда
+		# не применяется и шлюз остаётся без интернета), rpcd -> session/uci/luci (без него LuCI падает
+		# на session=null), dnsmasq/odhcpd -> DNS/DHCP. network restart на том же LAN-IP established
+		# ssh не рвёт (TCP переживает флап той же адресации).
+		/etc/init.d/rpcd restart >/dev/null 2>&1 || setsid /sbin/rpcd </dev/null >/dev/null 2>&1 &
+		/etc/init.d/network restart >/dev/null 2>&1 || true
+		/etc/init.d/dnsmasq restart >/dev/null 2>&1 || true
+		/etc/init.d/odhcpd restart >/dev/null 2>&1 || true
 		/etc/init.d/uhttpd restart >/dev/null 2>&1 || true
-		sleep 1
+		# ждём перерегистрации netifd ПОЛЛИНГОМ (на R2S медленнее): фиксированные 3с давали ложную
+		# перезагрузку у ещё восстанавливающейся системы. Выходим сразу, как объект появился, до ~20с.
+		i=0
+		while [ "$i" -lt 20 ]; do
+			ubus list 2>/dev/null | grep -q '^network\.interface$' && break
+			sleep 1; i=$((i + 1))
+		done
+		# Последний рубеж: если ubus так и не отвечает или netifd не перерегистрировался — надёжно из
+		# wedge на железе выводит только чистая перезагрузка. Делаем её ОТЛОЖЕННО и detached (setsid),
+		# чтобы ssh успел вернуться и деплой не оборвался на полуслове; пользователь переподключается.
+		if ! ubus list >/dev/null 2>&1 || ! ubus list 2>/dev/null | grep -q '^network\.interface$'; then
+			echo "!! ubus/netifd не восстановились — роутер перезагрузится через 5с. Переподключись после ребута." >&2
+			setsid sh -c 'sleep 5; reboot' </dev/null >/dev/null 2>&1 &
+		fi
 	fi
 
 	if ubus list 2>/dev/null | grep -q "^monkey-business$"; then
