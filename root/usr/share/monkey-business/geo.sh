@@ -8,8 +8,13 @@
 set -u
 
 DEST="${MB_GEO_DIR:-/usr/share/xray}"
-STATE="/tmp/mb-geo.state"
-DEFAULT_BASE="https://github.com/Loyalsoldier/v2ray-rules-dat/releases/latest/download"
+STATE="${MB_GEO_STATE:-/tmp/mb-geo.state}"
+# Зеркала как base-URL: к каждому добавляется /<which>.dat (+ .sha256sum). Перебор до первого, с
+# которого реально скачалось. CDN-зеркала (jsDelivr) идут ПЕРВЫМИ — GitHub у многих RU-провайдеров
+# заблокирован, а geo нужны ДО поднятия VPN (иначе тупик: нет geo -> нет direct-маршрутов -> нет
+# туннеля -> нечем качать geo). GitHub оставлен последним фолбэком. Переопределяется через
+# MB_GEO_MIRRORS (список через пробел) или UCI monkey-business.geo.mirrors.
+DEFAULT_MIRRORS="https://cdn.jsdelivr.net/gh/Loyalsoldier/v2ray-rules-dat@release https://fastly.jsdelivr.net/gh/Loyalsoldier/v2ray-rules-dat@release https://gcore.jsdelivr.net/gh/Loyalsoldier/v2ray-rules-dat@release https://testingcf.jsdelivr.net/gh/Loyalsoldier/v2ray-rules-dat@release https://github.com/Loyalsoldier/v2ray-rules-dat/releases/latest/download"
 
 LIB="${MB_LIB_DIR:-$(dirname "$0")}"
 # без fetch.sh падать нельзя: status дёргает rpcd на каждый рендер дашборда и ждёт JSON
@@ -22,6 +27,41 @@ fi
 
 uci_get() { uci -q get "monkey-business.geo.$1" 2>/dev/null || echo ""; }
 set_state() { echo "$1" >"$STATE"; }
+
+# список зеркал: UCI -> env -> дефолт (все элементы через пробел)
+mirrors() {
+	m="$(uci_get mirrors)"; [ -n "$m" ] && { echo "$m"; return; }
+	echo "${MB_GEO_MIRRORS:-$DEFAULT_MIRRORS}"
+}
+
+# candidates <which> -> URL-кандидаты (по одному в строке). Кастомный URL из UCI (полный) имеет
+# приоритет и отключает перебор зеркал; иначе <base>/<which>.dat по каждому зеркалу по порядку.
+candidates() {
+	which="$1"; custom="$(uci_get "${which}_url")"
+	if [ -n "$custom" ]; then echo "$custom"; return; fi
+	for base in $(mirrors); do echo "$base/$which.dat"; done
+}
+
+# свободные КБ на ФС, где лежит путь (busybox df -k). пусто, если df недоступен/путь не резолвится.
+free_kb() { df -k "$1" 2>/dev/null | awk 'NR>1{print $4; exit}'; }
+
+# check_space <which> <bytes> -> 0 если места хватает, иначе печатает причину (RU) и возвращает 1.
+# temp-ФС нужно ~2×размер (качаем + копия для валидации xray), DEST-ФС — 1×. Запас 2МБ на накладные.
+# Неизвестное свободное место (df молчит) не блокирует — лучше попробовать, чем врать про нехватку.
+check_space() {
+	which="$1"; bytes="$2"; tdir="${TMPDIR:-/tmp}"
+	tmp_need_kb=$(( bytes * 2 / 1024 + 2048 )); dest_need_kb=$(( bytes / 1024 + 2048 ))
+	ftmp="$(free_kb "$tdir")"; fdst="$(free_kb "$DEST")"
+	if [ -n "$ftmp" ] && [ "$ftmp" -lt "$tmp_need_kb" ]; then
+		echo "no space: $which нужно ~$(( tmp_need_kb / 1024 ))MB в $tdir (скачивание+валидация), свободно $(( ftmp / 1024 ))MB"
+		return 1
+	fi
+	if [ -n "$fdst" ] && [ "$fdst" -lt "$dest_need_kb" ]; then
+		echo "no space: $which нужно ~$(( dest_need_kb / 1024 ))MB в $DEST, свободно $(( fdst / 1024 ))MB"
+		return 1
+	fi
+	return 0
+}
 
 # validate <which> <file> -> 0 если xray грузит .dat
 validate() {
@@ -80,27 +120,38 @@ cmd_download() {
 		return 1
 	fi
 	set_state "updating"
-	base="${MB_GEO_BASE:-$DEFAULT_BASE}"
-	gip="$(uci_get geoip_url)"; gst="$(uci_get geosite_url)"
-	[ -n "$gip" ] || gip="$base/geoip.dat"
-	[ -n "$gst" ] || gst="$base/geosite.dat"
+	mkdir -p "$DEST" 2>/dev/null
 	changed=0
-	for pair in "geoip $gip" "geosite $gst"; do
-		which="${pair%% *}"; url="${pair#* }"
-		rsum="$(remote_sha "$url")"
-		# свежая версия уже стоит -> пропустить скачивание
-		if [ -n "$rsum" ] && [ -f "$DEST/$which.dat" ] && [ "$rsum" = "$(sha_of "$DEST/$which.dat")" ]; then
-			echo "$which: up to date (sha256 match), skipped"
-			continue
+	for which in geoip geosite; do
+		done_one=0; last_err=""
+		# перебор зеркал: первое, с которого файл скачался, провалидировался xray и (если есть)
+		# сошёлся по sha256 — побеждает. Недоступное/битое зеркало -> следующий кандидат.
+		for url in $(candidates "$which"); do
+			rsum="$(remote_sha "$url")"
+			# свежая версия уже стоит -> пропустить скачивание (sha берётся с этого же зеркала)
+			if [ -n "$rsum" ] && [ -f "$DEST/$which.dat" ] && [ "$rsum" = "$(sha_of "$DEST/$which.dat")" ]; then
+				echo "$which: up to date (sha256 match), skipped"; done_one=1; break
+			fi
+			# превентивная проверка места: если размер узнали и его не хватает — это НЕ про зеркала,
+			# другой хост не поможет, падаем сразу. Размер неизвестен -> не блокируем.
+			sz="$(mb_remote_size "$url")"
+			if [ -n "$sz" ] && ! reason="$(check_space "$which" "$sz")"; then
+				set_state "error: $reason"; return 1
+			fi
+			tmp="$(mktemp "${TMPDIR:-/tmp}/mb-$which.dl.XXXXXX")" || { set_state "error: mktemp failed ($which)"; return 1; }
+			if ! mb_fetch "$url" "$tmp"; then last_err="unreachable"; rm -f "$tmp"; continue; fi
+			if [ -n "$rsum" ] && [ "$rsum" != "$(sha_of "$tmp")" ]; then last_err="checksum"; rm -f "$tmp"; continue; fi
+			if ! err="$(install_one "$which" "$tmp")"; then last_err="$err"; rm -f "$tmp"; continue; fi
+			echo "$which: fetched from $url"; changed=1; done_one=1; break
+		done
+		if [ "$done_one" = 0 ]; then
+			case "$last_err" in
+				checksum) set_state "error: $which — контрольная сумма не сошлась ни на одном зеркале" ;;
+				unreachable|"") set_state "error: не скачать $which — все зеркала недоступны (нет интернета либо блокировка)" ;;
+				*) set_state "error: $which — $last_err" ;;
+			esac
+			return 1
 		fi
-		tmp="$(mktemp "${TMPDIR:-/tmp}/mb-$which.dl.XXXXXX")" || { set_state "error: mktemp failed ($which)"; return 1; }
-		if ! mb_fetch "$url" "$tmp"; then set_state "error: download failed ($which)"; rm -f "$tmp"; return 1; fi
-		# проверка целостности по контрольной сумме (если она доступна)
-		if [ -n "$rsum" ] && [ "$rsum" != "$(sha_of "$tmp")" ]; then
-			set_state "error: checksum mismatch ($which)"; rm -f "$tmp"; return 1
-		fi
-		if ! err="$(install_one "$which" "$tmp")"; then set_state "error: $err"; rm -f "$tmp"; return 1; fi
-		changed=1
 	done
 	if [ "$changed" = 0 ]; then
 		set_state "unchanged"

@@ -97,6 +97,13 @@ PATH="$T/bin" /bin/sh -c ". '$LIB'; mb_fetch http://x/f '$T/out'" 2>/dev/null ||
 check "код возврата 0" "$rc" "0"
 check "файл от wget" "$(body)" "via-wget"
 
+echo "=== mb_content_length: регистронезависимо (busybox awk без IGNORECASE) ==="
+# shellcheck source=/dev/null
+cl() { printf '%b' "$1" | ( . "$LIB"; mb_content_length ); }
+check "Title-Case Content-Length" "$(cl 'HTTP/1.1 200 OK\r\nContent-Length: 17784192\r\nContent-Type: x\r\n')" "17784192"
+check "lowercase content-length"  "$(cl 'HTTP/2 200\r\ncontent-length: 42\r\n')" "42"
+check "нет заголовка -> пусто"     "$(cl 'HTTP/1.1 200 OK\r\nContent-Type: x\r\n')" ""
+
 echo
 echo "fetch_test: $pass passed, $fail failed"
 [ "$fail" = 0 ]
