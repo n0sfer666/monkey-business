@@ -215,7 +215,7 @@ return view.extend({
 							var msg, kind;
 							if (g.state === 'ok') { msg = _('Geo databases updated & validated.'); kind = 'info'; }
 							else if (g.state === 'unchanged') { msg = _('Already up to date — nothing changed.'); kind = 'info'; }
-							else { msg = _('Geo update failed: ') + (g.state || ''); kind = 'warning'; }
+							else { msg = _('Geo update failed: ') + String(g.state || '').replace(/^error:\s*/, ''); kind = 'warning'; }
 							ui.addNotification(null, E('p', msg), kind);
 						});
 					}).catch(function(e) {
