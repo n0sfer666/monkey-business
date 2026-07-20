@@ -160,11 +160,11 @@ return view.extend({
 
 		var taDirect = E('textarea', {
 			'rows': 6, 'style': 'width:100%;max-width:480px',
-			'placeholder': 'example.com\n10.0.0.0/8\ngeosite:category-ru\ngeoip:ru'
+			'placeholder': 'example.com\n*.frontier.com\n10.0.0.0/8\ngeosite:category-ru\ngeoip:ru'
 		}, [ direct ]);
 		var taProxy = E('textarea', {
 			'rows': 6, 'style': 'width:100%;max-width:480px',
-			'placeholder': 'blocked.example\ngeosite:google\ngeoip:netflix'
+			'placeholder': 'blocked.example\n*.netflix.com\ngeosite:google\ngeoip:netflix'
 		}, [ proxy ]);
 
 		var save = E('button', {
@@ -182,7 +182,7 @@ return view.extend({
 
 		return E('div', { 'class': 'cbi-section' }, [
 			E('h3', {}, [ _('Custom routing (split-tunnel)') ]),
-			E('p', { 'style': 'color:#888' }, [ _('One entry per line: domain, IP/CIDR, geosite:NAME or geoip:NAME. Active only in split-tunnel modes (not "Everything via VPN").') ]),
+			E('p', { 'style': 'color:#888' }, [ _('One entry per line: domain, *.domain (matches the domain and all subdomains), IP/CIDR, geosite:NAME or geoip:NAME. Active only in split-tunnel modes (not "Everything via VPN").') ]),
 			E('div', { 'style': 'display:flex;gap:24px;flex-wrap:wrap' }, [
 				E('div', {}, [ E('strong', {}, [ _('Direct (bypass VPN)') ]), taDirect ]),
 				E('div', {}, [ E('strong', {}, [ _('Via VPN') ]), taProxy ])
