@@ -278,6 +278,26 @@ test("custom direct/proxy lists become routing rules in split mode", function() 
 	assertEq(r.rules[3].outboundTag, "proxy");
 });
 
+test("wildcard *.domain becomes xray domain: rule", function() {
+	let r = buildRouting({
+		routing_mode: "bypass-local", local_region: "ru",
+		custom_direct: "*.frontier.com\nplain.com",
+		custom_proxy: "*.example.org",
+	});
+	assertEq(r.rules[0].domain, ["domain:frontier.com", "plain.com"]);
+	assertEq(r.rules[0].outboundTag, "direct");
+	assertEq(r.rules[1].domain, ["domain:example.org"]);
+	assertEq(r.rules[1].outboundTag, "proxy");
+});
+
+test("degenerate '*.' is not converted to empty domain: rule", function() {
+	let r = buildRouting({
+		routing_mode: "bypass-local", local_region: "ru",
+		custom_direct: "*.\nkeep.com",
+	});
+	assertEq(r.rules[0].domain, ["*.", "keep.com"]);
+});
+
 test("test_socks adds localhost socks inbound", function() {
 	let out = generate({ global: { tproxy_port: 12345 }, server: SERVER_A, test_socks: true });
 	assertEq(length(out.inbounds), 2);

@@ -158,6 +158,8 @@ function classifyList(str) {
 			push(domains, t);
 		else if (index(t, "geoip:") == 0)
 			push(ips, t);
+		else if (substr(t, 0, 2) == "*." && length(t) > 2)
+			push(domains, "domain:" + substr(t, 2));
 		else if (isIpLike(t))
 			push(ips, t);
 		else
