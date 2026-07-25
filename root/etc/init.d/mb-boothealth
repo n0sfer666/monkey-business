@@ -1,9 +1,14 @@
 #!/bin/sh /etc/rc.common
 # Boot-resilience monkey-business: на загрузке детект unclean/ro + remount,rw; на стопе — отметка
-# clean. Профилактический sync делает cron (boothealth.sh beat). Логика — boothealth.sh.
+# clean. Маркер трогается только здесь — 2 записи за цикл питания, периодики нет. Логика —
+# boothealth.sh.
 # ВЕРИФИКАЦИЯ: на устройстве (нужны procd + реальный /proc/mounts). Логика покрыта host-тестом.
 
-START=11
+# START=13, а не 11: логдемон OpenWrt поднимается на 12, и до него busybox logger пишет в ещё
+# не существующий /dev/log — сообщение молча теряется. А единственная ценность boot() как раз
+# в этих двух строках («unclean shutdown», «root fs was read-only at boot»), файла на rootfs
+# у нас больше нет. Всё равно сильно раньше monkey-business (START=95).
+START=13
 STOP=99
 
 BH=/usr/share/monkey-business/boothealth.sh

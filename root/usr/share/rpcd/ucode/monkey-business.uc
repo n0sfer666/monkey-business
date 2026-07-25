@@ -20,6 +20,12 @@ const CONF_DIR = '/etc/monkey-business';
 const XRAY_CONF = CONF_DIR + '/xray.json';
 const GEO_DIR = '/usr/share/xray';
 const GEO_SCRIPT = '/usr/share/monkey-business/geo.sh';
+const WD_STATE = '/tmp/mb-watchdog/state';
+// Активный сервер — рантайм-состояние, а не выбор пользователя (выбора в UI нет, приоритет задаётся
+// порядком секций). Раньше он лежал в uci.selected.server, и КАЖДЫЙ автофейловер делал commit,
+// переписывая /etc/config/monkey-business целиком; в застрявшем цикле — раз в BACKOFF, круглые
+// сутки. Теперь это один файл рядом с xray.json, и пишется он только при РЕАЛЬНОЙ смене тега.
+const ACTIVE_FILE = CONF_DIR + '/active';
 
 // POSIX single-quote экранирование: ' -> '\'' (закрыть кавычку, экранированный ', снова открыть).
 // Раньше кавычки УДАЛЯЛИСЬ -> молчаливая порча URL/значений с апострофом.
@@ -32,6 +38,25 @@ function runCapture(cmd) {
 	let out = p ? p.read('all') : '';
 	if (p) p.close();
 	return { out: (out != null) ? out : '', ok: index(out != null ? out : '', 'MB_EXIT:0') >= 0 };
+}
+
+// Служебный маркер runCapture — не часть вывода команды. Без вычистки команда, ничего не
+// напечатавшая, отдавала наружу буфер из одной строки "MB_EXIT:0", и он утекал в UI как
+// «последнее событие» / detail ошибки.
+function stripExit(s) {
+	let keep = [];
+	for (let l in split((s != null) ? s : '', '\n'))
+		if (index(l, 'MB_EXIT:') != 0)
+			push(keep, l);
+	return join('\n', keep);
+}
+
+// pgrep/pkill -f матчат и промежуточный `sh -c <вся команда>` из popen(): паттерн лежит в его же
+// cmdline. Из-за этого pkill в probeServer убивал СОБСТВЕННЫЙ шелл ещё до старта xray (проба
+// всегда падала -> «no working failover server»), а pgrep рапортовал «сервис жив» всегда.
+// `[x]ray…` — регексп, который матчит боевой процесс, но не текст самой команды.
+function noSelfMatch(cmdline) {
+	return '[' + substr(cmdline, 0, 1) + ']' + substr(cmdline, 1);
 }
 
 function firstLine(s) {
@@ -68,8 +93,11 @@ function loadServers(cursor) {
 	return servers;
 }
 
+// Размер, а не только наличие: оборванная закачка оставляет .dat в пару килобайт — проверка
+// на null проходит, а xray потом падает на старте с невнятной ошибкой парсинга гео-базы.
 function geoPresent() {
-	return stat(GEO_DIR + '/geoip.dat') != null && stat(GEO_DIR + '/geosite.dat') != null;
+	let ip = stat(GEO_DIR + '/geoip.dat'), site = stat(GEO_DIR + '/geosite.dat');
+	return ip != null && site != null && ip.size > 0 && site.size > 0;
 }
 
 function haveCurl() {
@@ -119,7 +147,7 @@ function tcpPing(server) {
 function probeServer(global, dns, server) {
 	let cfg = generateProbe({ global: global, dns: dns, server: server, probe_port: 10809 });
 	writefile('/tmp/mb-probe.json', sprintf('%.J', cfg));
-	let sh = "pkill -f 'xray run -c /tmp/mb-probe.json' 2>/dev/null; " +
+	let sh = "pkill -f " + shq(noSelfMatch('xray run -c /tmp/mb-probe.json')) + " 2>/dev/null; " +
 		"XRAY_LOCATION_ASSET=" + GEO_DIR + " /usr/bin/xray run -c /tmp/mb-probe.json >/dev/null 2>&1 & P=$!; " +
 		"sleep 2; R=fail; " +
 		"for u in https://1.1.1.1 https://8.8.8.8; do " +
@@ -130,21 +158,55 @@ function probeServer(global, dns, server) {
 	return index(r.out, 'PROBE:ok') >= 0;
 }
 
-// Валидирует конфиг реальным xray, при успехе устанавливает + перезапускает сервис.
+// Валидирует конфиг реальным xray, при успехе устанавливает + поднимает сервис.
 // Возврат: строка-ошибка | null(успех).
+//
+// Установка атомарная: пишем в соседний .tmp на ТОМ ЖЕ разделе, валидируем именно тот файл,
+// что ляжет на место (а не /tmp-копию), и только потом rename. Раньше обрыв на writefile
+// оставлял обрезанный xray.json, а `restart` всё равно звался -> сервис не поднимался.
 function applyConfig(jsonStr) {
 	system('mkdir -p ' + CONF_DIR);
 	if (!geoPresent())
 		return 'geo databases missing — press "Update geo databases" on the Dashboard first';
-	writefile('/tmp/mb-xray.json', jsonStr);
-	let v = runCapture('xray run -test -c /tmp/mb-xray.json 2>/tmp/mb-xray.err');
+
+	// Байт-в-байт тот же конфиг — не трогаем карту вообще. Это не микрооптимизация: в фазе `down`
+	// watchdog зовёт config_apply раз в BACKOFF, а когда рабочих серверов нет, selectWorking каждый
+	// раз возвращает один и тот же servers[0] -> без этой проверки один и тот же файл ложился бы на
+	// SD 144 раза в сутки. Валидацию тоже пропускаем: этот файл уже прошёл её, когда его писали.
+	if (readfile(XRAY_CONF) == jsonStr) {
+		system('/etc/init.d/monkey-business reload >/dev/null 2>&1');
+		system('rm -f ' + WD_STATE);
+		return null;
+	}
+
+	// Расширение .json обязательно: xray выбирает парсер по filepath.Ext(), и `-test -c *.tmp`
+	// провалился бы на валидном конфиге.
+	let tmp = CONF_DIR + '/.xray.new.json';
+	if (writefile(tmp, jsonStr) != length(jsonStr)) {
+		system('rm -f ' + tmp);
+		return 'failed to write config (disk full?)';
+	}
+	let v = runCapture('xray run -test -c ' + tmp + ' 2>/tmp/mb-xray.err');
 	if (!v.ok) {
 		let err = readfile('/tmp/mb-xray.err');
 		let msg = firstLine(err != null ? err : v.out);
+		system('rm -f ' + tmp);
 		return (msg != '') ? msg : 'xray config validation failed';
 	}
-	writefile(XRAY_CONF, jsonStr);
-	system('/etc/init.d/monkey-business restart');
+	// Без sync: rename в ext4 и так атомарен относительно журнала, а принудительный сброс на каждый
+	// apply — это read-modify-write сегмента FTL ради данных, которые ядро всё равно допишет само.
+	if (!runCapture('mv ' + tmp + ' ' + XRAY_CONF).ok) {
+		system('rm -f ' + tmp);
+		return 'failed to install config';
+	}
+
+	// НЕ restart: stop_service гонит flush.sh и снимает kill-switch, а окно до подъёма xray —
+	// это утечка LAN в открытую сеть. reload_service переобъявляет инстанс, procd видит смену
+	// хеша файла-триггера (procd_set_param file $CONF) и перезапускает только процесс xray.
+	system('/etc/init.d/monkey-business reload >/dev/null 2>&1');
+	// Фаза watchdog описывает СТАРЫЙ конфиг; оставленный `down` заставил бы UI врать
+	// «Disabled by watchdog» сразу после успешного применения.
+	system('rm -f ' + WD_STATE);
 	return null;
 }
 
@@ -171,16 +233,27 @@ function buildCtx() {
 			cursor.commit(CONFIG);
 		},
 		getSelectedServer: function() {
-			let sel = cursor.get(CONFIG, 'selected', 'server');
+			let sel = readfile(ACTIVE_FILE);
+			sel = (sel != null) ? trim(sel) : '';
 			let found = null;
 			for (let s in loadServers(cursor))
 				if (s.tag == sel)
 					found = s;
 			return found;
 		},
+		// Атомарно и с проверкой: на ro-remounted корне (ровно то состояние, против которого весь
+		// этот модуль) молчаливый провал записи оставил бы UI с «Server: none» без единого следа.
 		setSelected: function(tag) {
-			cursor.set(CONFIG, 'selected', 'server', tag);
-			cursor.commit(CONFIG);
+			let cur = readfile(ACTIVE_FILE);
+			let want = tag + '\n';
+			if (cur == want)
+				return;
+			system('mkdir -p ' + CONF_DIR);
+			let tmp = CONF_DIR + '/.active.new';
+			if (writefile(tmp, want) != length(want) || !runCapture('mv ' + tmp + ' ' + ACTIVE_FILE).ok) {
+				system('rm -f ' + tmp);
+				system('logger -t mb-event ' + shq('rpcd: cannot record active server (rootfs read-only?)'));
+			}
 		},
 		setSubscriptionUrl: function(url) {
 			cursor.set(CONFIG, 'subscription', 'url', url);
@@ -196,11 +269,38 @@ function buildCtx() {
 		fetchSubscription: function(url) { return fetchSubscription(url); },
 		pingServer: function(s) { return tcpPing(s); },
 		probeServer: function(s) { return probeServer(loadSection(cursor, 'global'), loadSection(cursor, 'dns'), s); },
+		// Каждая проба — до ~10с. Без потолка 7 серверов = ~70с, что дольше ubus-таймаута:
+		// вызов рвался, watchdog читал это как «рабочих серверов нет» и уходил в down,
+		// хотя rpcd на той стороне доходил до конца и переключался.
+		// 0/не задано = перебирать ВЕСЬ список. Жёсткий дефолт вроде 3 при 7 серверах делал
+		// рабочий сервер на 4-й позиции недостижимым ни для watchdog, ни для «Turn on».
+		failoverCap: function() {
+			let v = int(cursor.get(CONFIG, 'global', 'failover_cap') || 0);
+			return (v > 0) ? v : 0;
+		},
+		watchdogPhase: function() {
+			let raw = readfile(WD_STATE);
+			if (raw == null)
+				return null;
+			let m = match(raw, /WD_PHASE=([a-z]+)/);
+			return (m != null) ? m[1] : null;
+		},
+		// Тег mb-event, а не monkey-business: последним под общим тегом почти всегда оказывалась
+		// служебная строка apply.sh/flush.sh («tproxy firewall flushed») из init.d, а не причина
+		// отказа — а в фазе down init.d дёргается каждый тик.
+		lastEvent: function() {
+			let r = runCapture('logread -e mb-event 2>/dev/null | tail -n 1');
+			return firstLine(stripExit(r.out));
+		},
 		applyConfig: function(jsonStr) { return applyConfig(jsonStr); },
 		stopService: function() { system('/etc/init.d/monkey-business stop'); },
 		serviceRunning: function() {
-			// pidof надёжен на BusyBox (pgrep -x не матчит comm в этой сборке)
-			return index(runCapture('pidof xray >/dev/null && echo up').out, 'up') >= 0;
+			// Матч по cmdline боевого конфига: `pidof xray` считал живым и эфемерную пробу
+			// failover (/tmp/mb-probe.json), и чужой xray из стокового пакета -> UI врал
+			// «Connected» при отсутствующем туннеле. pgrep -x не матчит comm в этой сборке
+			// BusyBox, а -f (как в pkill выше) работает.
+			return index(runCapture('pgrep -f ' + shq(noSelfMatch('xray run -c ' + XRAY_CONF)) +
+				' >/dev/null && echo up').out, 'up') >= 0;
 		},
 		setEnabled: function(on) {
 			cursor.set(CONFIG, 'global', 'enabled', on ? '1' : '0');
@@ -246,8 +346,7 @@ function buildCtx() {
 			return { status: 'started' };
 		},
 		geoStatus: function() {
-			// runCapture добавляет строку MB_EXIT -> берём первую строку (JSON от geo.sh)
-			let line = firstLine(runCapture('sh ' + GEO_SCRIPT + ' status').out);
+			let line = firstLine(stripExit(runCapture('sh ' + GEO_SCRIPT + ' status').out));
 			let j = (line != '') ? json(line) : null;
 			return (type(j) == 'object') ? j : { state: 'idle', geoip: 0, geosite: 0 };
 		},
@@ -256,7 +355,7 @@ function buildCtx() {
 			if (which != "geoip" && which != "geosite")
 				return { ok: false, detail: "bad which" };
 			let r = runCapture('sh ' + GEO_SCRIPT + ' install ' + which + ' /tmp/mb-upload-' + which + '.dat 2>&1');
-			return { ok: r.ok, detail: firstLine(r.out) };
+			return { ok: r.ok, detail: firstLine(stripExit(r.out)) };
 		},
 	};
 }

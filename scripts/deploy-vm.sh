@@ -94,7 +94,20 @@ cpf luci/root/usr/share/rpcd/acl.d/luci-app-monkey-business.json \
 # COPYFILE_DISABLE=1: macOS tar иначе кладёт AppleDouble-файлы '._*' (resource forks).
 # rpcd-mod-ucode пытается компилировать '._monkey-business.uc' -> syntax error и может подвесить
 # ubusd при рестарте. Плюс исключаем .DS_Store.
-COPYFILE_DISABLE=1 tar --exclude '.DS_Store' --exclude '._*' -C "$stage" -czf "$tarball" .
+#
+# В архиве НЕ должно быть записи './': mktemp -d создаёт корень стейджа с 0700 и локальным uid,
+# а `tar -C /` на той стороне применил бы это к САМОМУ '/'. Корень 0700 root:501 переживает ребут,
+# и любой демон, сбрасывающий привилегии (dnsmasq -> DHCP/DNS для LAN), перестаёт проходить по
+# пути — роутер поднимается «без сети». Поэтому архивируем верхние каталоги поимённо, а список
+# сверяем со стейджем, чтобы новый top-level каталог не потерялся молча.
+chmod 755 "$stage"
+for top in "$stage"/*; do
+	case "${top##*/}" in
+		etc|usr|www) ;;
+		*) echo "!! неожиданный каталог в стейдже: ${top##*/} — добавь его в tar" >&2; exit 1 ;;
+	esac
+done
+COPYFILE_DISABLE=1 tar --exclude '.DS_Store' --exclude '._*' -C "$stage" -czf "$tarball" ./etc ./usr ./www
 
 echo ">> copying to $HOST:$PORT"
 # shellcheck disable=SC2086
@@ -112,7 +125,20 @@ $SSH $SSH_OPTS -p "$PORT" "$HOST" "MB_RESPAWN='$RESPAWN' MB_ALLOW_MISSING='$ALLO
 	[ -f /tmp/mb-cfg.keep ] && mv /tmp/mb-cfg.keep /etc/config/monkey-business
 	# подчистить возможные macOS AppleDouble-остатки (BusyBox find без -delete, поэтому rm по glob)
 	rm -f /usr/share/rpcd/ucode/._* /usr/share/rpcd/ucode/lib/monkey-business/._* 2>/dev/null || true
-	# macOS tar сохраняет локальный uid -> вернуть владельца root:root на развёрнутых путях
+	# macOS tar сохраняет локальные uid/gid и режим НЕ только на наших файлах, но и на
+	# каталогах-контейнерах, которые он создаёт по пути — включая корневой './' -> '/'.
+	# Эти каталоги общесистемные, их нужно вернуть в 0755 root:root безусловно, иначе
+	# после ребута демоны без привилегий не пройдут по пути и роутер встанет без LAN.
+	for d in / /etc /etc/init.d /etc/config /usr /usr/bin /usr/share \
+	         /usr/share/luci /usr/share/luci/menu.d \
+	         /usr/share/rpcd /usr/share/rpcd/ucode /usr/share/rpcd/ucode/lib /usr/share/rpcd/acl.d \
+	         /www /www/luci-static /www/luci-static/resources /www/luci-static/resources/view; do
+		[ -d "$d" ] || continue
+		chown root:root "$d" 2>/dev/null || true
+		chmod 755 "$d" 2>/dev/null || true
+	done
+
+	# наши собственные пути — рекурсивно
 	for d in /usr/share/rpcd/ucode/monkey-business.uc /usr/share/rpcd/ucode/lib/monkey-business \
 	         /etc/config/monkey-business /etc/init.d/monkey-business /etc/init.d/mb-boothealth \
 	         /usr/share/monkey-business \
@@ -127,22 +153,52 @@ $SSH $SSH_OPTS -p "$PORT" "$HOST" "MB_RESPAWN='$RESPAWN' MB_ALLOW_MISSING='$ALLO
 		/usr/share/monkey-business/watchdog.sh /usr/share/monkey-business/boothealth.sh \
 		/usr/share/monkey-business/nicwatch.sh /usr/share/monkey-business/nicfw.sh
 	rm -f /tmp/mb-deploy.tgz /tmp/luci-indexcache* 2>/dev/null || true
+	# распакованное должно дойти до карты ДО рестартов ниже: если rpcd подвесит ubusd и роутер
+	# уедет в жёсткий сброс, недописанные файлы останутся обрезанными в журнале ext4.
+	sync
 
 	# boot-resilience: ранний init-хук (детект unclean/ro на загрузке, clean на стопе) + инициализация
 	# маркера сейчас (мы успешно поднялись -> текущее состояние running, не ложный алярм на след. ребуте).
 	/etc/init.d/mb-boothealth enable >/dev/null 2>&1 || true
 	/usr/share/monkey-business/boothealth.sh boot >/dev/null 2>&1 || true
 
-	# cron: watchdog раз в минуту (сам гейтит частоту 60с/10мин по tmpfs); boothealth beat раз в 5 мин
-	# (sync + heartbeat -> меньше теряется при пропаже питания). Идемпотентно, crond включаем.
+	# Автостарт: без enable в /etc/rc.d нет S95monkey-business, и после ребута туннель поднимал
+	# только cron-watchdog — до минуты трафика LAN мимо VPN на каждой загрузке.
+	/etc/init.d/monkey-business enable >/dev/null 2>&1 || true
+
+	# Миграция активного сервера: uci.selected.server -> /etc/monkey-business/active. Деплой
+	# сохраняет старый /etc/config, поэтому без переливки дашборд показал бы «Server: none»
+	# БЕССРОЧНО: в фазе healthy watchdog не зовёт config_apply, и файл не появится, пока
+	# пользователь сам не нажмёт Apply. Секцию после переливки убираем — её больше никто не читает.
+	mkdir -p /etc/monkey-business
+	OLD_SEL=$(uci -q get monkey-business.selected.server 2>/dev/null || echo '')
+	if [ -n "$OLD_SEL" ] && [ ! -s /etc/monkey-business/active ]; then
+		printf '%s\n' "$OLD_SEL" > /etc/monkey-business/active
+	fi
+	if uci -q get monkey-business.selected >/dev/null 2>&1; then
+		uci -q delete monkey-business.selected || true
+		uci -q commit monkey-business || true
+	fi
+
+	# Стоковый init пакета xray-core поднимает ЧУЖОЙ xray со своим конфигом: он жжёт CPU и
+	# занимает 10808, на котором висят пробы и socks-фолбэк fetch.sh. Нам нужен только бинарник.
+	if [ -x /etc/init.d/xray ]; then
+		/etc/init.d/xray stop >/dev/null 2>&1 || true
+		/etc/init.d/xray disable >/dev/null 2>&1 || true
+	fi
+
+	# cron: watchdog раз в минуту (сам гейтит частоту 60с/10мин по tmpfs) + nicwatch. Идемпотентно,
+	# crond включаем.
+	#
+	# Строку `boothealth.sh beat` (sync + перезапись маркера раз в 5 минут) вычищаем АКТИВНО, а не
+	# просто перестаём добавлять: на уже прошитых устройствах она осталась в /etc/crontabs/root и
+	# продолжала бы жечь карту — 288 принудительных сбросов в сутки в одни и те же LBA.
 	mkdir -p /etc/crontabs
+	sed -i '\#monkey-business/boothealth\.sh#d' /etc/crontabs/root 2>/dev/null || true
 	WD_LINE='* * * * * /usr/share/monkey-business/watchdog.sh >/dev/null 2>&1'
-	BH_LINE='*/5 * * * * /usr/share/monkey-business/boothealth.sh beat >/dev/null 2>&1'
 	NW_LINE='* * * * * /usr/share/monkey-business/nicwatch.sh >/dev/null 2>&1'
 	grep -q 'monkey-business/watchdog.sh' /etc/crontabs/root 2>/dev/null \
 		|| printf '%s\n' "$WD_LINE" >> /etc/crontabs/root
-	grep -q 'monkey-business/boothealth.sh' /etc/crontabs/root 2>/dev/null \
-		|| printf '%s\n' "$BH_LINE" >> /etc/crontabs/root
 	grep -q 'monkey-business/nicwatch.sh' /etc/crontabs/root 2>/dev/null \
 		|| printf '%s\n' "$NW_LINE" >> /etc/crontabs/root
 	/etc/init.d/cron enable >/dev/null 2>&1 || true
@@ -166,10 +222,12 @@ $SSH $SSH_OPTS -p "$PORT" "$HOST" "MB_RESPAWN='$RESPAWN' MB_ALLOW_MISSING='$ALLO
 			*)    return 0 ;;
 		esac
 	}
+	# вывод в файл, а не в /dev/null: причина отказа (нет репо / конфликт / нет места) нужна
+	# на месте — иначе деплой печатает голое «установка не удалась» и диагностировать нечем
 	pkg_add() {
 		case "$PM" in
-			apk)  apk add "$1" >/dev/null 2>&1 ;;
-			opkg) opkg install "$1" >/dev/null 2>&1 ;;
+			apk)  apk add "$1" >/tmp/mb-pkg.log 2>&1 ;;
+			opkg) opkg install "$1" >/tmp/mb-pkg.log 2>&1 ;;
 			*)    return 1 ;;
 		esac
 	}
@@ -194,7 +252,10 @@ $SSH $SSH_OPTS -p "$PORT" "$HOST" "MB_RESPAWN='$RESPAWN' MB_ALLOW_MISSING='$ALLO
 		for p in $REQUIRED; do
 			if pkg_have "$p"; then continue; fi
 			echo ">> installing $p"
-			if ! pkg_add "$p"; then echo "   ! $p: установка не удалась"; fi
+			if ! pkg_add "$p"; then
+				echo "   ! $p: установка не удалась"
+				head -n 5 /tmp/mb-pkg.log 2>/dev/null | while read -r l; do echo "     $l"; done
+			fi
 		done
 
 		for p in $REQUIRED; do
@@ -270,7 +331,9 @@ $SSH $SSH_OPTS -p "$PORT" "$HOST" "MB_RESPAWN='$RESPAWN' MB_ALLOW_MISSING='$ALLO
 		# чтобы ssh успел вернуться и деплой не оборвался на полуслове; пользователь переподключается.
 		if ! ubus list >/dev/null 2>&1 || ! ubus list 2>/dev/null | grep -q '^network\.interface$'; then
 			echo "!! ubus/netifd не восстановились — роутер перезагрузится через 5с. Переподключись после ребута." >&2
-			setsid sh -c 'sleep 5; reboot' </dev/null >/dev/null 2>&1 &
+			# sync перед reboot: ubusd в wedge часто утаскивает и procd-shutdown, ребут
+			# вырождается в жёсткий сброс, и незакоммиченный журнал ext4 ломает следующую загрузку.
+			setsid sh -c 'sleep 5; sync; sync; reboot' </dev/null >/dev/null 2>&1 &
 		fi
 	fi
 

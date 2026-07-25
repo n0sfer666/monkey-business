@@ -28,9 +28,6 @@ config anti_dpi 'anti_dpi'
 	option default_fingerprint 'chrome'
 	option xhttp_padding '0'
 
-config selected 'selected'
-	option server ''
-
 config geo 'geo'
 	option geoip_url ''
 	option geosite_url ''

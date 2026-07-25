@@ -7,11 +7,13 @@
 //   getDns() -> { mode, direct_dns, doh_url }   getAntiDpi() -> { default_fingerprint, xhttp_padding }
 //   getSubscription() -> { url, used_upload, used_download, total, expire, ... }
 //   getServers() -> [server, ...]      setServers(arr)
-//   getSelectedServer() -> server|null   setSelected(tag)
+//   getSelectedServer() -> server|null   setSelected(tag) — рантайм-состояние, НЕ uci-commit
 //   setSubscriptionUrl(url)   setUserinfo({used_upload,used_download,total,expire})
 //   fetchSubscription(url) -> { body, userinfo }|null   pingServer(server) -> int(ms)|null
 //   applyConfig(jsonStr) -> errString|null (валидирует + запускает)   stopService()
 //   serviceRunning() -> bool   setEnabled(bool)   updateGeo(args) -> { status }
+//   failoverCap() -> int (сколько кандидатов пробовать в selectWorking; 0 = все)
+//   watchdogPhase() -> "healthy"|"reconnecting"|"down"|null   lastEvent() -> string
 //   setCustomRouting(direct, proxy)   geoStatus() -> { state, geoip, geosite }
 //   geoInstall(which) -> { ok, detail }   checkExit(domain) -> { ip, country, code }|{ error }
 
@@ -73,8 +75,8 @@ function selectWorking(ctx) {
 	let servers = orderedServers(ctx);
 	if (length(servers) == 0)
 		return null;
-	let cap = ctx.failoverCap ? ctx.failoverCap() : length(servers);
-	let n = (length(servers) < cap) ? length(servers) : cap;
+	let cap = ctx.failoverCap ? ctx.failoverCap() : 0;
+	let n = (cap > 0 && cap < length(servers)) ? cap : length(servers);
 	for (let i = 0; i < n; i++) {
 		if (ctx.probeServer(servers[i])) {
 			ctx.setSelected(servers[i].tag);
@@ -96,15 +98,25 @@ function genConfig(ctx, server) {
 	};
 }
 
+// wd_phase: healthy|reconnecting|down|null(watchdog ещё не тикал / выключен). Фаза `down`
+// означает, что watchdog СНЯЛ туннель и LAN идёт напрямую — без этого UI показывал
+// «Starting…» и выглядел как «сейчас поднимется», хотя ничего уже не поднималось.
 function status(ctx) {
 	let g = ctx.getGlobal();
 	let s = ctx.getSelectedServer();
 	let sub = ctx.getSubscription();
+	// last_event читается только в проблемных фазах: UI показывает его лишь в плашке
+	// down/reconnecting, а status опрашивается раз в 5с — дампить за ним весь syslog постоянно
+	// значит жечь CPU роутера на строку, которую никто не видит.
+	let wd = ctx.watchdogPhase ? ctx.watchdogPhase() : null;
+	let noisy = (wd == "down" || wd == "reconnecting");
 	return {
 		enabled: isTrue(g.enabled),
 		running: ctx.serviceRunning(),
 		server: (s != null) ? s.tag : null,
 		routing_mode: g.routing_mode,
+		wd_phase: wd,
+		last_event: (noisy && ctx.lastEvent) ? ctx.lastEvent() : "",
 		traffic: {
 			used_upload: sub.used_upload || "",
 			used_download: sub.used_download || "",

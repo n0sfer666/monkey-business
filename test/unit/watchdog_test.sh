@@ -20,6 +20,9 @@ MB_WD_LIB="$SELF_DIR/../../root/usr/share/monkey-business"
 . "$SELF_DIR/../../root/usr/share/monkey-business/watchdog.sh"
 
 STATE_DIR="$T"; STATE="$T/state"; LOCK="$T/lock"
+# selected_tag НЕ мокаем: подставляем боевой функции свой файл, чтобы тесты гоняли реальный
+# ридер, а не его копию (опечатка в пути иначе прошла бы зелёной).
+ACTIVE="$T/tag"
 
 HOME_IP='9.9.9.9'         # домашний (direct) IP
 EXIT1='1.2.3.4'           # exit через VPN (отличается от home → healthy)
@@ -27,13 +30,17 @@ EXIT2='3.3.3.3'           # exit после смены сервера
 
 sleep() { :; }
 read_intent() { cat "$T/intent" 2>/dev/null || echo 0; }
-selected_tag() { cat "$T/tag" 2>/dev/null || echo ''; }
 vpn_running() { [ -f "$T/running" ]; }
 vpn_start() { : > "$T/running"; echo start >> "$T/actions"; }
 vpn_stop() { rm -f "$T/running"; echo stop >> "$T/actions"; }
 vpn_reconnect() { echo reconnect >> "$T/actions"; }
-# failover: при наличии $T/failover_ok «переключает» на рабочий сервер (включает live + exit EXIT2)
-failover_switch() { [ -f "$T/failover_ok" ] && { : > "$T/live"; enq "$EXIT2"; echo failover >> "$T/actions"; return 0; }; return 1; }
+# failover: при наличии $T/failover_ok «переключает» на рабочий сервер (включает live + exit EXIT2).
+# Тег меняется в ЛЮБОМ исходе — config_apply зовёт setSelected и на фолбэке servers[0] тоже.
+failover_switch() {
+	echo 'France Paris-9' > "$T/tag"
+	[ -f "$T/failover_ok" ] && { : > "$T/live"; enq "$EXIT2"; echo failover >> "$T/actions"; return 0; }
+	return 1
+}
 live_probe() { [ -f "$T/live" ]; }            # файл = liveness ok
 vpn_probe() { _pop "$T/vpn_q"; }              # exit-IP из очереди (пусто = провал пробы)
 direct_probe() { cat "$T/direct" 2>/dev/null || echo ''; }
@@ -156,6 +163,43 @@ eq "stilldown.kind" "$(sval WD_DOWNKIND)" vpn
 has "stilldown.stop" "$T/actions" stop
 has "stilldown.staydirect" "$T/log" "Staying on direct"
 
+# 10b. DOWN(net) -> сеть ожила, сохранённый сервер дохлый, но failover нашёл рабочий -> HEALTHY.
+#      Без этого фаза down была терминальной и UI вечно висел на «Starting…».
+reset; seed_down net; rm -f "$T/running"; rm -f "$T/live"; : > "$T/failover_ok"
+runtick 7000
+eq "downfailover.phase" "$(sval WD_PHASE)" healthy
+eq "downfailover.kind" "$(sval WD_DOWNKIND)" ""
+has "downfailover.did" "$T/actions" failover
+has "downfailover.log" "$T/log" "Failover restored VPN"
+no "downfailover.nostop" "$T/actions" stop
+
+# 10c. РУЧНАЯ смена сервера снимает backoff: в down с WD_NEXT далеко в будущем новый tag даёт
+#      тик сразу (без failover — тег меняет пользователь, не мы).
+reset; seed_down vpn; rm -f "$T/running"
+sed 's/^WD_NEXT=0$/WD_NEXT=999999/' "$STATE" > "$STATE.x"; mv "$STATE.x" "$STATE"
+echo 'Netherlands Amsterdam-2' > "$T/tag"; enq "$EXIT2"
+runtick 7000
+eq "tagunblock.phase" "$(sval WD_PHASE)" healthy
+
+# 10e. НАШ failover тоже меняет tag (config_apply -> setSelected). Это не выбор пользователя:
+#      backoff обязан устоять, иначе полный перебор кандидатов шёл бы раз в минуту вместо 10.
+reset; seed_down vpn; rm -f "$T/running"; rm -f "$T/live"
+runtick 7000
+eq "fobackoff.phase" "$(sval WD_PHASE)" down
+eq "fobackoff.next" "$(sval WD_NEXT)" 7600
+: > "$T/actions"
+runtick 7060
+eq "fobackoff.held" "$(cat "$T/actions")" ""
+eq "fobackoff.stillnext" "$(sval WD_NEXT)" 7600
+
+# 10d. часы прыгнули назад (NTP): WD_NEXT из далёкого будущего не должен парковать watchdog.
+reset; enq "$EXIT1"
+{ echo "WD_PHASE=healthy"; echo "WD_FAILS=0"; echo "WD_BASE_IP="; echo "WD_HOME_IP=$HOME_IP"
+  echo "WD_TAGSIG=$(sig "$(cat "$T/tag")")"; echo "WD_NEXT=9999999999"; echo "WD_DOWNKIND="; } > "$STATE"
+runtick 1000
+eq "clockskew.exit" "$(sval WD_BASE_IP)" "$EXIT1"
+eq "clockskew.next" "$(sval WD_NEXT)" 1060
+
 # 11. leak на exit-сверке: liveness ok, exit==home -> провал. С EXIT_EVERY=3: первые 2 цикла
 #     не сверяют exit (healthy), 3-й сверяет и ловит leak (fails->1).
 reset; EXIT_EVERY=3
@@ -176,6 +220,21 @@ reset; enq "$EXIT1"; runtick 1000
 echo 'Netherlands Amsterdam-2' > "$T/tag"; enq "$EXIT2"; runtick 1060
 eq "tagchange.exit" "$(sval WD_BASE_IP)" "$EXIT2"
 eq "tagchange.phase" "$(sval WD_PHASE)" healthy
+
+# 14. selected_tag() читает файл активного сервера; отсутствие файла = пустой тег, а не падение
+#     (так выглядит первая загрузка до первого apply).
+reset; rm -f "$ACTIVE"
+eq "activefile.missing" "$(selected_tag)" ""
+printf 'France Paris-9\n' > "$ACTIVE"
+eq "activefile.read" "$(selected_tag)" "France Paris-9"
+
+# 15. Путь к файлу тега продублирован в watchdog.sh и в rpcd-плагине на ucode. Разъезд литералов
+#     не ловится ничем другим: обе стороны продолжат «работать», просто в разные файлы.
+WD_SRC="$SELF_DIR/../../root/usr/share/monkey-business/watchdog.sh"
+UC_SRC="$SELF_DIR/../../root/usr/share/rpcd/ucode/monkey-business.uc"
+eq "activepath.watchdog" "$(grep -c "MB_WD_ACTIVE:-/etc/monkey-business/active" "$WD_SRC")" 1
+eq "activepath.rpcd" "$(grep -c "ACTIVE_FILE = CONF_DIR + '/active'" "$UC_SRC")" 1
+eq "activepath.confdir" "$(grep -c "CONF_DIR = '/etc/monkey-business'" "$UC_SRC")" 1
 
 printf '\nwatchdog_test: %d passed, %d failed\n' "$PASS" "$FAIL"
 [ "$FAIL" -eq 0 ]
