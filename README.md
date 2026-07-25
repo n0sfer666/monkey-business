@@ -228,7 +228,7 @@ can target a NanoPi R2S over SSH (see Install → Option A).
   # /etc/init.d/monkey-business restart
   ```
 - **The tunnel died and the router switched servers on its own.** That's the watchdog. It logs only
-  transitions to `/usr/local/server.main.log` (not `logread`) — `tail -f` it to see
+  transitions to syslog — `logread -f -e mb-event` to see
   `Reconnecting…` / `Failover switched server…` / `VPN stopped, LAN on direct`. Live state is in
   `/tmp/mb-watchdog/state`. See [the install guide](docs/install-nanopi.md#8-self-healing-watchdog--failover)
   for the escalation ladder and how to tune or disable it.

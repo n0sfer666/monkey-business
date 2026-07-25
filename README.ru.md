@@ -229,8 +229,8 @@ make dev-test-split # проверить сплит-маршрутизацию: 
   # uci commit monkey-business
   # /etc/init.d/monkey-business restart
   ```
-- **Туннель упал, и роутер сам переключил сервер.** Это watchdog. Он пишет только переходы, и не в
-  `logread`, а в `/usr/local/server.main.log` — `tail -f` покажет `Reconnecting…` /
+- **Туннель упал, и роутер сам переключил сервер.** Это watchdog. Он пишет только переходы, в
+  syslog — `logread -f -e mb-event` покажет `Reconnecting…` /
   `Failover switched server…` / `VPN stopped, LAN on direct`. Текущее состояние —
   в `/tmp/mb-watchdog/state`. Лестница эскалации, тюнинг и отключение — в
   [руководстве по установке](docs/install-nanopi.ru.md#8-самовосстановление-watchdog-и-failover).

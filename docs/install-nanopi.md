@@ -122,10 +122,11 @@ What this does:
   installs missing ones one at a time. If a required package fails, **the deploy fails**: silently
   handing over a router without xray is worse than not deploying (override: `MB_ALLOW_MISSING=1`).
 - **Installs NIC firmware v1** (`nicfw.sh apply`) when the `r8152` driver is present — see Section 9.
-- **Registers three cron entries** and enables `cron` — idempotent, so re-deploys don't duplicate
-  them: `* * * * * …/watchdog.sh` (self-healing, Section 8), `*/5 * * * * …/boothealth.sh beat`
-  (flash-safety heartbeat for the ext4 rootfs) and `* * * * * …/nicwatch.sh` (USB NIC stall
-  safety net, Section 9). It also enables the `mb-boothealth` init script.
+- **Registers two cron entries** and enables `cron` — idempotent, so re-deploys don't duplicate
+  them: `* * * * * …/watchdog.sh` (self-healing, Section 8) and `* * * * * …/nicwatch.sh` (USB NIC
+  stall safety net, Section 9). It also enables the `mb-boothealth` init script and **deletes** the
+  obsolete `*/5 … boothealth.sh beat` line if an older deploy left it behind — that heartbeat forced
+  288 flushes a day into the same LBAs and wore SD cards out in about two weeks.
 - **Downloads the geo databases** if `/usr/share/xray/{geoip,geosite}.dat` are missing, then builds
   the kernel bypass sets (`ruset.sh build`). Neither is fatal: if the download fails you can still
   do it later from the UI, and without the sets local traffic simply goes direct *through* Xray.
@@ -349,11 +350,11 @@ it escalates:
    removes the kill-switch, so the LAN keeps working *without* the VPN. The watchdog then retries
    every 10 minutes and restores the tunnel when it comes back.
 
-Transitions (only transitions — this is flash-friendly) are logged to `/usr/local/server.main.log`,
-**not** to `logread`:
+Transitions (only transitions) go to syslog under the `monkey-business` tag — a RAM ring buffer, so
+an incident storm costs the SD card nothing:
 
 ```sh
-# tail -f /usr/local/server.main.log
+# logread -f -e mb-event
 # cat /tmp/mb-watchdog/state          # phase, fail counters, exit/home IP
 ```
 
@@ -366,8 +367,7 @@ itself — e.g. to fail over sooner:
 # /etc/init.d/cron restart
 ```
 
-To disable it, delete the **`watchdog.sh`** line from `/etc/crontabs/root` (leave the
-`boothealth.sh beat` line — that one is flash-safety, not VPN).
+To disable it, delete the **`watchdog.sh`** line from `/etc/crontabs/root`.
 
 ---
 
