@@ -1,5 +1,5 @@
 #!/bin/sh
-# Юнит-тест общей загрузки (root/usr/share/monkey-business/fetch.sh). Моки curl/pidof через PATH.
+# Юнит-тест общей загрузки (root/usr/share/monkey-business/fetch.sh). Моки curl/pgrep через PATH.
 # Главное, что защищаем: socks-фолбэк идёт ТОЛЬКО когда прямая загрузка провалилась и xray жив,
 # а неудачная загрузка не оставляет за собой обрезанный файл (его бы приняли за валидный).
 set -u
@@ -32,12 +32,12 @@ case "\$*" in
 	           printf 'via-direct' > "\$out"; exit 0 ;;
 esac
 EOF
-cat >"$T/bin/pidof" <<EOF
+cat >"$T/bin/pgrep" <<EOF
 #!/bin/sh
 [ -f "$T/xray_up" ] && { echo 123; exit 0; }
 exit 1
 EOF
-chmod +x "$T/bin/curl" "$T/bin/pidof"
+chmod +x "$T/bin/curl" "$T/bin/pgrep"
 # PATH внутри прогона — только мок-каталог (иначе command -v нашёл бы системный curl),
 # поэтому реальные утилиты, которые нужны самому fetch.sh, кладём туда же
 ln -sf /bin/rm "$T/bin/rm"
