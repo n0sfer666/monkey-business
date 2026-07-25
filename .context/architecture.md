@@ -15,7 +15,7 @@
 │  Lib (src/lib/*.uc)                          │  общие утилиты (uri, validation)
 ├─────────────────────────────────────────────┤
 │  procd init → Xray-core                       │
-│  boothealth (mb-boothealth + beat)            │  ext4-rootfs: sync-гигиена + детект unclean/ro-remount
+│  boothealth (mb-boothealth)                   │  ext4-rootfs: детект unclean/ro-remount, 0 периодики
 │  cron watchdog (watchdog.sh + probes.sh)      │  1/мин; reconnect → failover → fail-open direct
 │  cron nicwatch (nicwatch.sh) + nicfw.sh       │  1/мин; залипание TX eth1 (RTL8153B) → bounce/re-bind
 │  nftables TPROXY (scripts/firewall/)          │  перехват TCP+UDP; :53 → dns-in (не tproxy)
@@ -27,7 +27,7 @@
 ## Потоки данных
 1. **Подписка:** URL → `subscription.uc` (auto-detect формата) → нормализованный список серверов → UCI.
 2. **Apply / connect:** UCI → `selectWorking` (пробует серверы по порядку списка, первый рабочий →
-   `selected`) → `xray.uc` → Xray JSON → procd restart → nftables TPROXY.
+   тег в `/etc/monkey-business/active`) → `xray.uc` → Xray JSON → procd restart → nftables TPROXY.
 3. **Маршрутизация:** два слоя. Ядро: RU-CIDR из nft-сетов `mb_ru4`/`mb_ru6` не попадают в TPROXY
    (`direct_bypass=1`, дефолт) — быстрый путь, без прохода через xray. Xray: geoip/geosite →
    RU/CN/private direct, остальное в туннель (default bypass-RU) — safety-net для того, что не попало
