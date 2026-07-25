@@ -3,6 +3,7 @@
 'require rpc';
 'require ui';
 'require uci';
+'require poll';
 
 var callStatus = rpc.declare({ object: 'monkey-business', method: 'status' });
 var callServers = rpc.declare({ object: 'monkey-business', method: 'servers_list' });
@@ -30,6 +31,29 @@ function fmtDate(epoch) {
 
 function sleep(ms) {
 	return new Promise(function(r) { window.setTimeout(r, ms); });
+}
+
+// Раньше «выключено» и «watchdog снял туннель, LAN идёт напрямую» выглядели одинаково —
+// как «Starting…», то есть «сейчас поднимется». Фаза watchdog из status делает разницу видимой.
+// Живой процесс приоритетнее фазы: файл состояния watchdog обновляется раз в минуту, и по нему
+// нельзя объявлять «трафик идёт мимо VPN», когда xray уже поднят — ложное обещание в обе стороны
+// опаснее задержки в минуту.
+function phaseInfo(st) {
+	if (!st.enabled)
+		return { label: _('Off'), color: '#888', note: '', tint: '' };
+	if (st.running)
+		return { label: _('Connected'), color: '#33a02c', note: '', tint: '' };
+	if (st.wd_phase === 'down')
+		return {
+			label: _('Disabled by watchdog'), color: '#e31a1c', tint: 'rgba(227,26,28,.08)',
+			note: _('No working server found — traffic goes directly, WITHOUT VPN.')
+		};
+	if (st.wd_phase === 'reconnecting')
+		return {
+			label: _('Reconnecting…'), color: '#ff7f00', tint: 'rgba(255,127,0,.08)',
+			note: _('The tunnel dropped, the watchdog is reconnecting. Kill-switch is still held.')
+		};
+	return { label: _('Starting…'), color: '#ff7f00', note: '', tint: '' };
 }
 
 return view.extend({
@@ -120,9 +144,49 @@ return view.extend({
 
 	renderStatus: function(st) {
 		var self = this;
-		var on = !!st.enabled, running = !!st.running;
-		var label = on ? (running ? _('Connected') : _('Starting…')) : _('Off');
-		var color = running ? '#33a02c' : (on ? '#ff7f00' : '#888');
+		var on = !!st.enabled;
+		var toggleOn = on;
+		var info = phaseInfo(st);
+
+		var labelEl = E('p', { 'style': 'font-size:1.4em;color:' + info.color }, [ info.label ]);
+		var serverEl = E('p', {}, [ _('Server: ') + (st.server || _('none')) ]);
+		var noteEl = E('div', {
+			'style': 'display:' + (info.note ? 'block' : 'none') +
+				';margin:8px 0;padding:8px 12px;border-left:4px solid ' + info.color + ';background:' + info.tint
+		}, [ E('strong', {}, [ info.note ]), E('br'), E('small', { 'style': 'font-family:monospace;color:#888' }, [ st.last_event || '' ]) ]);
+
+		var routingEl = E('p', {}, [ _('Routing: ') + (st.routing_mode || '-') ]);
+		var toggleEl = E('button', {
+			'class': 'btn cbi-button ' + (on ? 'cbi-button-remove' : 'cbi-button-apply'),
+			'click': ui.createHandlerFn(this, function() { return self.handleToggle(!toggleOn); })
+		}, [ on ? _('Turn off') : _('Turn on') ]);
+
+		// Вьюшка не поллилась вовсе: страница показывала снимок момента загрузки, поэтому переход
+		// в down пользователь замечал только вручную перезагрузив LuCI.
+		poll.add(function() {
+			return callStatus().then(function(cur) {
+				var next = phaseInfo(cur);
+				labelEl.textContent = next.label;
+				labelEl.style.color = next.color;
+				serverEl.textContent = _('Server: ') + (cur.server || _('none'));
+				routingEl.textContent = _('Routing: ') + (cur.routing_mode || '-');
+				noteEl.style.display = next.note ? 'block' : 'none';
+				noteEl.style.borderLeftColor = next.color;
+				noteEl.style.background = next.tint;
+				noteEl.firstChild.textContent = next.note;
+				noteEl.lastChild.textContent = cur.last_event || '';
+				// Кнопка тоже живая: иначе после автоотключения она предлагала бы «Turn off»
+				// на уже выключенном сервисе.
+				toggleOn = !!cur.enabled;
+				toggleEl.textContent = toggleOn ? _('Turn off') : _('Turn on');
+				toggleEl.className = 'btn cbi-button ' + (toggleOn ? 'cbi-button-remove' : 'cbi-button-apply');
+				labelEl.style.opacity = '1';
+			}).catch(function() {
+				// Молчаливый catch выдавал бы устаревший снимок за актуальный статус —
+				// приглушаем метку, чтобы отказ ubus был виден.
+				labelEl.style.opacity = '.4';
+			});
+		}, 5);
 
 		var exitEl = E('span', { 'style': 'font-family:monospace' }, [ '—' ]);
 		var checkBtn = E('button', {
@@ -138,13 +202,11 @@ return view.extend({
 
 		return E('div', { 'class': 'cbi-section' }, [
 			E('h3', {}, [ _('Status') ]),
-			E('p', { 'style': 'font-size:1.4em;color:' + color }, [ label ]),
-			E('p', {}, [ _('Server: ') + (st.server || _('none')) ]),
-			E('p', {}, [ _('Routing: ') + (st.routing_mode || '-') ]),
-			E('button', {
-				'class': 'btn cbi-button ' + (on ? 'cbi-button-remove' : 'cbi-button-apply'),
-				'click': ui.createHandlerFn(this, function() { return self.handleToggle(!on); })
-			}, [ on ? _('Turn off') : _('Turn on') ]),
+			labelEl,
+			noteEl,
+			serverEl,
+			routingEl,
+			toggleEl,
 			E('p', { 'style': 'margin-top:10px' }, [
 				checkBtn, ' ', E('span', {}, [ _('Exit (via VPN routing): ') ]), exitEl,
 				E('br'), E('small', { 'style': 'color:#888' }, [ _('Probes ip-api.com through the split rules. Add it to the Direct list above to see your real IP instead.') ])
