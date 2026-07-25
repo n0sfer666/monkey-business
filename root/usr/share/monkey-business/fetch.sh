@@ -5,9 +5,18 @@
 # упирается в блокировки провайдера (raw.githubusercontent.com у RU-ISP не открывается), хотя у
 # LAN-клиентов тот же адрес работает через туннель. Без фолбэка ruset.sh не собирает RU-сет, и весь
 # российский трафик уходит в туннель — ровно та «тормозящая локалка», от которой сет и спасает.
-# Env: MB_FETCH_TIMEOUT(120) MB_FETCH_SOCKS(127.0.0.1:10808).
+# Env: MB_FETCH_TIMEOUT(120) MB_FETCH_SOCKS(127.0.0.1:10808) MB_FETCH_XRAY_MATCH.
 
 MB_FETCH_TIMEOUT="${MB_FETCH_TIMEOUT:-120}"
+# socks 10808 поднимает только БОЕВОЙ xray -> матчим его cmdline, а не любой процесс `xray`
+# (эфемерная проба failover слушает 10809 и socks-фолбэк с ней не работает).
+MB_FETCH_XRAY_MATCH="${MB_FETCH_XRAY_MATCH:-xray run -c /etc/monkey-business/xray.json}"
+# без pgrep (урезанный busybox) деградируем до pidof: грубее, но лучше отказа от socks-фолбэка
+if command -v pgrep >/dev/null 2>&1; then
+	mb_xray_up() { pgrep -f "$MB_FETCH_XRAY_MATCH" >/dev/null 2>&1; }
+else
+	mb_xray_up() { pidof xray >/dev/null 2>&1; }
+fi
 # короткий таймаут установления соединения: перебор зеркал не должен ждать 120с на мёртвом хосте
 MB_FETCH_CONNECT="${MB_FETCH_CONNECT:-10}"
 MB_FETCH_SOCKS="${MB_FETCH_SOCKS:-127.0.0.1:10808}"
@@ -24,7 +33,7 @@ mb_fetch_direct() { # <url> <out>
 # socks поднимает только живой xray; без него фолбэк бессмысленен
 mb_fetch_socks() { # <url> <out>
 	command -v curl >/dev/null 2>&1 || return 1
-	pidof xray >/dev/null 2>&1 || return 1
+	mb_xray_up || return 1
 	curl -fsSL --connect-timeout "$MB_FETCH_CONNECT" -m "$MB_FETCH_TIMEOUT" -x "socks5h://$MB_FETCH_SOCKS" -o "$2" "$1"
 }
 
@@ -47,7 +56,7 @@ mb_content_length() { # reads HTTP headers on stdin -> печатает байт
 mb_remote_size() { # <url> -> байты или пусто
 	command -v curl >/dev/null 2>&1 || return 0
 	_sz="$(curl -fsSL --connect-timeout "$MB_FETCH_CONNECT" -m "$MB_FETCH_TIMEOUT" -I "$1" 2>/dev/null | mb_content_length)"
-	if [ -z "$_sz" ] && pidof xray >/dev/null 2>&1; then
+	if [ -z "$_sz" ] && mb_xray_up; then
 		_sz="$(curl -fsSL --connect-timeout "$MB_FETCH_CONNECT" -m "$MB_FETCH_TIMEOUT" -x "socks5h://$MB_FETCH_SOCKS" -I "$1" 2>/dev/null | mb_content_length)"
 	fi
 	[ -n "$_sz" ] && printf '%s' "$_sz"
