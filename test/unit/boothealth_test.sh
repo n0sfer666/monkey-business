@@ -19,7 +19,7 @@ MARKER="$T/marker"
 # моки побочных эффектов
 now() { echo "${BH_NOW:-1000}"; }
 log_event() { echo "$1" >> "$T/log"; }
-do_sync() { echo s >> "$T/sync"; }
+sync() { echo s >> "$T/sync"; }
 root_ro() { [ -f "$T/ro" ]; }
 remount_rw() { [ -f "$T/remount_ok" ] && rm -f "$T/ro"; }
 read_state() { cat "$MARKER" 2>/dev/null || echo ''; }
@@ -65,20 +65,25 @@ reset; write_state clean; : > "$T/ro"
 boot
 has "ro_hard.rw_no" "$T/log" "remounted rw=no"
 
-# 6. beat: sync вызван, маркер остаётся running.
-reset; write_state running
-beat
-has "beat.sync" "$T/sync" s
-eq "beat.state" "$(read_state)" running
-
-# 7. clean (стоп сервиса): маркер -> clean, sync вызван.
+# 6. clean (стоп сервиса): маркер -> clean, единственный за цикл питания sync вызван.
 reset; write_state running
 clean
 eq "clean_cmd.state" "$(read_state)" clean
 has "clean_cmd.sync" "$T/sync" s
 
-# 8. жизненный цикл: clean -> beat(running) -> boot видит running -> unclean.
-reset; write_state clean; beat; echo 980 > "$T/mtime"
+# 7. boot НЕ синкает: за цикл питания ровно один sync (на стопе), иначе флеш выгорает.
+reset; write_state clean
+boot
+absent "boot.nosync" "$T/sync"
+
+# 8. периодического heartbeat больше нет — `beat` должен быть неизвестной подкомандой.
+reset
+out=$(main beat 2>&1); rc=$?
+eq "nobeat.rc" "$rc" 2
+eq "nobeat.usage" "$(echo "$out" | grep -c 'boot|clean')" 1
+
+# 9. жизненный цикл: clean -> boot(running) -> ребут без stop -> boot видит running -> unclean.
+reset; write_state clean; boot; echo 980 > "$T/mtime"
 boot
 has "lifecycle.unclean" "$T/log" "unclean shutdown"
 

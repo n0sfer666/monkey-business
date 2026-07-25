@@ -31,6 +31,7 @@ function mockCtx(state) {
 		fetchSubscription: function(_url) { return state.fetchResult; },
 		pingServer: function(s) { return state.pings[s.tag]; },
 		probeServer: function(s) { return (state.probeFail == null) || (state.probeFail[s.tag] !== true); },
+		failoverCap: function() { return state.failoverCap || 0; },
 		applyConfig: function(j) { state.applied = j; return state.applyErr; },
 		stopService: function() { state.stopped = true; },
 		serviceRunning: function() { return state.running; },
@@ -83,6 +84,37 @@ test("status reflects state and exposes traffic", function() {
 	assertEq(r.routing_mode, "bypass-local");
 	assertEq(r.traffic.used_download, "20");
 	assertEq(r.traffic.total, "300");
+});
+
+// Без фазы watchdog UI не мог отличить «поднимается» от «watchdog сдался и LAN идёт мимо VPN»
+// и вечно показывал «Starting…».
+test("status exposes watchdog phase and last event", function() {
+	let st = freshState();
+	let ctx = mockCtx(st);
+	ctx.watchdogPhase = function() { return "down"; };
+	ctx.lastEvent = function() { return "VPN stopped, LAN on direct."; };
+	let r = h.status(ctx);
+	assertEq(r.wd_phase, "down");
+	assertEq(r.last_event, "VPN stopped, LAN on direct.");
+});
+
+test("status stays valid when ctx has no watchdog hooks (older runtime)", function() {
+	let r = h.status(mockCtx(freshState()));
+	assertEq(r.wd_phase, null);
+	assertEq(r.last_event, "");
+});
+
+// В healthy плашки с событием в UI нет, а status опрашивается раз в 5с — lastEvent() дампит
+// syslog, и звать его на каждом опросе значит жечь CPU роутера впустую.
+test("status skips lastEvent while healthy", function() {
+	let calls = 0;
+	let ctx = mockCtx(freshState());
+	ctx.watchdogPhase = function() { return "healthy"; };
+	ctx.lastEvent = function() { calls++; return "should not be read"; };
+	let r = h.status(ctx);
+	assertEq(r.wd_phase, "healthy");
+	assertEq(r.last_event, "");
+	assertEq(calls, 0);
 });
 
 test("subscriptionUpdate stores servers, url, userinfo and auto-selects", function() {
@@ -263,6 +295,35 @@ test("configApply falls back to top when all probes fail (kill-switch preserved)
 	assertEq(r.probed, false);
 	assertEq(r.server, st.servers[0].tag);
 	assert(index(st.applied, st.servers[0].address) >= 0, "applied uses top server as fallback");
+});
+
+// Дефолтный cap=0 обязан значить «весь список»: жёсткий потолок делал рабочий сервер в хвосте
+// недостижимым ни для watchdog, ни для «Turn on».
+test("selectWorking with default cap probes every server", function() {
+	let st = freshState();
+	st.fetchResult = { body: SUB, userinfo: "" };
+	let ctx = mockCtx(st);
+	h.subscriptionUpdate(ctx, {});
+	let last = st.servers[length(st.servers) - 1];
+	st.probeFail = {};
+	for (let s in st.servers)
+		st.probeFail[s.tag] = (s.tag != last.tag);
+	let r = h.selectWorking(ctx);
+	assertEq(r.probed, true);
+	assertEq(r.server.tag, last.tag);
+});
+
+test("selectWorking honours an explicit cap", function() {
+	let st = freshState();
+	st.fetchResult = { body: SUB, userinfo: "" };
+	let ctx = mockCtx(st);
+	h.subscriptionUpdate(ctx, {});
+	st.failoverCap = 1;
+	st.probeFail = {};
+	st.probeFail[st.servers[0].tag] = true;
+	let r = h.selectWorking(ctx);
+	assertEq(r.probed, false);
+	assertEq(r.server.tag, st.servers[0].tag);
 });
 
 test("serviceToggle on connects (selects+applies+enables)", function() {
