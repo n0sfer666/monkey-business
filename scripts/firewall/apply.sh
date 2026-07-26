@@ -59,11 +59,14 @@ if [ "$KILL" = 1 ]; then
 	}"
 fi
 
-# идемпотентность: убрать прежнюю таблицу (set -e -> guard) перед пересозданием
-nft delete table inet monkey_business 2>/dev/null || true
-
 # Сначала nft (set -e прервёт при сбое ДО policy-routing -> нет окна утечки с ip-rule без nft).
+# Своп таблицы ОДНОЙ транзакцией: отдельный `nft delete table` перед созданием открывал окно, в
+# котором нет ни kill-switch, ни tproxy — форвард LAN->WAN уходил открытым через fw4 (на каждом
+# reload, т.е. и на каждом тике watchdog'а). Идиома: add (idempotent, delete требует существования)
+# -> delete -> create; nft применяет файл целиком либо не применяет вовсе.
 nft -f - <<EOF
+table inet monkey_business
+delete table inet monkey_business
 table inet monkey_business {$BYPASS_SETS
 	chain prerouting {
 		type filter hook prerouting priority mangle; policy accept;
@@ -80,6 +83,9 @@ table inet monkey_business {$BYPASS_SETS
 EOF
 
 # direct-bypass: подгрузить элементы RU-сетов в уже созданную таблицу (guarded, не фатально).
+# Намеренно ОТДЕЛЬНЫМИ транзакциями, а не внутри документа выше: битый/обрезанный ru4.nft уронил бы
+# весь документ, а на загрузке (прежней таблицы нет) это firewall без kill-switch. Худший случай
+# здесь — пустой bypass: RU-трафик идёт через туннель, но правила на месте.
 if [ "$BYPASS" = 1 ]; then
 	[ -f "$RUSET_DIR/ru4.nft" ] && nft -f "$RUSET_DIR/ru4.nft" 2>/dev/null || true
 	[ -f "$RUSET_DIR/ru6.nft" ] && nft -f "$RUSET_DIR/ru6.nft" 2>/dev/null || true
