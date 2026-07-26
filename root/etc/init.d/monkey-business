@@ -32,15 +32,16 @@ stop_service() {
 	sh "$FW/flush.sh" 2>&1 | logger -t monkey-business
 }
 
-# Без него rc.common подменяет reload на restart, а restart зовёт stop_service -> flush.sh
-# снимает kill-switch, и до подъёма xray LAN светит в открытую сеть. Здесь stop_service не
-# вызывается: procd переобъявляет инстанс, видит новый хеш $CONF и бьёт только процесс xray.
-# start (rc.common) сам открывает procd-сервис вокруг reload_service — звать его отсюда значит
-# вложить procd_open_service в уже открытый, и переобъявление инстанса теряется.
+# Своя reload_service: rc.common для USE_PROCD подменяет reload на start, а restart_service
+# заводить нельзя — он позвал бы stop_service -> flush.sh, и до подъёма xray LAN светит в
+# открытую сеть. rc_procd обязателен (голый start_service переобъявления не отправляет вовсе:
+# ubus set делает procd_close_service) и вызывается без аргументов (любой $2 сменил бы set на
+# add). Дальше procd сам решает по хешу $CONF, бить ли процесс xray; firewall переприменяется
+# целиком. Нет $CONF -> выходим: пустые instances снесли бы инстанс, убив живой xray.
 reload_service() {
-	start_service "$@"
+	[ -f "$CONF" ] || return 1
+	rc_procd start_service
 }
 
-service_triggers() {
-	procd_add_reload_trigger "monkey-business"
-}
+# service_triggers намеренно нет: $CONF генерит rpcd и сам зовёт reload, а reload-триггер на UCI
+# поднимал бы xray на любом uci commit — в том числе при выключенном пользователем VPN.
