@@ -32,10 +32,25 @@ function mockCtx(state) {
 		pingServer: function(s) { return state.pings[s.tag]; },
 		probeServer: function(s) { return (state.probeFail == null) || (state.probeFail[s.tag] !== true); },
 		failoverCap: function() { return state.failoverCap || 0; },
-		applyConfig: function(j) { state.applied = j; return state.applyErr; },
+		// enabledAtApply + applyIntent пинят ПОРЯДОК: туннель поднимается ДО commit'а тумблера, а
+		// гейт по enabled в init-скрипте обходится явным intentOn (MB_INTENT=1) — только на пути
+		// включения. Обратный порядок держал enabled=1 всю пробу серверов, и cron-watchdog успевал
+		// поднять старый конфиг.
+		applyConfig: function(j, intentOn) {
+			state.applied = j;
+			state.applyIntent = intentOn;
+			state.enabledAtApply = state.global.enabled;
+			return state.applyErr;
+		},
+		setCustomRouting: function(d, p) { state.custom = { direct: d, proxy: p }; },
 		stopService: function() { state.stopped = true; },
 		serviceRunning: function() { return state.running; },
-		setEnabled: function(b) { state.global.enabled = b ? "1" : "0"; },
+		setEnabled: function(b) {
+			if (state.setEnabledFail)
+				return false;
+			state.global.enabled = b ? "1" : "0";
+			return true;
+		},
 		updateGeo: function() { return { status: "ok", files: ["geoip.dat", "geosite.dat"] }; },
 	};
 }
@@ -227,6 +242,7 @@ test("selectBest returns null when no servers", function() {
 
 test("configApply auto-selects and passes dns+anti_dpi", function() {
 	let st = freshState();
+	st.global.enabled = "1";
 	st.fetchResult = { body: SUB, userinfo: "" };
 	st.anti_dpi.xhttp_padding = "1";
 	let ctx = mockCtx(st);
@@ -237,10 +253,14 @@ test("configApply auto-selects and passes dns+anti_dpi", function() {
 	assert(st.selected != null, "auto-selected");
 	assert(index(st.applied, "dokodemo-door") >= 0, "has tproxy inbound");
 	assert(index(st.applied, "dns") >= 0, "dns applied");
+	// НЕ путь включения: обход гейта (intentOn) здесь запрещён, иначе config_apply снова поднимал бы
+	// туннель при выключенном тумблере — ровно тот баг, из-за которого гейт и появился
+	assert(!st.applyIntent, "config_apply does not bypass the enabled gate");
 });
 
 test("configApply re-selects first server by order (reorder switches active)", function() {
 	let st = freshState();
+	st.global.enabled = "1";
 	st.fetchResult = { body: SUB, userinfo: "" };
 	let ctx = mockCtx(st);
 	h.subscriptionUpdate(ctx, {});
@@ -254,12 +274,14 @@ test("configApply re-selects first server by order (reorder switches active)", f
 
 test("configApply errors with no servers", function() {
 	let st = freshState();
+	st.global.enabled = "1";
 	let r = h.configApply(mockCtx(st));
 	assert(index(r.error, "no servers") >= 0, "no-servers error");
 });
 
 test("configApply surfaces apply/validation error", function() {
 	let st = freshState();
+	st.global.enabled = "1";
 	st.fetchResult = { body: SUB, userinfo: "" };
 	let ctx = mockCtx(st);
 	h.subscriptionUpdate(ctx, {});
@@ -270,6 +292,7 @@ test("configApply surfaces apply/validation error", function() {
 
 test("configApply fails over past unreachable server to next working", function() {
 	let st = freshState();
+	st.global.enabled = "1";
 	st.fetchResult = { body: SUB, userinfo: "" };
 	let ctx = mockCtx(st);
 	h.subscriptionUpdate(ctx, {});
@@ -285,6 +308,7 @@ test("configApply fails over past unreachable server to next working", function(
 
 test("configApply falls back to top when all probes fail (kill-switch preserved)", function() {
 	let st = freshState();
+	st.global.enabled = "1";
 	st.fetchResult = { body: SUB, userinfo: "" };
 	let ctx = mockCtx(st);
 	h.subscriptionUpdate(ctx, {});
@@ -295,6 +319,32 @@ test("configApply falls back to top when all probes fail (kill-switch preserved)
 	assertEq(r.probed, false);
 	assertEq(r.server, st.servers[0].tag);
 	assert(index(st.applied, st.servers[0].address) >= 0, "applied uses top server as fallback");
+});
+
+// Сохранение настроек при выключенном VPN не должно ни поднимать туннель, ни трогать активный
+// сервер, ни врать UI словом «applied»: enabled — источник истины для рантайма.
+test("configApply skips runtime work while disabled", function() {
+	let st = freshState();
+	st.fetchResult = { body: SUB, userinfo: "" };
+	let ctx = mockCtx(st);
+	h.subscriptionUpdate(ctx, {});
+	let before = st.selected;
+	st.global.enabled = "0";
+	let r = h.configApply(ctx);
+	assertEq(r.skipped, "disabled");
+	assert(r.error == null, "not an error — настройки сохранены");
+	assertEq(st.applied, null);
+	assertEq(st.selected, before);
+});
+
+// Списки маршрутизации обязаны лечь в UCI даже при выключенном VPN — гейт стоит ПОСЛЕ записи,
+// иначе правки молча терялись бы, а при включении применился бы старый сплит.
+test("setRouting persists lists while disabled", function() {
+	let st = freshState();
+	let r = h.setRouting(mockCtx(st), { direct: "a.example", proxy: "b.example" });
+	assertEq(r.skipped, "disabled");
+	assertEq(st.custom.direct, "a.example");
+	assertEq(st.custom.proxy, "b.example");
 });
 
 // Дефолтный cap=0 обязан значить «весь список»: жёсткий потолок делал рабочий сервер в хвосте
@@ -337,6 +387,10 @@ test("serviceToggle on connects (selects+applies+enables)", function() {
 	assertEq(r.enabled, true);
 	assertEq(st.global.enabled, "1");
 	assert(st.applied != null, "config applied on connect");
+	// тумблер коммитится ПОСЛЕ применения, а гейт обходится intentOn — иначе enabled=1 висел бы всё
+	// время пробы серверов и watchdog поднял бы старый конфиг в это окно
+	assertEq(st.enabledAtApply, "0");
+	assertEq(st.applyIntent, true);
 });
 
 test("serviceToggle on without servers errors, stays off", function() {
@@ -355,6 +409,24 @@ test("serviceToggle on surfaces apply error, stays off", function() {
 	let r = h.serviceToggle(ctx, { enabled: true });
 	assertEq(r.enabled, false);
 	assertEq(r.error, "bad config");
+	// тумблер не включился: применение провалилось, а enabled=1 без туннеля заставил бы watchdog
+	// «лечить» сервис, которого нет, и дашборд показывал бы «on»
+	assertEq(st.global.enabled, "0");
+});
+
+// Намерение не легло в UCI (read-only rootfs): туннель уже поднят обходом гейта, оставлять его
+// нельзя — за таким xray+kill-switch никто не следит, а дашборд показывает «off».
+test("serviceToggle on tears down the tunnel if intent cannot be saved", function() {
+	let st = freshState();
+	st.fetchResult = { body: SUB, userinfo: "" };
+	let ctx = mockCtx(st);
+	h.subscriptionUpdate(ctx, {});
+	st.setEnabledFail = true;
+	let r = h.serviceToggle(ctx, { enabled: true });
+	assertEq(r.enabled, false);
+	assert(index(r.error, "could not save") >= 0, "honest error");
+	assertEq(st.stopped, true);
+	assertEq(st.global.enabled, "0");
 });
 
 test("serviceToggle off stops and disables", function() {

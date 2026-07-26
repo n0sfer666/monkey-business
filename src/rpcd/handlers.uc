@@ -10,8 +10,9 @@
 //   getSelectedServer() -> server|null   setSelected(tag) — рантайм-состояние, НЕ uci-commit
 //   setSubscriptionUrl(url)   setUserinfo({used_upload,used_download,total,expire})
 //   fetchSubscription(url) -> { body, userinfo }|null   pingServer(server) -> int(ms)|null
-//   applyConfig(jsonStr) -> errString|null (валидирует + запускает)   stopService()
-//   serviceRunning() -> bool   setEnabled(bool)   updateGeo(args) -> { status }
+//   applyConfig(jsonStr, intentOn?) -> errString|null (валидирует + запускает; intentOn=true обходит
+//     гейт по enabled в init-скрипте — только для пути включения)   stopService()
+//   serviceRunning() -> bool   setEnabled(bool) -> bool (легло ли в UCI)   updateGeo(args) -> { status }
 //   failoverCap() -> int (сколько кандидатов пробовать в selectWorking; 0 = все)
 //   watchdogPhase() -> "healthy"|"reconnecting"|"down"|null   lastEvent() -> string
 //   setCustomRouting(direct, proxy)   geoStatus() -> { state, geoip, geosite }
@@ -214,7 +215,12 @@ function serversPing(ctx) {
 	return { results: results, best: best };
 }
 
+// При выключенном VPN рантайм не трогаем вообще: init-скрипт всё равно не поднимет xray (гейт по
+// enabled), а без раннего выхода мы бы зря поднимали эфемерный xray на пробу серверов и меняли
+// активный сервер. `skipped` нужен UI, чтобы не врать «applied», когда ничего не применялось.
 function configApply(ctx) {
+	if (!isTrue(ctx.getGlobal().enabled))
+		return { ok: true, skipped: "disabled" };
 	let sel = selectWorking(ctx);
 	if (sel == null)
 		return { error: "no servers — add a subscription or a manual server first" };
@@ -236,10 +242,21 @@ function serviceToggle(ctx, args) {
 	if (sel == null)
 		return { error: "no servers — add a subscription first", enabled: false };
 	let jsonStr = generateJson(genConfig(ctx, sel.server));
-	let err = ctx.applyConfig(jsonStr);
+	// Сначала поднять туннель (intentOn=true — явный обход гейта по enabled), только потом commit
+	// тумблера. Обратный порядок (setEnabled -> applyConfig) держал enabled=1 всё время пробы
+	// серверов: cron-watchdog видел intent=1 без xray и поднимал СТАРЫЙ конфиг себе под ноги.
+	// enabled в ответе — фактическое состояние: гасить его на ошибке нельзя, xray мог остаться на
+	// прежнем валидном конфиге, и watchdog перестал бы за ним следить.
+	let err = ctx.applyConfig(jsonStr, true);
 	if (err != null)
-		return { error: err, enabled: false };
-	ctx.setEnabled(true);
+		return { error: err, enabled: isTrue(ctx.getGlobal().enabled) };
+	// Намерение обязано лечь в UCI: туннель уже поднят обходом гейта, и незаписанный enabled (rootfs
+	// в read-only) оставил бы xray с kill-switch'ем, за которым не следит никто — watchdog смотрит в
+	// UCI, дашборд пишет «off», reload отказывается и правила не снимает. Не легло — сворачиваем.
+	if (!ctx.setEnabled(true)) {
+		ctx.stopService();
+		return { error: "could not save the toggle state (read-only config?)", enabled: false };
+	}
 	return { enabled: true, server: sel.server.tag, probed: sel.probed };
 }
 

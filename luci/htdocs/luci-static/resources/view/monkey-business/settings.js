@@ -86,6 +86,8 @@ return view.extend({
 		}).then(function(res) {
 			if (res && res.error)
 				ui.addNotification(null, E('p', _('Apply failed: ') + res.error), 'warning');
+			else if (res && res.skipped == 'disabled')
+				ui.addNotification(null, E('p', _('Saved. The VPN is off — settings will apply when you turn it on.')), 'info');
 			else
 				ui.addNotification(null, E('p', _('Configuration applied.')), 'info');
 		}).catch(function(e) {

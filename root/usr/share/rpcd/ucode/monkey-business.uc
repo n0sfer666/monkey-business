@@ -164,7 +164,11 @@ function probeServer(global, dns, server) {
 // Установка атомарная: пишем в соседний .tmp на ТОМ ЖЕ разделе, валидируем именно тот файл,
 // что ляжет на место (а не /tmp-копию), и только потом rename. Раньше обрыв на writefile
 // оставлял обрезанный xray.json, а `restart` всё равно звался -> сервис не поднимался.
-function applyConfig(jsonStr) {
+// intentOn=true: reload идёт с MB_INTENT=1 — init-скрипт поднимается, не глядя на ещё не
+// выставленный тумблер. Нужен только пути включения (service_toggle); остальные вызовы обязаны
+// упираться в гейт, иначе config_apply при выключенном VPN снова поднимал бы туннель молча.
+function applyConfig(jsonStr, intentOn) {
+	let reload = (intentOn ? 'MB_INTENT=1 ' : '') + '/etc/init.d/monkey-business reload >/dev/null 2>&1';
 	system('mkdir -p ' + CONF_DIR);
 	if (!geoPresent())
 		return 'geo databases missing — press "Update geo databases" on the Dashboard first';
@@ -174,7 +178,7 @@ function applyConfig(jsonStr) {
 	// раз возвращает один и тот же servers[0] -> без этой проверки один и тот же файл ложился бы на
 	// SD 144 раза в сутки. Валидацию тоже пропускаем: этот файл уже прошёл её, когда его писали.
 	if (readfile(XRAY_CONF) == jsonStr) {
-		system('/etc/init.d/monkey-business reload >/dev/null 2>&1');
+		system(reload);
 		system('rm -f ' + WD_STATE);
 		return null;
 	}
@@ -203,7 +207,7 @@ function applyConfig(jsonStr) {
 	// НЕ restart: stop_service гонит flush.sh и снимает kill-switch, а окно до подъёма xray —
 	// это утечка LAN в открытую сеть. reload_service переобъявляет инстанс, procd видит смену
 	// хеша файла-триггера (procd_set_param file $CONF) и перезапускает только процесс xray.
-	system('/etc/init.d/monkey-business reload >/dev/null 2>&1');
+	system(reload);
 	// Фаза watchdog описывает СТАРЫЙ конфиг; оставленный `down` заставил бы UI врать
 	// «Disabled by watchdog» сразу после успешного применения.
 	system('rm -f ' + WD_STATE);
@@ -292,7 +296,7 @@ function buildCtx() {
 			let r = runCapture('logread -e mb-event 2>/dev/null | tail -n 1');
 			return firstLine(stripExit(r.out));
 		},
-		applyConfig: function(jsonStr) { return applyConfig(jsonStr); },
+		applyConfig: function(jsonStr, intentOn) { return applyConfig(jsonStr, intentOn); },
 		stopService: function() { system('/etc/init.d/monkey-business stop'); },
 		serviceRunning: function() {
 			// Матч по cmdline боевого конфига: `pidof xray` считал живым и эфемерную пробу
@@ -302,9 +306,11 @@ function buildCtx() {
 			return index(runCapture('pgrep -f ' + shq(noSelfMatch('xray run -c ' + XRAY_CONF)) +
 				' >/dev/null && echo up').out, 'up') >= 0;
 		},
+		// Возврат = легло ли намерение в UCI: на read-only rootfs commit не проходит, а туннель к
+		// этому моменту уже поднят обходом гейта — вызывающий обязан узнать и свернуть его.
 		setEnabled: function(on) {
 			cursor.set(CONFIG, 'global', 'enabled', on ? '1' : '0');
-			cursor.commit(CONFIG);
+			return cursor.commit(CONFIG) === true;
 		},
 		checkExit: function(domain) {
 			let d = (domain != null && domain != '') ? domain : 'ip-api.com';
