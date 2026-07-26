@@ -10,7 +10,26 @@ PROG=/usr/bin/xray
 CONF=/etc/monkey-business/xray.json
 FW=/usr/share/monkey-business/firewall
 
+# enabled (тумблер в UI) — источник истины для рантайма, иначе START=95 поднимал туннель на
+# загрузке независимо от выбора пользователя, а любой config_apply при выключенном VPN включал его
+# молча. Выключение по-прежнему делает stop (-> flush.sh), гейт лишь не даёт подняться заново.
+# Дефолт 0 — тот же, что у watchdog (read_intent) и rpcd (isTrue(undefined)): три разных дефолта на
+# одно намерение давали расхождение на обрезанном/старом конфиге (туннель поднят, но UI пишет off и
+# watchdog за ним не следит). MB_INTENT=1 — явный обход для пути включения (service_toggle), где
+# туннель поднимается ДО commit'а тумблера.
+mb_intent() {
+	[ "${MB_INTENT:-$(uci -q get monkey-business.global.enabled || echo 0)}" = 1 ]
+}
+
 start_service() {
+	# Гонка «watchdog зовёт start, пока пользователь жмёт Off» закрыта тем, что гейт перечитывает uci
+	# внутри критической секции: procd.sh берёт flock на fd 1000 ещё при сорсинге (_procd_wrapper),
+	# т.е. любой вызов init-скрипта — start в том числе — уже сериализован. Своего procd_lock здесь
+	# не нужно (проверено на железе: сразу после сорсинга лок занят).
+	# Выключено — не просто не поднимаемся, но и снимаем правила: rc.common зовёт start_service
+	# внутри rc_procd, так что при живом xray procd получил бы пустые instances и убил процесс, а
+	# kill-switch без flush остался бы поднят и заперл LAN без туннеля. На загрузке flush.sh — no-op.
+	mb_intent || { sh "$FW/flush.sh" 2>&1 | logger -t monkey-business; return 1; }
 	[ -f "$CONF" ] || return 1
 
 	procd_open_instance
@@ -37,8 +56,11 @@ stop_service() {
 # открытую сеть. rc_procd обязателен (голый start_service переобъявления не отправляет вовсе:
 # ubus set делает procd_close_service) и вызывается без аргументов (любой $2 сменил бы set на
 # add). Дальше procd сам решает по хешу $CONF, бить ли процесс xray; firewall переприменяется
-# целиком. Нет $CONF -> выходим: пустые instances снесли бы инстанс, убив живой xray.
+# целиком. Нет $CONF или VPN выключен -> выходим ДО rc_procd: иначе start_service отвалился бы
+# внутри него, procd получил бы set с пустыми instances и снёс инстанс, убив живой xray, — причём
+# stop_service (а значит flush.sh) не вызывается и kill-switch остался бы поднят: LAN заперт.
 reload_service() {
+	mb_intent || return 1
 	[ -f "$CONF" ] || return 1
 	rc_procd start_service
 }

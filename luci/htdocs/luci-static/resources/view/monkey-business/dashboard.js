@@ -39,6 +39,14 @@ function sleep(ms) {
 // нельзя объявлять «трафик идёт мимо VPN», когда xray уже поднят — ложное обещание в обе стороны
 // опаснее задержки в минуту.
 function phaseInfo(st) {
+	// Тумблер выключен, а туннель поднят — состояние достижимо (несохранившееся намерение, ручной
+	// reload с MB_INTENT). Печатать «Off» тут значит врать наоборот: весь LAN идёт в туннель, а
+	// kill-switch армирован, и никто за этим не следит — watchdog смотрит на UCI.
+	if (!st.enabled && st.running)
+		return {
+			label: _('Off — tunnel still up'), color: '#ff7f00', tint: 'rgba(255,127,0,.08)',
+			note: _('The toggle is off, but xray and the kill-switch are still up. Press Turn on to finish enabling, then Turn off to tear it down.')
+		};
 	if (!st.enabled)
 		return { label: _('Off'), color: '#888', note: '', tint: '' };
 	if (st.running)
@@ -236,6 +244,8 @@ return view.extend({
 				return callSetRouting(taDirect.value, taProxy.value).then(function(res) {
 					if (res && res.error)
 						ui.addNotification(null, E('p', _('Apply failed: ') + res.error), 'warning');
+					else if (res && res.skipped == 'disabled')
+						ui.addNotification(null, E('p', _('Rules saved. The VPN is off — they will apply when you turn it on.')), 'info');
 					else
 						ui.addNotification(null, E('p', _('Routing rules applied.')), 'info');
 				});

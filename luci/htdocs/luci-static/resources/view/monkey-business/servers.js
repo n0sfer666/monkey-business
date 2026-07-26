@@ -114,6 +114,8 @@ return view.extend({
 				return callApply().then(function(res) {
 					if (res && res.error)
 						ui.addNotification(null, E('p', _('Apply failed: ') + res.error), 'warning');
+					else if (res && res.skipped == 'disabled')
+						ui.addNotification(null, E('p', _('Saved. The VPN is off — the new order will apply when you turn it on.')), 'info');
 					else
 						ui.addNotification(null, E('p', _('Applied — connected to: ') + ((res && res.server) || '?')), 'info');
 				});
