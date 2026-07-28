@@ -3,8 +3,9 @@
 # — .context/notes/watchdog.md; сетевые пробы — probes.sh. Reconnect-first: при провале сперва
 # bounce xray (kill-switch держится), и лишь если не помогло — init.d stop → LAN на direct.
 # Env-override (дефолты боевые): FAIL_LIMIT(3) RECONNECT_LIMIT(2) POLL(60) BACKOFF(600)
-# EXIT_EVERY(5) REC_TRIES(3) RECOVERY_TRIES(5) RECONNECT_WAIT(5) TIMEOUT(10) REC_TIMEOUT(6)
-# UBUS_TIMEOUT(90) DOWN_BUDGET(180) — все с префиксом MB_WD_. MB_WD_NOW(epoch),
+# EXIT_EVERY(5) REC_TRIES(3) RECOVERY_TRIES(2) RECONNECT_WAIT(5) TIMEOUT(10) REC_TIMEOUT(6)
+# UBUS_TIMEOUT(90) DOWN_BUDGET(240) FAILOVER_RESERVE(150) DOWN_BACKOFF0(60) — все с префиксом
+# MB_WD_. MB_WD_NOW(epoch),
 # MB_WD_LIB(каталог probes.sh), MB_WD_XRAY_MATCH(cmdline боевого xray), MB_WD_ACTIVE(файл тега),
 # MB_WD_SOURCED=1(тест зовёт tick без main).
 set -u
@@ -27,14 +28,23 @@ POLL="${MB_WD_POLL:-60}"
 BACKOFF="${MB_WD_BACKOFF:-600}"
 EXIT_EVERY="${MB_WD_EXIT_EVERY:-5}"
 REC_TRIES="${MB_WD_REC_TRIES:-3}"
-RECOVERY_TRIES="${MB_WD_RECOVERY_TRIES:-5}"
+RECOVERY_TRIES="${MB_WD_RECOVERY_TRIES:-2}"
 RECONNECT_WAIT="${MB_WD_RECONNECT_WAIT:-5}"
 TIMEOUT="${MB_WD_TIMEOUT:-10}"
 REC_TIMEOUT="${MB_WD_REC_TIMEOUT:-6}"
 # дефолтные 30с ubus рвали config_apply на середине перебора кандидатов
 UBUS_TIMEOUT="${MB_WD_UBUS_TIMEOUT:-90}"
 # Потолок на весь tick_down: пока он идёт, kill-switch поднят и LAN заперт.
-DOWN_BUDGET="${MB_WD_DOWN_BUDGET:-180}"
+DOWN_BUDGET="${MB_WD_DOWN_BUDGET:-240}"
+# Хвост бюджета, неприкосновенный для повторов сохранённого конфига: только failover. Без него
+# retry-цикл съедал бюджет целиком (5 попыток × ~30с проб с таймаутами), failover входил с
+# остатком в единицы секунд, ubus рвался на середине перебора кандидатов — и фаза down была
+# терминальной: раз в BACKOFF поднимался ТОТ ЖЕ мёртвый конфиг, а рабочие серверы не пробовались
+# никогда. Значение — под полный перебор списка (~10с на кандидата) плюс пост-проверка.
+FAILOVER_RESERVE="${MB_WD_FAILOVER_RESERVE:-150}"
+# Первое ожидание в down. Дальше удвоение до BACKOFF: сервер, вернувшийся через минуту, не должен
+# ждать десять.
+DOWN_BACKOFF0="${MB_WD_DOWN_BACKOFF0:-60}"
 XRAY_MATCH="${MB_WD_XRAY_MATCH:-xray run -c $XRAY_CONF}"
 MB_WD_LIB="${MB_WD_LIB:-$(dirname "$0")}"
 [ -f "$MB_WD_LIB/probes.sh" ] || MB_WD_LIB=/usr/share/monkey-business
@@ -91,15 +101,27 @@ log_event() { logger -t mb-event "watchdog: $1"; }
 
 load_state() {
 	WD_PHASE=healthy; WD_FAILS=0; WD_BASE_IP=; WD_HOME_IP=; WD_TAGSIG=0; WD_NEXT=0
-	WD_DOWNKIND=; WD_RECTRIES=0; WD_EXITDUE=0
+	WD_DOWNKIND=; WD_RECTRIES=0; WD_EXITDUE=0; WD_DOWNTRIES=0
 	# shellcheck disable=SC1090
 	[ -f "$STATE" ] && . "$STATE"
+	# Состояние от версии без счётчика: sourcing оставит переменную неопределённой, а set -u
+	# уронит первый же tick_down.
+	WD_DOWNTRIES="${WD_DOWNTRIES:-0}"
 }
 save_state() {
-	printf 'WD_PHASE=%s\nWD_FAILS=%s\nWD_BASE_IP=%s\nWD_HOME_IP=%s\nWD_TAGSIG=%s\nWD_NEXT=%s\nWD_DOWNKIND=%s\nWD_RECTRIES=%s\nWD_EXITDUE=%s\n' \
+	printf 'WD_PHASE=%s\nWD_FAILS=%s\nWD_BASE_IP=%s\nWD_HOME_IP=%s\nWD_TAGSIG=%s\nWD_NEXT=%s\nWD_DOWNKIND=%s\nWD_RECTRIES=%s\nWD_EXITDUE=%s\nWD_DOWNTRIES=%s\n' \
 		"$(sane "$WD_PHASE")" "$(sane "$WD_FAILS")" "$(sane "$WD_BASE_IP")" "$(sane "$WD_HOME_IP")" \
 		"$(sane "$WD_TAGSIG")" "$(sane "$WD_NEXT")" "$(sane "$WD_DOWNKIND")" "$(sane "$WD_RECTRIES")" \
-		"$(sane "$WD_EXITDUE")" > "$STATE.tmp" && mv "$STATE.tmp" "$STATE"
+		"$(sane "$WD_EXITDUE")" "$(sane "$WD_DOWNTRIES")" > "$STATE.tmp" && mv "$STATE.tmp" "$STATE"
+}
+
+# Ожидание до следующей попытки в down: DOWN_BACKOFF0 с удвоением до потолка BACKOFF.
+down_backoff() {
+	WD_DOWNTRIES=$((WD_DOWNTRIES + 1))
+	d="$DOWN_BACKOFF0"; i=1
+	while [ "$i" -lt "$WD_DOWNTRIES" ] && [ "$d" -lt "$BACKOFF" ]; do d=$((d * 2)); i=$((i + 1)); done
+	[ "$d" -gt "$BACKOFF" ] && d="$BACKOFF"
+	WD_NEXT=$((t + d))
 }
 
 # Здоров, если exit-IP валиден И отличается от домашнего; пустой WD_HOME_IP → любой валидный.
@@ -134,7 +156,7 @@ tick() {
 	tagsig=$(sig "$(selected_tag)")
 	if [ "$tagsig" != "$WD_TAGSIG" ]; then
 		WD_TAGSIG=$tagsig; WD_BASE_IP=; WD_FAILS=0; WD_RECTRIES=0; WD_EXITDUE=0
-		WD_DOWNKIND=; WD_PHASE=healthy; WD_NEXT=0
+		WD_DOWNKIND=; WD_PHASE=healthy; WD_NEXT=0; WD_DOWNTRIES=0
 	fi
 
 	# R2S без RTC: после NTP часы прыгают, и абсолютный WD_NEXT из будущего запарковал бы
@@ -166,7 +188,7 @@ tick_healthy() {
 	if [ -z "$(direct_probe)" ]; then
 		vpn_stop; WD_DOWNKIND=net
 		log_event "No connectivity: VPN and direct probes both failing. VPN stopped."
-		WD_PHASE=down; WD_FAILS=0; WD_NEXT=$((t + BACKOFF)); return
+		WD_PHASE=down; WD_FAILS=0; WD_DOWNTRIES=0; down_backoff; return
 	fi
 
 	WD_DOWNKIND=vpn
@@ -178,7 +200,7 @@ tick_reconnecting() {
 	if [ -z "$(direct_probe)" ]; then
 		vpn_stop; WD_DOWNKIND=net
 		log_event "Network down during reconnect. VPN stopped, LAN on direct."
-		WD_PHASE=down; WD_NEXT=$((t + BACKOFF)); return
+		WD_PHASE=down; WD_DOWNTRIES=0; down_backoff; return
 	fi
 
 	vpn_reconnect
@@ -211,44 +233,51 @@ tick_reconnecting() {
 
 	vpn_stop; WD_DOWNKIND=vpn
 	log_event "Reconnect failed ${RECONNECT_LIMIT}x (no working failover server). VPN stopped, LAN on direct."
-	WD_PHASE=down; WD_RECTRIES=0; WD_NEXT=$((t + BACKOFF))
+	WD_PHASE=down; WD_RECTRIES=0; WD_DOWNTRIES=0; down_backoff
 }
 
 tick_down() {
 	home_now=$(direct_probe)
 	if [ -z "$home_now" ]; then
 		[ "$WD_DOWNKIND" = vpn ] && { log_event "Network now fully down (direct probe lost)."; WD_DOWNKIND=net; }
-		WD_NEXT=$((t + BACKOFF)); return
+		down_backoff; return
 	fi
 	WD_HOME_IP=$(sane "$home_now")
 
 	[ "$WD_DOWNKIND" = net ] && log_event "Network recovered (direct ok). Attempting VPN."
 
 	deadline=$((t + DOWN_BUDGET))
+	# Повторам сохранённого конфига достаётся только голова бюджета — хвост FAILOVER_RESERVE
+	# принадлежит перебору серверов и не может быть у него отобран.
+	retry_deadline=$((deadline - FAILOVER_RESERVE))
 	vpn_start
 	i=0; ok=0
-	while [ "$i" -lt "$RECOVERY_TRIES" ] && [ "$(now)" -lt "$deadline" ]; do
+	while [ "$i" -lt "$RECOVERY_TRIES" ] && [ "$(now)" -lt "$retry_deadline" ]; do
 		if health_check 1 "$REC_TIMEOUT"; then ok=1; break; fi
 		i=$((i + 1)); sleep 2
 	done
 
 	if [ "$ok" = 1 ]; then
 		log_event "VPN restored (exit ${WD_BASE_IP:-?}). Resuming monitoring."
-		WD_PHASE=healthy; WD_FAILS=0; WD_RECTRIES=0; WD_DOWNKIND=; WD_NEXT=$((t + POLL))
+		WD_PHASE=healthy; WD_FAILS=0; WD_RECTRIES=0; WD_DOWNKIND=; WD_DOWNTRIES=0; WD_NEXT=$((t + POLL))
 		return
 	fi
 
 	# Сохранённый в конфиге сервер мёртв — без failover фаза down была терминальной: раз в
 	# BACKOFF поднимали тот же дохлый конфиг и снова гасили (UI вечно «Starting…»).
 	# ubus и пост-проверка тоже внутри бюджета: без клампа вход в failover на deadline-1 давал бы
-	# ещё UBUS_TIMEOUT + REC_TRIES*(REC_TIMEOUT+2) сверху, т.е. ~5 минут запертой LAN вместо 3.
+	# ещё UBUS_TIMEOUT + REC_TRIES*(REC_TIMEOUT+2) сверху, т.е. LAN заперта дольше обещанного.
+	# Пол FAILOVER_RESERVE: retry-цикл выше упёрся в retry_deadline, так что остаток не меньше
+	# резерва, но при съехавших часах кламп не должен опуститься до нерабочих секунд.
 	left=$((deadline - $(now)))
-	if [ "$left" -gt 0 ] && try_failover "$left"; then
+	[ "$left" -lt "$FAILOVER_RESERVE" ] && left="$FAILOVER_RESERVE"
+	deadline=$(( $(now) + left ))
+	if try_failover "$left"; then
 		i=0
 		while [ "$i" -lt "$REC_TRIES" ] && [ "$(now)" -lt "$deadline" ]; do
 			if health_check 1 "$REC_TIMEOUT"; then
 				log_event "Failover restored VPN (exit ${WD_BASE_IP:-?}). Resuming monitoring."
-				WD_PHASE=healthy; WD_FAILS=0; WD_RECTRIES=0; WD_DOWNKIND=; WD_NEXT=$((t + POLL))
+				WD_PHASE=healthy; WD_FAILS=0; WD_RECTRIES=0; WD_DOWNKIND=; WD_DOWNTRIES=0; WD_NEXT=$((t + POLL))
 				return
 			fi
 			i=$((i + 1)); sleep 2
@@ -257,7 +286,7 @@ tick_down() {
 
 	vpn_stop
 	[ "$WD_DOWNKIND" != vpn ] && log_event "Network up but VPN still failing. Staying on direct."
-	WD_DOWNKIND=vpn; WD_NEXT=$((t + BACKOFF))
+	WD_DOWNKIND=vpn; down_backoff
 }
 
 main() {

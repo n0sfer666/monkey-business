@@ -36,8 +36,10 @@ vpn_stop() { rm -f "$T/running"; echo stop >> "$T/actions"; }
 vpn_reconnect() { echo reconnect >> "$T/actions"; }
 # failover: при наличии $T/failover_ok «переключает» на рабочий сервер (включает live + exit EXIT2).
 # Тег меняется в ЛЮБОМ исходе — config_apply зовёт setSelected и на фолбэке servers[0] тоже.
+# $T/fo_left — переданный watchdog'ом потолок ожидания ubus: его достаточность проверяет тест 16.
 failover_switch() {
 	echo 'France Paris-9' > "$T/tag"
+	echo "${1:-0}" > "$T/fo_left"
 	[ -f "$T/failover_ok" ] && { : > "$T/live"; enq "$EXIT2"; echo failover >> "$T/actions"; return 0; }
 	return 1
 }
@@ -186,11 +188,28 @@ eq "tagunblock.phase" "$(sval WD_PHASE)" healthy
 reset; seed_down vpn; rm -f "$T/running"; rm -f "$T/live"
 runtick 7000
 eq "fobackoff.phase" "$(sval WD_PHASE)" down
-eq "fobackoff.next" "$(sval WD_NEXT)" 7600
+eq "fobackoff.next" "$(sval WD_NEXT)" 7060
 : > "$T/actions"
-runtick 7060
+runtick 7030
 eq "fobackoff.held" "$(cat "$T/actions")" ""
-eq "fobackoff.stillnext" "$(sval WD_NEXT)" 7600
+eq "fobackoff.stillnext" "$(sval WD_NEXT)" 7060
+
+# 10f. Прогрессивный backoff в down: 60 -> 120 -> 240 ... с потолком BACKOFF. Плоские 10 минут
+#      означали, что вернувшийся через минуту сервер ждал десять.
+reset; seed_down vpn; rm -f "$T/running"; rm -f "$T/live"
+runtick 7000;  eq "prog.t1" "$(sval WD_NEXT)" 7060
+runtick 7060;  eq "prog.t2" "$(sval WD_NEXT)" 7180
+runtick 7180;  eq "prog.t3" "$(sval WD_NEXT)" 7420
+runtick 7420;  eq "prog.t4" "$(sval WD_NEXT)" 7900
+runtick 7900;  eq "prog.cap" "$(sval WD_NEXT)" 8500
+runtick 8500;  eq "prog.cap2" "$(sval WD_NEXT)" 9100
+
+# 10g. Успешный выход из down обнуляет счётчик: следующий инцидент снова начинает с 60с.
+reset; seed_down vpn; rm -f "$T/running"; rm -f "$T/live"
+runtick 7000; runtick 7060; runtick 7180
+: > "$T/live"; enq "$EXIT1"; runtick 7420
+eq "progreset.phase" "$(sval WD_PHASE)" healthy
+eq "progreset.tries" "$(sval WD_DOWNTRIES)" 0
 
 # 10d. часы прыгнули назад (NTP): WD_NEXT из далёкого будущего не должен парковать watchdog.
 reset; enq "$EXIT1"
@@ -235,6 +254,25 @@ UC_SRC="$SELF_DIR/../../root/usr/share/rpcd/ucode/monkey-business.uc"
 eq "activepath.watchdog" "$(grep -c "MB_WD_ACTIVE:-/etc/monkey-business/active" "$WD_SRC")" 1
 eq "activepath.rpcd" "$(grep -c "ACTIVE_FILE = CONF_DIR + '/active'" "$UC_SRC")" 1
 eq "activepath.confdir" "$(grep -c "CONF_DIR = '/etc/monkey-business'" "$UC_SRC")" 1
+
+# 16. РЕГРЕСС (ставим последним: подменяет now/health_check безвозвратно). Хвост DOWN_BUDGET
+#     зарезервирован под failover. Раньше цикл повторов сохранённого конфига выедал бюджет
+#     целиком — каждая проба стоит десятки секунд на таймаутах, — failover входил с остатком в
+#     единицы секунд, ubus рвался на середине перебора кандидатов и возвращал «не переключились».
+#     Итог: фаза down терминальна, вернувшиеся серверы не подхватывались никогда, лечилось только
+#     ручным Off/On. Часы здесь идут, в отличие от остальных тестов с замороженным MB_WD_NOW.
+reset; seed_down net; rm -f "$T/running"; rm -f "$T/live"; : > "$T/failover_ok"
+#     RECOVERY_TRIES=5 (прежний дефолт) + 60с на пробу — ровно тот прожорливый цикл: резерв обязан
+#     устоять и при нём.
+RECOVERY_TRIES=5
+CLOCK=7000
+now() { echo "$CLOCK"; }
+health_check() { CLOCK=$((CLOCK + 60)); live_probe; }
+runtick 7000
+eq "budget.phase" "$(sval WD_PHASE)" healthy
+has "budget.did" "$T/actions" failover
+eq "budget.reserve" \
+	"$([ "$(cat "$T/fo_left" 2>/dev/null || echo 0)" -ge "$FAILOVER_RESERVE" ] && echo y || echo n)" y
 
 printf '\nwatchdog_test: %d passed, %d failed\n' "$PASS" "$FAIL"
 [ "$FAIL" -eq 0 ]
