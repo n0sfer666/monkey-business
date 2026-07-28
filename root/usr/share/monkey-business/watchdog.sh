@@ -1,13 +1,12 @@
 #!/bin/sh
 # Connectivity watchdog для monkey-business VPN (cron раз в минуту). Стратегия и машина состояний
-# — .context/notes/watchdog.md; сетевые пробы — probes.sh. Reconnect-first: при провале сперва
-# bounce xray (kill-switch держится), и лишь если не помогло — init.d stop → LAN на direct.
+# — .context/notes/watchdog.md; сетевые пробы — probes.sh, обработчики фаз — phases.sh.
+# Reconnect-first: сперва bounce xray (kill-switch держится), и лишь потом init.d stop → direct.
 # Env-override (дефолты боевые): FAIL_LIMIT(3) RECONNECT_LIMIT(2) POLL(60) BACKOFF(600)
 # EXIT_EVERY(5) REC_TRIES(3) RECOVERY_TRIES(2) RECONNECT_WAIT(5) TIMEOUT(10) REC_TIMEOUT(6)
 # UBUS_TIMEOUT(90) DOWN_BUDGET(240) FAILOVER_RESERVE(150) DOWN_BACKOFF0(60) — все с префиксом
-# MB_WD_. MB_WD_NOW(epoch),
-# MB_WD_LIB(каталог probes.sh), MB_WD_XRAY_MATCH(cmdline боевого xray), MB_WD_ACTIVE(файл тега),
-# MB_WD_SOURCED=1(тест зовёт tick без main).
+# MB_WD_. MB_WD_NOW(epoch), MB_WD_LIB(каталог probes.sh/phases.sh), MB_WD_ACTIVE(файл тега),
+# MB_WD_XRAY_MATCH(cmdline боевого xray), MB_WD_SOURCED=1(тест зовёт tick без main).
 set -u
 
 CONFIG=monkey-business
@@ -38,9 +37,9 @@ UBUS_TIMEOUT="${MB_WD_UBUS_TIMEOUT:-90}"
 DOWN_BUDGET="${MB_WD_DOWN_BUDGET:-240}"
 # Хвост бюджета, неприкосновенный для повторов сохранённого конфига: только failover. Без него
 # retry-цикл съедал бюджет целиком (5 попыток × ~30с проб с таймаутами), failover входил с
-# остатком в единицы секунд, ubus рвался на середине перебора кандидатов — и фаза down была
-# терминальной: раз в BACKOFF поднимался ТОТ ЖЕ мёртвый конфиг, а рабочие серверы не пробовались
-# никогда. Значение — под полный перебор списка (~10с на кандидата) плюс пост-проверка.
+# остатком в единицы секунд, ubus рвался на середине перебора — и фаза down была терминальной:
+# раз в BACKOFF поднимался ТОТ ЖЕ мёртвый конфиг. Значение — под полный перебор списка
+# (~10с на кандидата) плюс пост-проверка.
 FAILOVER_RESERVE="${MB_WD_FAILOVER_RESERVE:-150}"
 # Первое ожидание в down. Дальше удвоение до BACKOFF: сервер, вернувшийся через минуту, не должен
 # ждать десять.
@@ -50,6 +49,9 @@ MB_WD_LIB="${MB_WD_LIB:-$(dirname "$0")}"
 [ -f "$MB_WD_LIB/probes.sh" ] || MB_WD_LIB=/usr/share/monkey-business
 # shellcheck source=root/usr/share/monkey-business/probes.sh disable=SC1091
 . "$MB_WD_LIB/probes.sh"
+# Фазы работают по общим WD_* и зовут хелперы ниже: sh резолвит имена при вызове, не при сорсинге.
+# shellcheck source=root/usr/share/monkey-business/phases.sh disable=SC1091
+. "$MB_WD_LIB/phases.sh"
 
 now() { echo "${MB_WD_NOW:-$(date +%s)}"; }
 sig() { printf '%s' "${1:-}" | cksum | cut -d' ' -f1; }
@@ -171,122 +173,6 @@ tick() {
 		*)            WD_PHASE=healthy; WD_NEXT=$((t + POLL)) ;;
 	esac
 	save_state
-}
-
-tick_healthy() {
-	vpn_running || vpn_start
-
-	if health_check 0; then
-		WD_FAILS=0; WD_NEXT=$((t + POLL)); return
-	fi
-
-	WD_FAILS=$((WD_FAILS + 1))
-	if [ "$WD_FAILS" -lt "$FAIL_LIMIT" ]; then
-		WD_NEXT=$((t + POLL)); return
-	fi
-
-	if [ -z "$(direct_probe)" ]; then
-		vpn_stop; WD_DOWNKIND=net
-		log_event "No connectivity: VPN and direct probes both failing. VPN stopped."
-		WD_PHASE=down; WD_FAILS=0; WD_DOWNTRIES=0; down_backoff; return
-	fi
-
-	WD_DOWNKIND=vpn
-	log_event "VPN exit failing ${FAIL_LIMIT}x (home ${WD_HOME_IP:-?}, last exit ${WD_BASE_IP:-?}). Reconnecting (kill-switch held)."
-	WD_PHASE=reconnecting; WD_RECTRIES=0; WD_FAILS=0; WD_NEXT=$t
-}
-
-tick_reconnecting() {
-	if [ -z "$(direct_probe)" ]; then
-		vpn_stop; WD_DOWNKIND=net
-		log_event "Network down during reconnect. VPN stopped, LAN on direct."
-		WD_PHASE=down; WD_DOWNTRIES=0; down_backoff; return
-	fi
-
-	vpn_reconnect
-	i=0
-	while [ "$i" -lt "$REC_TRIES" ]; do
-		if health_check 1 "$REC_TIMEOUT"; then
-			log_event "VPN reconnected (exit ${WD_BASE_IP:-?}). Resuming monitoring."
-			WD_PHASE=healthy; WD_FAILS=0; WD_RECTRIES=0; WD_NEXT=$((t + POLL)); return
-		fi
-		i=$((i + 1)); sleep 2
-	done
-
-	WD_RECTRIES=$((WD_RECTRIES + 1))
-	if [ "$WD_RECTRIES" -lt "$RECONNECT_LIMIT" ]; then
-		WD_NEXT=$((t + POLL)); return
-	fi
-
-	# Текущий сервер устойчиво не поднимается -> failover на следующий рабочий по приоритету.
-	# config_apply сам пробует кандидатов и перезапускает сервис; подтверждаем health-проверкой.
-	if try_failover; then
-		i=0
-		while [ "$i" -lt "$REC_TRIES" ]; do
-			if health_check 1 "$REC_TIMEOUT"; then
-				log_event "Failover switched server (exit ${WD_BASE_IP:-?}). Resuming monitoring."
-				WD_PHASE=healthy; WD_FAILS=0; WD_RECTRIES=0; WD_NEXT=$((t + POLL)); return
-			fi
-			i=$((i + 1)); sleep 2
-		done
-	fi
-
-	vpn_stop; WD_DOWNKIND=vpn
-	log_event "Reconnect failed ${RECONNECT_LIMIT}x (no working failover server). VPN stopped, LAN on direct."
-	WD_PHASE=down; WD_RECTRIES=0; WD_DOWNTRIES=0; down_backoff
-}
-
-tick_down() {
-	home_now=$(direct_probe)
-	if [ -z "$home_now" ]; then
-		[ "$WD_DOWNKIND" = vpn ] && { log_event "Network now fully down (direct probe lost)."; WD_DOWNKIND=net; }
-		down_backoff; return
-	fi
-	WD_HOME_IP=$(sane "$home_now")
-
-	[ "$WD_DOWNKIND" = net ] && log_event "Network recovered (direct ok). Attempting VPN."
-
-	deadline=$((t + DOWN_BUDGET))
-	# Повторам сохранённого конфига достаётся только голова бюджета — хвост FAILOVER_RESERVE
-	# принадлежит перебору серверов и не может быть у него отобран.
-	retry_deadline=$((deadline - FAILOVER_RESERVE))
-	vpn_start
-	i=0; ok=0
-	while [ "$i" -lt "$RECOVERY_TRIES" ] && [ "$(now)" -lt "$retry_deadline" ]; do
-		if health_check 1 "$REC_TIMEOUT"; then ok=1; break; fi
-		i=$((i + 1)); sleep 2
-	done
-
-	if [ "$ok" = 1 ]; then
-		log_event "VPN restored (exit ${WD_BASE_IP:-?}). Resuming monitoring."
-		WD_PHASE=healthy; WD_FAILS=0; WD_RECTRIES=0; WD_DOWNKIND=; WD_DOWNTRIES=0; WD_NEXT=$((t + POLL))
-		return
-	fi
-
-	# Сохранённый в конфиге сервер мёртв — без failover фаза down была терминальной: раз в
-	# BACKOFF поднимали тот же дохлый конфиг и снова гасили (UI вечно «Starting…»).
-	# ubus и пост-проверка тоже внутри бюджета: без клампа вход в failover на deadline-1 давал бы
-	# ещё UBUS_TIMEOUT + REC_TRIES*(REC_TIMEOUT+2) сверху, т.е. LAN заперта дольше обещанного.
-	# Пол FAILOVER_RESERVE: retry-цикл выше упёрся в retry_deadline, так что остаток не меньше
-	# резерва, но при съехавших часах кламп не должен опуститься до нерабочих секунд.
-	left=$((deadline - $(now)))
-	[ "$left" -lt "$FAILOVER_RESERVE" ] && left="$FAILOVER_RESERVE"
-	deadline=$(( $(now) + left ))
-	if try_failover "$left"; then
-		i=0
-		while [ "$i" -lt "$REC_TRIES" ] && [ "$(now)" -lt "$deadline" ]; do
-			if health_check 1 "$REC_TIMEOUT"; then
-				log_event "Failover restored VPN (exit ${WD_BASE_IP:-?}). Resuming monitoring."
-				WD_PHASE=healthy; WD_FAILS=0; WD_RECTRIES=0; WD_DOWNKIND=; WD_DOWNTRIES=0; WD_NEXT=$((t + POLL))
-				return
-			fi
-			i=$((i + 1)); sleep 2
-		done
-	fi
-
-	vpn_stop
-	[ "$WD_DOWNKIND" != vpn ] && log_event "Network up but VPN still failing. Staying on direct."
-	WD_DOWNKIND=vpn; down_backoff
 }
 
 main() {

@@ -70,6 +70,9 @@ cpf root/usr/share/monkey-business/watchdog.sh "$stage/usr/share/monkey-business
 chmod 755 "$stage/usr/share/monkey-business/watchdog.sh"
 cpf root/usr/share/monkey-business/probes.sh "$stage/usr/share/monkey-business/probes.sh"
 chmod 644 "$stage/usr/share/monkey-business/probes.sh"
+# Сорсится watchdog.sh, самостоятельно не исполняется -> 644, как probes.sh.
+cpf root/usr/share/monkey-business/phases.sh "$stage/usr/share/monkey-business/phases.sh"
+chmod 644 "$stage/usr/share/monkey-business/phases.sh"
 cpf root/usr/share/monkey-business/boothealth.sh "$stage/usr/share/monkey-business/boothealth.sh"
 chmod 755 "$stage/usr/share/monkey-business/boothealth.sh"
 cpf root/usr/share/monkey-business/nicwatch.sh "$stage/usr/share/monkey-business/nicwatch.sh"

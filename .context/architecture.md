@@ -16,7 +16,7 @@
 ├─────────────────────────────────────────────┤
 │  procd init → Xray-core                       │
 │  boothealth (mb-boothealth)                   │  ext4-rootfs: детект unclean/ro-remount, 0 периодики
-│  cron watchdog (watchdog.sh + probes.sh)      │  1/мин; reconnect → failover → fail-open direct
+│  cron watchdog (watchdog.sh+probes+phases)    │  1/мин; reconnect → failover → fail-open direct
 │  cron nicwatch (nicwatch.sh) + nicfw.sh       │  1/мин; залипание TX eth1 (RTL8153B) → bounce/re-bind
 │  nftables TPROXY (scripts/firewall/)          │  перехват TCP+UDP; :53 → dns-in (не tproxy)
 │  nft direct-bypass (ruset.sh → mb_ru4/mb_ru6) │  RU-CIDR минуют tproxy в ядре (быстрый путь)

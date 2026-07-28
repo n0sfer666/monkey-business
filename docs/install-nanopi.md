@@ -116,7 +116,7 @@ What this does:
   - firewall scripts → `/usr/share/monkey-business/firewall/`, geo script → `/usr/share/monkey-business/geo.sh`,
   - NIC firmware → `nicfw.sh` + `firmware/rtl8153b-2.fw`, its watchdog → `nicwatch.sh`,
     shared downloader → `fetch.sh`,
-  - watchdog → `/usr/share/monkey-business/watchdog.sh` + `probes.sh`, bypass-set builder →
+  - watchdog → `/usr/share/monkey-business/watchdog.sh` + `probes.sh` + `phases.sh`, bypass-set builder →
     `ruset.sh`.
 - **Checks runtime deps** (`xray-core`, `kmod-nft-tproxy`, `curl`, the ucode/rpcd modules) and
   installs missing ones one at a time. If a required package fails, **the deploy fails**: silently
