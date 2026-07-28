@@ -122,7 +122,7 @@ make test-integ  # netns TPROXY-перехват + сгенерированны�
 | `src/lib/` | общие утилиты (разбор URI) |
 | `luci/` | LuCI client-side JS-вьюшки (dashboard / servers / settings) + меню + ACL |
 | `root/` | файлы на устройстве: UCI-дефолты, procd-init, рантайм rpcd-плагин |
-| `root/usr/share/monkey-business/` | shell на устройстве: `watchdog.sh` + `probes.sh` (самовосстановление), `ruset.sh` (nft-сеты direct-bypass), `geo.sh`, `fetch.sh` (общая загрузка, socks-фолбэк), `boothealth.sh`, `nicfw.sh` + `nicwatch.sh` (USB-сетевуха RTL8153B, см. [гайд §9](docs/install-nanopi.ru.md#9-usb-сетевуха-rtl8153b-прошивка-и-watchdog)) |
+| `root/usr/share/monkey-business/` | shell на устройстве: `watchdog.sh` + `probes.sh` + `phases.sh` (самовосстановление), `ruset.sh` (nft-сеты direct-bypass), `geo.sh`, `fetch.sh` (общая загрузка, socks-фолбэк), `boothealth.sh`, `nicfw.sh` + `nicwatch.sh` (USB-сетевуха RTL8153B, см. [гайд §9](docs/install-nanopi.ru.md#9-usb-сетевуха-rtl8153b-прошивка-и-watchdog)) |
 | `scripts/firewall/` | nftables TPROXY apply/flush |
 | `scripts/expand-sd.sh` | расширение ext4-раздела SD-карты с macOS ([док](docs/sd-expand-macos.ru.md)) |
 | `test/` | ucode-харнесс + unit/snapshot-тесты + netns-интеграция |

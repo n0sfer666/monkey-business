@@ -113,7 +113,7 @@ with-env { MB_VM_SSH_HOST: "root@<router-ip>", MB_VM_SSH_PORT: "22" } { sh scrip
   - LuCI-вьюшки → `/www/luci-static/resources/view/monkey-business/`, меню + ACL,
   - `/etc/config/monkey-business` (UCI), `/etc/init.d/monkey-business` (procd),
   - firewall-скрипты → `/usr/share/monkey-business/firewall/`, geo-скрипт → `/usr/share/monkey-business/geo.sh`,
-  - watchdog → `/usr/share/monkey-business/watchdog.sh` + `probes.sh`, сборщик bypass-сетов →
+  - watchdog → `/usr/share/monkey-business/watchdog.sh` + `probes.sh` + `phases.sh`, сборщик bypass-сетов →
     `ruset.sh`, общая загрузка → `fetch.sh`,
   - прошивка USB-сетевухи → `nicfw.sh` + `firmware/rtl8153b-2.fw`, её watchdog → `nicwatch.sh`.
 - **Проверяет рантайм-зависимости** (`xray-core`, `kmod-nft-tproxy`, `curl`, ucode/rpcd-модули) и
