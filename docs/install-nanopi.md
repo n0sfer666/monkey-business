@@ -201,18 +201,23 @@ them out of logs and issues.
 
 ---
 
-## 5. Configure routing (Settings)
+## 5. Configure routing (Dashboard + Settings)
 
-**LuCI → … → Settings.** Sensible defaults are pre-filled:
+**LuCI → … → Dashboard → Split.** The split itself lives on the Dashboard, because it changes the
+firewall as well as the Xray config; the panel lists what the current pair actually enables (✓/✗).
 
-- **Routing mode** — `Bypass local (recommended)`: your local region (RU/CN/IR) and private
-  addresses go direct, everything else through the tunnel. Other modes: `Only blocked via VPN`
-  (gfwlist) and `Everything via VPN` (global).
-- **Local region** — which region is treated as "local" for direct routing. Pick **`Other`** if
-  your region has no geo preset: there is no predefined local geo-category, so you drive the split
-  yourself via the custom **Direct (bypass VPN)** / **Via VPN** lists on the Dashboard. Private
-  addresses stay direct, and everything not in your lists follows the **Routing mode** default
-  (bypass-local → tunnel, gfwlist → direct, global → tunnel).
+- **Routing mode** — `Bypass local`: your local region (RU/CN/IR) and private addresses go direct,
+  everything else through the tunnel. Other modes: `Only blocked via VPN` (gfwlist) and
+  `Everything via VPN` (global). Outside `Bypass local` there is no `geoip:<region> → direct` rule
+  at all, and the kernel bypass sets are dropped with it.
+- **Local region** — which region is treated as "local" for direct routing and for the DNS split.
+  Pick **`Other`** if your region has no geo preset: there is no predefined local geo-category, so
+  you drive the split yourself via the custom **Direct (bypass VPN)** / **Via VPN** lists on the
+  Dashboard. Private addresses stay direct, and everything not in your lists follows the
+  **Routing mode** default (bypass-local → tunnel, gfwlist → direct, global → tunnel).
+
+**LuCI → … → Settings** keeps everything else; sensible defaults are pre-filled:
+
 - **Kill-switch** — fail-closed (default on): LAN traffic to non-local destinations is dropped, not
   leaked direct, whenever it isn't carried by the tunnel (Xray down, a rule gap, or non-proxied
   traffic like ICMP). Disable for a direct fallback when the tunnel is down (less safe).
@@ -281,7 +286,7 @@ Verify the exit path:
   kernel bypass for them — so test with `curl`/`nc` (TCP), or add the host to *Direct* and confirm
   with **Dashboard → Check exit IP**, not with ping.
   The one exception is the **local region**: its CIDRs *are* in the kernel bypass sets
-  (`mb_ru4`/`mb_ru6`, enabled by `direct_bypass`, on by default), which the leak-guard accepts — so
+  (`mb_ru4`/`mb_ru6`, on whenever the split is `Bypass local` + `Russia`), which the leak-guard accepts — so
   those addresses do answer ping. A local-region IP that doesn't is simply missing from the set:
   ```sh
   # nft list set inet monkey_business mb_ru4 | head        # is the address in there?

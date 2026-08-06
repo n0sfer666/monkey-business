@@ -23,7 +23,8 @@
 					"service_toggle",
 					"geo_update",
 					"geo_install",
-					"set_routing"
+					"set_routing",
+					"set_mode"
 				]
 			},
 			"uci": [

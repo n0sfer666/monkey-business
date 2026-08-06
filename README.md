@@ -119,7 +119,7 @@ Layout:
 | `src/generator/` | UCI → Xray JSON generator (abstracted for a future sing-box backend) |
 | `src/rpcd/` | pure rpcd handlers (host-tested; ubus/uci bound in `root/…/rpcd/ucode`) |
 | `src/lib/` | shared utils (URI parsing) |
-| `luci/` | LuCI client-side JS views (dashboard / servers / settings) + menu + ACL |
+| `luci/` | LuCI client-side JS views (dashboard / servers / settings) + the split panel (`routing.js`, rendered inside the dashboard) + menu + ACL |
 | `root/` | on-device files: UCI default, procd init, runtime rpcd plugin |
 | `root/usr/share/monkey-business/` | on-device shell: `watchdog.sh` + `probes.sh` + `recovery.sh` + `phases.sh` (self-healing), `ruset.sh` (nft direct-bypass sets), `geo.sh`, `fetch.sh` (shared downloader, socks fallback), `boothealth.sh`, `nicfw.sh` + `nicwatch.sh` (RTL8153B USB NIC, see [install guide §9](docs/install-nanopi.md#9-the-rtl8153b-usb-nic-firmware--watchdog)) |
 | `scripts/firewall/` | nftables TPROXY apply/flush |
@@ -221,12 +221,10 @@ can target a NanoPi R2S over SSH (see Install → Option A).
   deploy time; rebuild it by hand with `sh /usr/share/monkey-business/ruset.sh build` (there is no
   cron job and *Update geo databases* does **not** rebuild it — it only refreshes the `.dat` files).
   An empty set is not a leak: Xray's `geoip:<region> → direct` rule still routes that traffic
-  directly, just more slowly. To disable the mechanism entirely:
-  ```sh
-  # uci set monkey-business.global.direct_bypass=0
-  # uci commit monkey-business
-  # /etc/init.d/monkey-business restart
-  ```
+  directly, just more slowly. The mechanism has no switch of its own — it follows the split you
+  picked on the Dashboard and is on only for **Bypass local + Russia** (the sets are filled from a
+  RU CIDR list, so any other mode or region would send traffic around the tunnel you asked for).
+  Pick another routing mode to turn it off; the Dashboard spells out what each choice enables.
 - **The tunnel died and the router switched servers on its own.** That's the watchdog. It logs only
   transitions to syslog — `logread -f -e mb-event` to see
   `Reconnecting…` / `VPN recovered by <step>…` / `VPN stopped, LAN on direct`. Live state is in

@@ -17,8 +17,11 @@
 - **Конфиг:** UCI `/etc/config/monkey-business` → генератор → Xray JSON.
 - **Перехват трафика:** nftables TPROXY (fw4 include).
 - **Direct-bypass:** nft-сеты `mb_ru4`/`mb_ru6` (`ruset.sh`) — RU-CIDR минуют TPROXY в ядре и
-  проходят leak-guard. Список — текстовый CIDR-дамп Loyalsoldier/geoip (не `.dat`), UCI-опция
-  `global.direct_bypass` (дефолт `1`). Xray-правило `geoip:<регион> → direct` остаётся safety-net.
+  проходят leak-guard. Список — текстовый CIDR-дамп Loyalsoldier/geoip (не `.dat`). Своей UCI-опции
+  НЕТ: включённость производна от сплита — `routing_mode=bypass-local` + `local_region=ru`
+  (`mb_direct_bypass()` в init.d — авторитет для файрвола, `directBypass()` в rpcd/handlers.uc — для
+  UI; в status уходит ФАКТ из nft, а не намерение). Старый ключ `global.direct_bypass` удаляется
+  миграцией `mb_migrate_bypass` при старте. Xray-правило `geoip:<регион> → direct` — safety-net.
 - **DNS:** прозрачный через Xray (клиентский :53 → dns-инбаунд :5300 → dns-модуль со сплитом:
   регион direct / остальное DoH в туннеле). dnsmasq — резолвер самого роутера.
 - **Geo:** geoip.dat/geosite.dat (скачивание при установке + кнопка обновить).

@@ -21,6 +21,34 @@ mb_intent() {
 	[ "${MB_INTENT:-$(uci -q get monkey-business.global.enabled || echo 0)}" = 1 ]
 }
 
+# Пустая опция (`option routing_mode ''`) — это тоже «не задано»: `uci -q get` отдаёт на ней 0 и
+# пустую строку, так что `|| echo <дефолт>` не сработал бы, а ucode-двойник считает "" отсутствием.
+# Расхождение дефолтов между копиями правила — ровно то, чего мы избегаем.
+mb_opt() {
+	v="$(uci -q get "monkey-business.global.$1")"
+	echo "${v:-$2}"
+}
+
+# Ядерный обход (nft-сеты mb_ru4/mb_ru6) — производная режима маршрутизации, а не отдельный тумблер.
+# Он осмыслен ровно там, где регион гонит в direct и сам xray (bypass-local), и только для RU: сеты
+# наполняются ru.txt. В gfwlist/global правила geoip:<region> -> direct в конфиге нет, и обход в
+# ядре противоречил бы выбранному режиму — часть трафика минует туннель мимо намерения пользователя.
+# Здесь расчёт авторитетен для файрвола; тот же расчёт для UI/статуса — directBypass() в
+# src/rpcd/handlers.uc.
+mb_direct_bypass() {
+	[ "$(mb_opt routing_mode bypass-local)" = bypass-local ] &&
+		[ "$(mb_opt local_region ru)" = ru ] && echo 1 || echo 0
+}
+
+# Опция global.direct_bypass удалена: обход стал производным. У того, кто осознанно выставил её в 0
+# (прежний README прямо описывал такой рецепт), после апдейта обход включился бы молча — поэтому
+# одноразовая миграция: сказать в лог и убрать мёртвый ключ.
+mb_migrate_bypass() {
+	[ -n "$(uci -q get monkey-business.global.direct_bypass)" ] || return 0
+	logger -t monkey-business "direct_bypass option removed: the kernel bypass now follows the split (bypass-local + ru)"
+	uci -q delete monkey-business.global.direct_bypass && uci -q commit monkey-business
+}
+
 start_service() {
 	# Гонка «watchdog зовёт start, пока пользователь жмёт Off» закрыта тем, что гейт перечитывает uci
 	# внутри критической секции: procd.sh берёт flock на fd 1000 ещё при сорсинге (_procd_wrapper),
@@ -31,6 +59,7 @@ start_service() {
 	# kill-switch без flush остался бы поднят и заперл LAN без туннеля. На загрузке flush.sh — no-op.
 	mb_intent || { sh "$FW/flush.sh" 2>&1 | logger -t monkey-business; return 1; }
 	[ -f "$CONF" ] || return 1
+	mb_migrate_bypass
 
 	procd_open_instance
 	procd_set_param command "$PROG" run -c "$CONF"
@@ -43,7 +72,7 @@ start_service() {
 
 	MB_LAN_IFACE="$(uci -q get monkey-business.global.lan_iface || echo br-lan)" \
 	MB_KILL_SWITCH="$(uci -q get monkey-business.global.kill_switch || echo 1)" \
-	MB_DIRECT_BYPASS="$(uci -q get monkey-business.global.direct_bypass || echo 1)" \
+	MB_DIRECT_BYPASS="$(mb_direct_bypass)" \
 		sh "$FW/apply.sh" 2>&1 | logger -t monkey-business
 }
 

@@ -4,6 +4,7 @@
 'require ui';
 'require uci';
 'require poll';
+'require view.monkey-business.routing as mbroute';
 
 var callStatus = rpc.declare({ object: 'monkey-business', method: 'status' });
 var callServers = rpc.declare({ object: 'monkey-business', method: 'servers_list' });
@@ -62,6 +63,13 @@ function phaseInfo(st) {
 			note: _('The tunnel dropped, the watchdog is reconnecting. Kill-switch is still held.')
 		};
 	return { label: _('Starting…'), color: '#ff7f00', note: '', tint: '' };
+}
+
+// Ядерный обход — производная режима, а не отдельная настройка: по одной строке «Routing: gfwlist»
+// не понять, ходит ли ещё часть трафика мимо xray. Поллится вместе со статусом, поэтому смена
+// режима видна тут же, без перезагрузки страницы.
+function routingText(st) {
+	return _('Routing: ') + (st.routing_mode || '-') + (st.direct_bypass ? _(' + kernel bypass') : '');
 }
 
 return view.extend({
@@ -163,7 +171,7 @@ return view.extend({
 				';margin:8px 0;padding:8px 12px;border-left:4px solid ' + info.color + ';background:' + info.tint
 		}, [ E('strong', {}, [ info.note ]), E('br'), E('small', { 'style': 'font-family:monospace;color:#888' }, [ st.last_event || '' ]) ]);
 
-		var routingEl = E('p', {}, [ _('Routing: ') + (st.routing_mode || '-') ]);
+		var routingEl = E('p', {}, [ routingText(st) ]);
 		var toggleEl = E('button', {
 			'class': 'btn cbi-button ' + (on ? 'cbi-button-remove' : 'cbi-button-apply'),
 			'click': ui.createHandlerFn(this, function() { return self.handleToggle(!toggleOn); })
@@ -177,7 +185,7 @@ return view.extend({
 				labelEl.textContent = next.label;
 				labelEl.style.color = next.color;
 				serverEl.textContent = _('Server: ') + (cur.server || _('none'));
-				routingEl.textContent = _('Routing: ') + (cur.routing_mode || '-');
+				routingEl.textContent = routingText(cur);
 				noteEl.style.display = next.note ? 'block' : 'none';
 				noteEl.style.borderLeftColor = next.color;
 				noteEl.style.background = next.tint;
@@ -378,6 +386,7 @@ return view.extend({
 		return E('div', {}, [
 			this.renderTraffic(st.traffic),
 			this.renderStatus(st),
+			mbroute.render(),
 			this.renderRouting(),
 			this.renderGeo(geo),
 			this.renderServers(servers)

@@ -15,7 +15,8 @@
 //   serviceRunning() -> bool   setEnabled(bool) -> bool (легло ли в UCI)   updateGeo(args) -> { status }
 //   failoverCap() -> int (сколько кандидатов пробовать в selectWorking; 0 = все)
 //   watchdogPhase() -> "healthy"|"reconnecting"|"down"|null   lastEvent() -> string
-//   setCustomRouting(direct, proxy)   geoStatus() -> { state, geoip, geosite }
+//   setCustomRouting(direct, proxy)   setMode(mode, region) -> bool (легло ли в UCI)
+//   directBypassActive() -> bool (ФАКТ из nft, не намерение)   geoStatus() -> { state, geoip, geosite }
 //   geoInstall(which) -> { ok, detail }   checkExit(domain) -> { ip, country, code }|{ error }
 
 import { parse } from "../parser/subscription.uc";
@@ -23,6 +24,17 @@ import { generateJson } from "../generator/xray.uc";
 
 function isTrue(v) {
 	return v == true || v == "1" || v == 1;
+}
+
+const ROUTING_MODES = ["bypass-local", "gfwlist", "global"];
+const LOCAL_REGIONS = ["ru", "cn", "ir", "other"];
+
+// Ядерный обход (nft-сеты mb_ru4/mb_ru6) — производная режима, а не отдельный тумблер: RU-CIDR
+// минуют туннель в ядре только там, где регион гонит в direct и сам xray (bypass-local), и только
+// для RU (сеты наполняются ru.txt). Считается тут для UI/статуса; для файрвола тот же расчёт делает
+// mb_direct_bypass() в root/etc/init.d/monkey-business — он и передаёт MB_DIRECT_BYPASS в apply.sh.
+function directBypass(g) {
+	return (g.routing_mode || "bypass-local") == "bypass-local" && (g.local_region || "ru") == "ru";
 }
 
 function maskUuid(u) {
@@ -116,6 +128,11 @@ function status(ctx) {
 		running: ctx.serviceRunning(),
 		server: (s != null) ? s.tag : null,
 		routing_mode: g.routing_mode,
+		local_region: g.local_region,
+		// ФАКТ из nft, а не намерение из UCI: индикатор обхода — это индикатор утечки, и он обязан
+		// показывать применённое. Пара в UCI может разойтись с файрволом (ручная правка uci, провал
+		// apply, VPN выключен -> правил нет вовсе). Нет ctx.directBypassActive — фолбэк на расчёт.
+		direct_bypass: ctx.directBypassActive ? ctx.directBypassActive() : directBypass(g),
 		wd_phase: wd,
 		last_event: (noisy && ctx.lastEvent) ? ctx.lastEvent() : "",
 		traffic: {
@@ -272,6 +289,39 @@ function setRouting(ctx, args) {
 	return configApply(ctx);
 }
 
+// Режим маршрутизации + регион переехали из формы Settings на дашборд: они меняют не только конфиг
+// xray, но и файрвол (ядерный обход), а форма LuCI умеет только стейджить UCI — «сохранил и ничего
+// не изменилось» здесь особенно дорого. Пишем и применяем сразу, как setRouting. Пустое значение =
+// «не трогать»: UI шлёт оба поля, но ubus-контракт допускает частичный вызов.
+function setMode(ctx, args) {
+	let g = ctx.getGlobal();
+	let prevMode = g.routing_mode || "bypass-local";
+	let prevRegion = g.local_region || "ru";
+	let mode = (args != null && args.mode != null && args.mode != "") ? args.mode : prevMode;
+	let region = (args != null && args.region != null && args.region != "") ? args.region : prevRegion;
+	// Значения идут в конфиг xray как имена geo-категорий (geoip:<region>): мусор отсюда — это
+	// `xray -test` на каждом apply, то есть отказ применять ЛЮБЫЕ настройки до ручной правки UCI.
+	if (index(ROUTING_MODES, mode) < 0)
+		return { error: "bad routing mode" };
+	if (index(LOCAL_REGIONS, region) < 0)
+		return { error: "bad local region" };
+	if (!ctx.setMode(mode, region))
+		return { error: "could not save the routing mode (read-only config?)" };
+	let res = configApply(ctx);
+	// Пара уже в UCI, а xray.json перегенерируется ТОЛЬКО успешным apply — при этом ядерный обход
+	// init-скрипт считает из UCI. Провал оставил бы файрвол по новой паре, а туннель по старому
+	// конфигу, и расхождение пережило бы ребут (start_service конфиг не пересобирает). Не
+	// применилось — откатываем пару, чтобы оба источника остались на прежнем согласованном наборе.
+	if (res.error != null) {
+		ctx.setMode(prevMode, prevRegion);
+		return res;
+	}
+	res.mode = mode;
+	res.region = region;
+	res.direct_bypass = directBypass(ctx.getGlobal());
+	return res;
+}
+
 function geoStatus(ctx) {
 	return ctx.geoStatus();
 }
@@ -290,4 +340,4 @@ function checkExit(ctx, args) {
 	return ctx.checkExit(domain);
 }
 
-export { status, serversList, subscriptionUpdate, serversPing, configApply, serviceToggle, geoUpdate, setRouting, geoStatus, geoInstall, checkExit, maskUuid, parseUserinfo, selectBest, selectWorking };
+export { status, serversList, subscriptionUpdate, serversPing, configApply, serviceToggle, geoUpdate, setRouting, setMode, geoStatus, geoInstall, checkExit, maskUuid, parseUserinfo, selectBest, selectWorking, directBypass };
