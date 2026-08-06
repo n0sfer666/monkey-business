@@ -66,6 +66,22 @@ test("routing mode: bypass-local default region ru", function() {
 	assertEq(r.rules[1].domain, ["geosite:private", "geosite:category-ru"]);
 });
 
+// Обещание дашборда: не выбрал bypass-local — geoip:<region>/geosite:<region> в direct не уходят
+// вовсе (и ядерный обход выключается вместе с ними, см. directBypass в rpcd/handlers.uc).
+test("region geo goes direct only in bypass-local", function() {
+	for (let mode in ["global", "gfwlist"]) {
+		let r = buildRouting({ routing_mode: mode, local_region: "ru" });
+		for (let rule in r.rules) {
+			if (rule.outboundTag != "direct")
+				continue;
+			for (let v in (rule.ip || []))
+				assert(v != "geoip:ru", "no geoip:ru direct rule in " + mode);
+			for (let v in (rule.domain || []))
+				assert(v != "geosite:category-ru", "no geosite:category-ru direct rule in " + mode);
+		}
+	}
+});
+
 test("routing region other: drops region geo, private direct, default by mode", function() {
 	let r = buildRouting({ local_region: "other", routing_mode: "bypass-local" });
 	assertEq(r.rules[0].ip, ["geoip:private"]);

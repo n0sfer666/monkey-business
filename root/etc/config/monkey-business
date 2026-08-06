@@ -8,7 +8,6 @@ config global 'global'
 	option log_level 'warning'
 	option custom_direct ''
 	option custom_proxy ''
-	option direct_bypass '1'
 
 config subscription 'subscription'
 	option url ''

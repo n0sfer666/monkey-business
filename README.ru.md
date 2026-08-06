@@ -121,7 +121,7 @@ make test-integ  # netns TPROXY-перехват + сгенерированны�
 | `src/generator/` | генератор UCI → Xray JSON (абстрагирован под будущий бэкенд sing-box) |
 | `src/rpcd/` | чистые rpcd-хендлеры (host-тестируемые; привязка ubus/uci в `root/…/rpcd/ucode`) |
 | `src/lib/` | общие утилиты (разбор URI) |
-| `luci/` | LuCI client-side JS-вьюшки (dashboard / servers / settings) + меню + ACL |
+| `luci/` | LuCI client-side JS-вьюшки (dashboard / servers / settings) + панель сплита (`routing.js`, рендерится внутри дашборда) + меню + ACL |
 | `root/` | файлы на устройстве: UCI-дефолты, procd-init, рантайм rpcd-плагин |
 | `root/usr/share/monkey-business/` | shell на устройстве: `watchdog.sh` + `probes.sh` + `recovery.sh` + `phases.sh` (самовосстановление), `ruset.sh` (nft-сеты direct-bypass), `geo.sh`, `fetch.sh` (общая загрузка, socks-фолбэк), `boothealth.sh`, `nicfw.sh` + `nicwatch.sh` (USB-сетевуха RTL8153B, см. [гайд §9](docs/install-nanopi.ru.md#9-usb-сетевуха-rtl8153b-прошивка-и-watchdog)) |
 | `scripts/firewall/` | nftables TPROXY apply/flush |
@@ -224,12 +224,10 @@ make dev-test-split # проверить сплит-маршрутизацию: 
   этапе деплоя; пересоберите вручную — `sh /usr/share/monkey-business/ruset.sh build` (cron-задания
   нет, а кнопка *Update geo databases* его **не** пересобирает — она обновляет только `.dat`-файлы).
   Пустой сет — это не утечка: правило Xray `geoip:<регион> → direct` всё равно уведёт такой трафик
-  напрямую, просто медленнее. Отключить механизм целиком:
-  ```sh
-  # uci set monkey-business.global.direct_bypass=0
-  # uci commit monkey-business
-  # /etc/init.d/monkey-business restart
-  ```
+  напрямую, просто медленнее. Своего тумблера у механизма нет: он производный от сплита на
+  дашборде и включён только при **Bypass local + Russia** (сеты наполняются RU-списком CIDR, так что
+  в любом другом режиме или регионе он уводил бы мимо туннеля трафик, который вы просили в туннель).
+  Чтобы выключить — выберите другой режим маршрутизации; дашборд показывает, что включает каждый выбор.
 - **Туннель упал, и роутер сам переключил сервер.** Это watchdog. Он пишет только переходы, в
   syslog — `logread -f -e mb-event` покажет `Reconnecting…` /
   `VPN recovered by <ступень>…` / `VPN stopped, LAN on direct`. Текущее состояние —

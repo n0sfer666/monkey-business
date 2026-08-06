@@ -29,7 +29,7 @@
 2. **Apply / connect:** UCI → `selectWorking` (пробует серверы по порядку списка, первый рабочий →
    тег в `/etc/monkey-business/active`) → `xray.uc` → Xray JSON → procd restart → nftables TPROXY.
 3. **Маршрутизация:** два слоя. Ядро: RU-CIDR из nft-сетов `mb_ru4`/`mb_ru6` не попадают в TPROXY
-   (`direct_bypass=1`, дефолт) — быстрый путь, без прохода через xray. Xray: geoip/geosite →
+   (производно от сплита: `bypass-local` + регион `ru`) — быстрый путь, без прохода через xray. Xray: geoip/geosite →
    RU/CN/private direct, остальное в туннель (default bypass-RU) — safety-net для того, что не попало
    в nft-сет. Sniffing с `routeOnly:true`: снифнутый домен идёт только в матчинг правил, адрес не
    подменяется → direct-аутбаунд коннектится по оригинальному IP.

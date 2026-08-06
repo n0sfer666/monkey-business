@@ -335,6 +335,21 @@ function buildCtx() {
 				return { error: j.message || 'lookup failed' };
 			return { probe: d, ip: j.query || j.ip || '', country: j.country || '', code: j.countryCode || '' };
 		},
+		// Возврат = легло ли в UCI: файрвол (init.d) читает пару из UCI, а не из памяти курсора, и
+		// незаписанный на read-only rootfs режим дал бы «применили» при неизменившемся обходе.
+		setMode: function(mode, region) {
+			cursor.set(CONFIG, 'global', 'routing_mode', mode);
+			cursor.set(CONFIG, 'global', 'local_region', region);
+			return cursor.commit(CONFIG) === true;
+		},
+		// Обход ФАКТИЧЕСКИ включён = в prerouting стоит правило по сету mb_ru4 (его ставит apply.sh
+		// только при MB_DIRECT_BYPASS=1). Читаем цепочку, а не сет: в mb_ru4 тысячи RU-CIDR, а
+		// status опрашивается раз в 5с. Нет таблицы (VPN выключен) — nft молчит в stderr, и это
+		// честный false.
+		directBypassActive: function() {
+			return index(runCapture('nft list chain inet monkey_business prerouting 2>/dev/null').out,
+				'mb_ru4') >= 0;
+		},
 		setCustomRouting: function(direct, proxy) {
 			cursor.set(CONFIG, 'global', 'custom_direct', direct);
 			cursor.set(CONFIG, 'global', 'custom_proxy', proxy);
@@ -375,6 +390,7 @@ const methods = {
 	service_toggle:       { args: { enabled: false }, call: function(req) { return h.serviceToggle(buildCtx(), req.args); } },
 	geo_update:           { args: { geoip_url: '', geosite_url: '' }, call: function(req) { return h.geoUpdate(buildCtx(), req.args); } },
 	set_routing:          { args: { direct: '', proxy: '' }, call: function(req) { return h.setRouting(buildCtx(), req.args); } },
+	set_mode:             { args: { mode: '', region: '' }, call: function(req) { return h.setMode(buildCtx(), req.args); } },
 	geo_status:           { call: function() { return h.geoStatus(buildCtx()); } },
 	geo_install:          { args: { which: '' }, call: function(req) { return h.geoInstall(buildCtx(), req.args); } },
 	check_exit:           { args: { domain: '' }, call: function(req) { return h.checkExit(buildCtx(), req.args); } },

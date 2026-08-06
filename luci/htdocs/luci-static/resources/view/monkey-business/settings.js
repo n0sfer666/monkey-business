@@ -12,22 +12,10 @@ return view.extend({
 		var m = new form.Map('monkey-business', _('Settings'),
 			_('Each option has a hint explaining what it does. Defaults are safe.'));
 
-		var g = m.section(form.NamedSection, 'global', 'global', _('General'));
-
-		var mode = g.option(form.ListValue, 'routing_mode', _('Routing mode'),
-			_('What goes through the VPN. "Bypass local" sends your region (RU/CN) and private addresses direct, everything else through the tunnel.'));
-		mode.value('bypass-local', _('Bypass local (recommended)'));
-		mode.value('gfwlist', _('Only blocked via VPN'));
-		mode.value('global', _('Everything via VPN'));
-		mode.default = 'bypass-local';
-
-		var region = g.option(form.ListValue, 'local_region', _('Local region'),
-			_('Region treated as "local" for direct routing (geoip/geosite). Pick "Other" if your region has no geo preset — then you drive the split yourself with the custom Direct/Via-VPN lists on the Dashboard; private stays direct and the rest follows the routing mode.'));
-		region.value('ru', 'Russia');
-		region.value('cn', 'China');
-		region.value('ir', 'Iran');
-		region.value('other', _('Other — no geo preset (custom lists drive routing)'));
-		region.default = 'ru';
+		// Режим маршрутизации и регион живут на дашборде: они меняют ещё и файрвол (ядерный обход
+		// в nft), а форма умеет только стейджить UCI — «сохранил, и ничего не произошло».
+		var g = m.section(form.NamedSection, 'global', 'global', _('General'),
+			_('Routing mode and local region are on the Dashboard — they change the firewall too, not just the Xray config.'));
 
 		var ks = g.option(form.Flag, 'kill_switch', _('Kill-switch'),
 			_('Fail-closed: LAN traffic to non-local destinations is dropped instead of leaking direct whenever it is not carried by the tunnel (Xray down, rule gap, or non-proxied traffic such as ICMP). Disable for a direct fallback when the tunnel is down (less safe). Local-region and private traffic are unaffected.'));
