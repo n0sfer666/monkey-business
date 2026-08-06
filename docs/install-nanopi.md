@@ -116,7 +116,7 @@ What this does:
   - firewall scripts → `/usr/share/monkey-business/firewall/`, geo script → `/usr/share/monkey-business/geo.sh`,
   - NIC firmware → `nicfw.sh` + `firmware/rtl8153b-2.fw`, its watchdog → `nicwatch.sh`,
     shared downloader → `fetch.sh`,
-  - watchdog → `/usr/share/monkey-business/watchdog.sh` + `probes.sh` + `phases.sh`, bypass-set builder →
+  - watchdog → `/usr/share/monkey-business/watchdog.sh` + `probes.sh` + `recovery.sh` + `phases.sh`, bypass-set builder →
     `ruset.sh`.
 - **Checks runtime deps** (`xray-core`, `kmod-nft-tproxy`, `curl`, the ucode/rpcd modules) and
   installs missing ones one at a time. If a required package fails, **the deploy fails**: silently
@@ -342,11 +342,17 @@ it escalates:
 0. **Is the internet up at all?** If a probe *without* the proxy also fails, the problem is your
    uplink, not the tunnel — reconnecting or switching servers would be pointless. The VPN is stopped
    immediately (LAN falls back to direct) and retried every 10 minutes until the link returns.
-1. **Reconnect** — otherwise, bounce Xray (`kill`; procd respawns it). The kill-switch is *held*
-   throughout, so nothing leaks while the tunnel is down. Up to 2 attempts.
-2. **Failover** — ask the backend to re-apply the config, which re-probes the servers in list order
+1. **Soft bounce** — otherwise, bounce Xray (`kill`; procd respawns it). Fixes a dead session under
+   a live process.
+2. **Hard restart** — SIGTERM, wait for the process to *actually* die, force it with SIGKILL if
+   needed, then bring it up via `init.d start`. This is what handles a wedged Xray that ignores
+   SIGTERM, and it rebuilds the nft table and policy routing along the way.
+3. **Failover** — ask the backend to re-apply the config, which re-probes the servers in list order
    and selects the first working one.
-3. **Fall back to direct** — if no server works, stop the service. This flushes the firewall and
+4. **Full cycle** — `stop` → re-select a server → `start`: exactly what Turn Off / Turn On in LuCI
+   does. It is the only step that drops the kill-switch (for a few seconds); on steps 1–3 it is
+   *held*, so nothing leaks while the tunnel is down.
+5. **Fall back to direct** — if nothing helped, stop the service. This flushes the firewall and
    removes the kill-switch, so the LAN keeps working *without* the VPN. The watchdog then retries
    every 10 minutes and restores the tunnel when it comes back.
 

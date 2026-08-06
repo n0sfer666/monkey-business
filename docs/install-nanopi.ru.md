@@ -113,7 +113,7 @@ with-env { MB_VM_SSH_HOST: "root@<router-ip>", MB_VM_SSH_PORT: "22" } { sh scrip
   - LuCI-вьюшки → `/www/luci-static/resources/view/monkey-business/`, меню + ACL,
   - `/etc/config/monkey-business` (UCI), `/etc/init.d/monkey-business` (procd),
   - firewall-скрипты → `/usr/share/monkey-business/firewall/`, geo-скрипт → `/usr/share/monkey-business/geo.sh`,
-  - watchdog → `/usr/share/monkey-business/watchdog.sh` + `probes.sh` + `phases.sh`, сборщик bypass-сетов →
+  - watchdog → `/usr/share/monkey-business/watchdog.sh` + `probes.sh` + `recovery.sh` + `phases.sh`, сборщик bypass-сетов →
     `ruset.sh`, общая загрузка → `fetch.sh`,
   - прошивка USB-сетевухи → `nicfw.sh` + `firmware/rtl8153b-2.fw`, её watchdog → `nicwatch.sh`.
 - **Проверяет рантайм-зависимости** (`xray-core`, `kmod-nft-tproxy`, `curl`, ucode/rpcd-модули) и
@@ -342,11 +342,17 @@ fail-closed kill-switch'у превратить упавший туннель в
 0. **А интернет вообще есть?** Если проба *без* прокси тоже не проходит, проблема в аплинке, а не в
    туннеле — переподключаться и менять серверы бессмысленно. VPN сразу останавливается (LAN уходит
    на direct), и раз в 10 минут делается попытка, пока связь не вернётся.
-1. **Reconnect** — иначе передёрнуть Xray (`kill`; procd поднимает заново). Kill-switch при этом
-   *удерживается*, поэтому пока туннель лежит, ничего не утекает. До 2 попыток.
-2. **Failover** — попросить бэкенд применить конфиг заново: тот перепробует серверы по порядку
+1. **Мягкий bounce** — передёрнуть Xray (`kill`; procd поднимает заново). Чинит умершую сессию при
+   живом процессе.
+2. **Жёсткий рестарт** — SIGTERM, дождаться *реальной* смерти процесса, при необходимости добить
+   SIGKILL и поднять через `init.d start`. Берёт зависший Xray, который на SIGTERM не реагирует, и
+   заодно пересобирает nft-таблицу с policy-routing.
+3. **Failover** — попросить бэкенд применить конфиг заново: тот перепробует серверы по порядку
    списка и выберет первый рабочий.
-3. **Откат на direct** — если не работает ни один сервер, сервис останавливается. Это сбрасывает
+4. **Полный цикл** — `stop` → перевыбор сервера → `start`, то есть ровно то, что делает ручной
+   Turn Off / Turn On в LuCI. Единственная ступень, на которой kill-switch снимается (на секунды):
+   на ступенях 1–3 он *удерживается*, поэтому пока туннель лежит, ничего не утекает.
+5. **Откат на direct** — если не помогло ничего, сервис останавливается. Это сбрасывает
    firewall и снимает kill-switch, поэтому LAN продолжает работать *без* VPN. Дальше watchdog
    пробует раз в 10 минут и поднимает туннель, когда тот оживёт.
 

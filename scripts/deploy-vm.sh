@@ -66,13 +66,17 @@ cpf root/usr/share/monkey-business/geo.sh "$stage/usr/share/monkey-business/geo.
 chmod 755 "$stage/usr/share/monkey-business/geo.sh"
 cpf root/usr/share/monkey-business/ruset.sh "$stage/usr/share/monkey-business/ruset.sh"
 chmod 755 "$stage/usr/share/monkey-business/ruset.sh"
-cpf root/usr/share/monkey-business/watchdog.sh "$stage/usr/share/monkey-business/watchdog.sh"
-chmod 755 "$stage/usr/share/monkey-business/watchdog.sh"
+# Библиотеки идут ПЕРЕД watchdog.sh: он сорсит их все, а cron тикает и во время заливки —
+# новый watchdog рядом со старым набором библиотек падал бы молча.
+# Самостоятельно не исполняются -> 644.
 cpf root/usr/share/monkey-business/probes.sh "$stage/usr/share/monkey-business/probes.sh"
 chmod 644 "$stage/usr/share/monkey-business/probes.sh"
-# Сорсится watchdog.sh, самостоятельно не исполняется -> 644, как probes.sh.
+cpf root/usr/share/monkey-business/recovery.sh "$stage/usr/share/monkey-business/recovery.sh"
+chmod 644 "$stage/usr/share/monkey-business/recovery.sh"
 cpf root/usr/share/monkey-business/phases.sh "$stage/usr/share/monkey-business/phases.sh"
 chmod 644 "$stage/usr/share/monkey-business/phases.sh"
+cpf root/usr/share/monkey-business/watchdog.sh "$stage/usr/share/monkey-business/watchdog.sh"
+chmod 755 "$stage/usr/share/monkey-business/watchdog.sh"
 cpf root/usr/share/monkey-business/boothealth.sh "$stage/usr/share/monkey-business/boothealth.sh"
 chmod 755 "$stage/usr/share/monkey-business/boothealth.sh"
 cpf root/usr/share/monkey-business/nicwatch.sh "$stage/usr/share/monkey-business/nicwatch.sh"
