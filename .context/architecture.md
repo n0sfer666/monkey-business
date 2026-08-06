@@ -16,7 +16,7 @@
 ├─────────────────────────────────────────────┤
 │  procd init → Xray-core                       │
 │  boothealth (mb-boothealth)                   │  ext4-rootfs: детект unclean/ro-remount, 0 периодики
-│  cron watchdog (watchdog.sh+probes+phases)    │  1/мин; reconnect → failover → fail-open direct
+│  cron watchdog (watchdog+probes+recovery+phases)│ 1/мин; лестница soft→hard→failover→full→direct
 │  cron nicwatch (nicwatch.sh) + nicfw.sh       │  1/мин; залипание TX eth1 (RTL8153B) → bounce/re-bind
 │  nftables TPROXY (scripts/firewall/)          │  перехват TCP+UDP; :53 → dns-in (не tproxy)
 │  nft direct-bypass (ruset.sh → mb_ru4/mb_ru6) │  RU-CIDR минуют tproxy в ядре (быстрый путь)
@@ -38,9 +38,12 @@
    напрямую, остальное → DoH в туннеле). Домен VPN-сервера резолвится direct'ом (иначе bootstrap-дедлок).
    dnsmasq остаётся резолвером самого роутера.
 5. **Отказоустойчивость:** watchdog (cron 1/мин) — liveness через socks + сверка exit-IP ≠ домашнего.
-   3 провала → reconnect (`kill xray`, procd поднимает; kill-switch держится) → не помогло 2 раза →
-   failover (`ubus config_apply` → `selectWorking` выберет другой сервер) → не помогло → `init.d stop`
-   (flush.sh снимает kill-switch, LAN на direct) + backoff-попытки восстановления.
+   3 провала → лестница восстановления (`recovery.sh`), по ступени на тик: soft bounce (`kill` xray,
+   procd поднимает) → hard restart (SIGTERM → подтверждённая смерть → SIGKILL → `init.d start`,
+   `apply.sh` пересобирает nft/policy-routing) → failover (`ubus config_apply` → `selectWorking`
+   выберет другой сервер) → full stop/start (аналог ручного Off/On). На первых трёх kill-switch
+   держится. Исчерпали → `init.d stop` (LAN на direct) + backoff-попытки восстановления с failover.
+   Решение: `.context/decisions/2026-08-06-recovery-ladder.md`.
 6. **Железо (LAN):** `eth1` = USB-адаптер RTL8153B (r8152) и единственный член `br-lan`. Пакетная
    прошивка v2 подвешивает TX-очередь (openwrt#22130) → `nicfw.sh` ставит v1 (нужна перезагрузка,
    пинится в sysupgrade.conf), `nicwatch.sh` (cron 1/мин, 2 чтения sysfs) страхует: реагирует только

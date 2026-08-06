@@ -16,9 +16,9 @@ DoH split-DNS, anti-DPI (uTLS + XHTTP padding), and a one-screen dashboard.
 Two things happen without you asking. **Local-region traffic skips the proxy in the kernel**: its
 CIDRs live in nftables sets (`mb_ru4`/`mb_ru6`) that are excluded from TPROXY, so it never pays the
 Xray hop — the `geoip:<region> → direct` rule inside Xray stays as a safety net. And **a dead tunnel
-heals itself**: a cron watchdog probes the tunnel every minute and escalates *reconnect → fail over
-to the next working server → fall back to direct* rather than leaving the LAN behind a fail-closed
-kill-switch. The same kind of probe picks the server when you connect: candidates are tried in list
+heals itself**: a cron watchdog probes the tunnel every minute and climbs a ladder — *soft bounce →
+hard restart → fail over to the next working server → full stop/start → fall back to direct* —
+rather than leaving the LAN behind a fail-closed kill-switch. The same kind of probe picks the server when you connect: candidates are tried in list
 order and the first one that actually carries traffic wins.
 
 > ⚠️ **Work in progress.** The backend (subscription parser, config generator, rpcd handlers) is
@@ -121,7 +121,7 @@ Layout:
 | `src/lib/` | shared utils (URI parsing) |
 | `luci/` | LuCI client-side JS views (dashboard / servers / settings) + menu + ACL |
 | `root/` | on-device files: UCI default, procd init, runtime rpcd plugin |
-| `root/usr/share/monkey-business/` | on-device shell: `watchdog.sh` + `probes.sh` + `phases.sh` (self-healing), `ruset.sh` (nft direct-bypass sets), `geo.sh`, `fetch.sh` (shared downloader, socks fallback), `boothealth.sh`, `nicfw.sh` + `nicwatch.sh` (RTL8153B USB NIC, see [install guide §9](docs/install-nanopi.md#9-the-rtl8153b-usb-nic-firmware--watchdog)) |
+| `root/usr/share/monkey-business/` | on-device shell: `watchdog.sh` + `probes.sh` + `recovery.sh` + `phases.sh` (self-healing), `ruset.sh` (nft direct-bypass sets), `geo.sh`, `fetch.sh` (shared downloader, socks fallback), `boothealth.sh`, `nicfw.sh` + `nicwatch.sh` (RTL8153B USB NIC, see [install guide §9](docs/install-nanopi.md#9-the-rtl8153b-usb-nic-firmware--watchdog)) |
 | `scripts/firewall/` | nftables TPROXY apply/flush |
 | `scripts/expand-sd.sh` | grow the SD card's ext4 partition from macOS ([docs](docs/sd-expand-macos.md)) |
 | `test/` | ucode harness + unit/snapshot tests + netns integration |
@@ -229,7 +229,7 @@ can target a NanoPi R2S over SSH (see Install → Option A).
   ```
 - **The tunnel died and the router switched servers on its own.** That's the watchdog. It logs only
   transitions to syslog — `logread -f -e mb-event` to see
-  `Reconnecting…` / `Failover switched server…` / `VPN stopped, LAN on direct`. Live state is in
+  `Reconnecting…` / `VPN recovered by <step>…` / `VPN stopped, LAN on direct`. Live state is in
   `/tmp/mb-watchdog/state`. See [the install guide](docs/install-nanopi.md#8-self-healing-watchdog--failover)
   for the escalation ladder and how to tune or disable it.
 - **Direct (non-tunnelled) sites are slow while the tunnel itself is fine.** Usually `odhcp6c`

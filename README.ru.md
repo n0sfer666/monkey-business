@@ -18,8 +18,9 @@ kill-switch, блокировка утечки IPv6, split-DNS поверх DoH,
 его CIDR-диапазоны лежат в nftables-сетах (`mb_ru4`/`mb_ru6`), исключённых из TPROXY, поэтому он не
 платит за лишний хоп через Xray — а правило `geoip:<регион> → direct` внутри Xray остаётся
 подстраховкой. И **упавший туннель чинит себя сам**: cron-watchdog раз в минуту пробит туннель и
-эскалирует *reconnect → переключение на следующий рабочий сервер → откат на direct*, вместо того
-чтобы оставить LAN за fail-closed kill-switch'ем. Такая же проба выбирает сервер при подключении:
+идёт по лестнице — *мягкий bounce → жёсткий рестарт → переключение на следующий рабочий сервер →
+полный цикл stop/start → откат на direct*, вместо того чтобы оставить LAN за fail-closed
+kill-switch'ем. Такая же проба выбирает сервер при подключении:
 кандидаты перебираются по порядку списка, побеждает первый, через который реально идёт трафик.
 
 > ⚠️ **В разработке.** Бэкенд (парсер подписки, генератор конфига, rpcd-хендлеры) покрыт
@@ -122,7 +123,7 @@ make test-integ  # netns TPROXY-перехват + сгенерированны�
 | `src/lib/` | общие утилиты (разбор URI) |
 | `luci/` | LuCI client-side JS-вьюшки (dashboard / servers / settings) + меню + ACL |
 | `root/` | файлы на устройстве: UCI-дефолты, procd-init, рантайм rpcd-плагин |
-| `root/usr/share/monkey-business/` | shell на устройстве: `watchdog.sh` + `probes.sh` + `phases.sh` (самовосстановление), `ruset.sh` (nft-сеты direct-bypass), `geo.sh`, `fetch.sh` (общая загрузка, socks-фолбэк), `boothealth.sh`, `nicfw.sh` + `nicwatch.sh` (USB-сетевуха RTL8153B, см. [гайд §9](docs/install-nanopi.ru.md#9-usb-сетевуха-rtl8153b-прошивка-и-watchdog)) |
+| `root/usr/share/monkey-business/` | shell на устройстве: `watchdog.sh` + `probes.sh` + `recovery.sh` + `phases.sh` (самовосстановление), `ruset.sh` (nft-сеты direct-bypass), `geo.sh`, `fetch.sh` (общая загрузка, socks-фолбэк), `boothealth.sh`, `nicfw.sh` + `nicwatch.sh` (USB-сетевуха RTL8153B, см. [гайд §9](docs/install-nanopi.ru.md#9-usb-сетевуха-rtl8153b-прошивка-и-watchdog)) |
 | `scripts/firewall/` | nftables TPROXY apply/flush |
 | `scripts/expand-sd.sh` | расширение ext4-раздела SD-карты с macOS ([док](docs/sd-expand-macos.ru.md)) |
 | `test/` | ucode-харнесс + unit/snapshot-тесты + netns-интеграция |
@@ -231,7 +232,7 @@ make dev-test-split # проверить сплит-маршрутизацию: 
   ```
 - **Туннель упал, и роутер сам переключил сервер.** Это watchdog. Он пишет только переходы, в
   syslog — `logread -f -e mb-event` покажет `Reconnecting…` /
-  `Failover switched server…` / `VPN stopped, LAN on direct`. Текущее состояние —
+  `VPN recovered by <ступень>…` / `VPN stopped, LAN on direct`. Текущее состояние —
   в `/tmp/mb-watchdog/state`. Лестница эскалации, тюнинг и отключение — в
   [руководстве по установке](docs/install-nanopi.ru.md#8-самовосстановление-watchdog-и-failover).
 - **Direct-сайты (мимо туннеля) тормозят при живом туннеле.** Обычно это `odhcp6c` в busy-loop на

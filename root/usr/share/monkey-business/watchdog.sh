@@ -1,10 +1,10 @@
 #!/bin/sh
-# Connectivity watchdog для monkey-business VPN (cron раз в минуту). Стратегия и машина состояний
-# — .context/notes/watchdog.md; сетевые пробы — probes.sh, обработчики фаз — phases.sh.
+# Connectivity watchdog для monkey-business VPN (cron раз в минуту). Сетевые пробы — probes.sh,
+# ступени восстановления — recovery.sh, обработчики фаз — phases.sh.
 # Reconnect-first: сперва bounce xray (kill-switch держится), и лишь потом init.d stop → direct.
-# Env-override (дефолты боевые): FAIL_LIMIT(3) RECONNECT_LIMIT(2) POLL(60) BACKOFF(600)
-# EXIT_EVERY(5) REC_TRIES(3) RECOVERY_TRIES(2) RECONNECT_WAIT(5) TIMEOUT(10) REC_TIMEOUT(6)
-# UBUS_TIMEOUT(90) DOWN_BUDGET(240) FAILOVER_RESERVE(150) DOWN_BACKOFF0(60) — все с префиксом
+# Env-override (дефолты боевые): FAIL_LIMIT(3) RECONNECT_LIMIT(4) POLL(60) BACKOFF(600)
+# EXIT_EVERY(5) REC_TRIES(3) RECOVERY_TRIES(2) RECONNECT_WAIT(5) KILL_WAIT(8) TIMEOUT(10)
+# REC_TIMEOUT(6) UBUS_TIMEOUT(90) DOWN_BUDGET(240) FAILOVER_RESERVE(150) DOWN_BACKOFF0(60) — с префиксом
 # MB_WD_. MB_WD_NOW(epoch), MB_WD_LIB(каталог probes.sh/phases.sh), MB_WD_ACTIVE(файл тега),
 # MB_WD_XRAY_MATCH(cmdline боевого xray), MB_WD_SOURCED=1(тест зовёт tick без main).
 set -u
@@ -22,13 +22,16 @@ LOCK="$STATE_DIR/lock"
 ACTIVE="${MB_WD_ACTIVE:-/etc/monkey-business/active}"
 
 FAIL_LIMIT="${MB_WD_FAIL_LIMIT:-3}"
-RECONNECT_LIMIT="${MB_WD_RECONNECT_LIMIT:-2}"
+# Длина лестницы recovery.sh: ступени 0..RECONNECT_LIMIT-1, исчерпали все — down.
+RECONNECT_LIMIT="${MB_WD_RECONNECT_LIMIT:-4}"
 POLL="${MB_WD_POLL:-60}"
 BACKOFF="${MB_WD_BACKOFF:-600}"
 EXIT_EVERY="${MB_WD_EXIT_EVERY:-5}"
 REC_TRIES="${MB_WD_REC_TRIES:-3}"
 RECOVERY_TRIES="${MB_WD_RECOVERY_TRIES:-2}"
 RECONNECT_WAIT="${MB_WD_RECONNECT_WAIT:-5}"
+# Сколько ждать реальной смерти xray на жёсткой ступени, прежде чем дожать SIGKILL.
+KILL_WAIT="${MB_WD_KILL_WAIT:-8}"
 TIMEOUT="${MB_WD_TIMEOUT:-10}"
 REC_TIMEOUT="${MB_WD_REC_TIMEOUT:-6}"
 # дефолтные 30с ubus рвали config_apply на середине перебора кандидатов
@@ -46,10 +49,17 @@ FAILOVER_RESERVE="${MB_WD_FAILOVER_RESERVE:-150}"
 DOWN_BACKOFF0="${MB_WD_DOWN_BACKOFF0:-60}"
 XRAY_MATCH="${MB_WD_XRAY_MATCH:-xray run -c $XRAY_CONF}"
 MB_WD_LIB="${MB_WD_LIB:-$(dirname "$0")}"
-[ -f "$MB_WD_LIB/probes.sh" ] || MB_WD_LIB=/usr/share/monkey-business
+# Проверяем ВСЕ три: `.` на отсутствующем файле валит скрипт молча, и watchdog умирал бы на каждом
+# тике, ничего не оставляя в logread. Достижимо в окне деплоя и при частичном обновлении.
+for f in probes.sh recovery.sh phases.sh; do
+	[ -f "$MB_WD_LIB/$f" ] || { MB_WD_LIB=/usr/share/monkey-business; break; }
+done
 # shellcheck source=root/usr/share/monkey-business/probes.sh disable=SC1091
 . "$MB_WD_LIB/probes.sh"
-# Фазы работают по общим WD_* и зовут хелперы ниже: sh резолвит имена при вызове, не при сорсинге.
+# recovery.sh и phases.sh работают по общим WD_* и зовут хелперы ниже: sh резолвит имена при
+# вызове, не при сорсинге, поэтому порядок сорсинга и порядок определений не связаны.
+# shellcheck source=root/usr/share/monkey-business/recovery.sh disable=SC1091
+. "$MB_WD_LIB/recovery.sh"
 # shellcheck source=root/usr/share/monkey-business/phases.sh disable=SC1091
 . "$MB_WD_LIB/phases.sh"
 
@@ -58,40 +68,6 @@ sig() { printf '%s' "${1:-}" | cksum | cut -d' ' -f1; }
 sane() { printf '%s' "${1:-}" | tr -cd 'A-Za-z0-9.:_-'; }
 read_intent() { uci -q get "$CONFIG.global.enabled" 2>/dev/null || echo 0; }
 selected_tag() { cat "$ACTIVE" 2>/dev/null || echo ''; }
-# Матч по cmdline боевого конфига, а не `pidof xray`: иначе эфемерная проба failover
-# (/tmp/mb-probe.json) и чужой xray из стокового пакета считаются «сервис жив».
-# Без pgrep (урезанный busybox) деградируем до pidof: грубее, но лучше вечного «сервис мёртв».
-if command -v pgrep >/dev/null 2>&1; then
-	xray_pids() { pgrep -f "$XRAY_MATCH"; }
-else
-	xray_pids() { pidof xray; }
-fi
-vpn_running() { xray_pids >/dev/null 2>&1; }
-vpn_start() { $INIT start >/dev/null 2>&1; sleep 5; }
-vpn_stop() { $INIT stop >/dev/null 2>&1; }
-vpn_reconnect() {
-	# shellcheck disable=SC2046
-	kill $(xray_pids) 2>/dev/null || true
-	sleep "$RECONNECT_WAIT"
-	vpn_running || vpn_start
-}
-# Failover: rpcd пересобирает конфиг на ПЕРВЫЙ рабочий сервер по приоритету (config_apply ->
-# selectWorking с реальными эфемерными пробами). probed:true = нашёлся сервер, прошедший пробу.
-# Возврат 0 = переключились (сервис уже перезапущен с новым сервером). Имя-агностично.
-# $1 — потолок ожидания ubus в секундах (по умолчанию UBUS_TIMEOUT); tick_down зажимает его
-# остатком своего бюджета, чтобы kill-switch не висел дольше обещанного.
-failover_switch() {
-	res=$(ubus -t "${1:-$UBUS_TIMEOUT}" call "$CONFIG" config_apply 2>/dev/null) || return 1
-	printf '%s' "$res" | grep -q '"probed": *true'
-}
-# config_apply в ЛЮБОМ исходе зовёт setSelected, т.е. тег меняем мы сами. Без пересинхронизации
-# WD_TAGSIG следующий тик принял бы это за ручной выбор пользователя, сбросил фазу и обнулил
-# backoff — вместо отдыха в 10 минут получился бы полный перебор кандидатов раз в минуту.
-try_failover() {
-	failover_switch "$@"; fo=$?
-	WD_TAGSIG=$(sig "$(selected_tag)")
-	return "$fo"
-}
 
 # syslog вместо своего файла на rootfs: ring buffer в RAM. Прошлый вариант дописывал и ротировал
 # файл на карте при каждом инциденте — а инциденты идут именно тогда, когда сеть лежит и watchdog
@@ -104,6 +80,10 @@ log_event() { logger -t mb-event "watchdog: $1"; }
 load_state() {
 	WD_PHASE=healthy; WD_FAILS=0; WD_BASE_IP=; WD_HOME_IP=; WD_TAGSIG=0; WD_NEXT=0
 	WD_DOWNKIND=; WD_RECTRIES=0; WD_EXITDUE=0; WD_DOWNTRIES=0
+	# Исход последнего config_apply, живёт один тик и в state не пишется: нужен только для
+	# формулировки лога («переключились на другой сервер» vs «подняли тот же»).
+	# shellcheck disable=SC2034
+	WD_PROBED=0
 	# shellcheck disable=SC1090
 	[ -f "$STATE" ] && . "$STATE"
 	# Состояние от версии без счётчика: sourcing оставит переменную неопределённой, а set -u
