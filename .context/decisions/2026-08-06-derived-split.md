@@ -25,7 +25,8 @@
 Правило считается в двух местах, и это осознанно:
 - `mb_direct_bypass()` в `root/etc/init.d/monkey-business` — **авторитет для файрвола** (он и
   передаёт `MB_DIRECT_BYPASS` в `apply.sh`);
-- `directBypass()` в `src/rpcd/handlers.uc` — тот же расчёт для `status`/UI.
+- `directBypass()` в `src/lib/bypass.uc` — тот же расчёт для `status`/UI (читают `rpcd/status.uc`
+  и `rpcd/handlers.uc`).
 
 Альтернатива (шелл дёргает ucode за значением) стоила бы вызова интерпретатора на каждом
 `start_service`, ради булева выражения из двух сравнений. Обе копии закрыты тестами, обе ссылаются

@@ -335,10 +335,10 @@ eq "activefile.missing" "$(selected_tag)" ""
 printf 'France Paris-9\n' > "$ACTIVE"
 eq "activefile.read" "$(selected_tag)" "France Paris-9"
 
-# 15. Путь к файлу тега продублирован в watchdog.sh и в rpcd-плагине на ucode. Разъезд литералов
+# 15. Путь к файлу тега продублирован в watchdog.sh и в runtime/paths.uc. Разъезд литералов
 #     не ловится ничем другим: обе стороны продолжат «работать», просто в разные файлы.
 WD_SRC="$SELF_DIR/../../root/usr/share/monkey-business/watchdog.sh"
-UC_SRC="$SELF_DIR/../../root/usr/share/rpcd/ucode/monkey-business.uc"
+UC_SRC="$SELF_DIR/../../src/runtime/paths.uc"
 eq "activepath.watchdog" "$(grep -c "MB_WD_ACTIVE:-/etc/monkey-business/active" "$WD_SRC")" 1
 eq "activepath.rpcd" "$(grep -c "ACTIVE_FILE = CONF_DIR + '/active'" "$UC_SRC")" 1
 eq "activepath.confdir" "$(grep -c "CONF_DIR = '/etc/monkey-business'" "$UC_SRC")" 1

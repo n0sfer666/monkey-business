@@ -1,5 +1,10 @@
 import { test, assert, assertEq, run } from "../harness.uc";
 import * as h from "../../src/rpcd/handlers.uc";
+import * as hstatus from "../../src/rpcd/status.uc";
+import * as hsub from "../../src/rpcd/subscription.uc";
+import * as hping from "../../src/rpcd/ping.uc";
+import { directBypass } from "../../src/lib/bypass.uc";
+import * as hsel from "../../src/rpcd/select.uc";
 import { readfile } from "fs";
 
 const SUB = readfile("test/fixtures/sub_urilist.txt");
@@ -82,17 +87,17 @@ function freshState() {
 }
 
 test("maskUuid masks middle", function() {
-	assertEq(h.maskUuid("11111111-2222-3333-4444-555555555555"), "1111..5555");
-	assertEq(h.maskUuid("short"), "****");
+	assertEq(hstatus.maskUuid("11111111-2222-3333-4444-555555555555"), "1111..5555");
+	assertEq(hstatus.maskUuid("short"), "****");
 });
 
 test("parseUserinfo extracts traffic fields", function() {
-	let u = h.parseUserinfo(USERINFO);
+	let u = hsub.parseUserinfo(USERINFO);
 	assertEq(u.used_upload, "10");
 	assertEq(u.used_download, "20");
 	assertEq(u.total, "300");
 	assertEq(u.expire, "1796738263");
-	let empty = h.parseUserinfo("");
+	let empty = hsub.parseUserinfo("");
 	assertEq(empty.total, "");
 });
 
@@ -102,7 +107,7 @@ test("status reflects state and exposes traffic", function() {
 	st.running = true;
 	st.subscription.used_download = "20";
 	st.subscription.total = "300";
-	let r = h.status(mockCtx(st));
+	let r = hstatus.status(mockCtx(st));
 	assertEq(r.enabled, true);
 	assertEq(r.running, true);
 	assertEq(r.routing_mode, "bypass-local");
@@ -119,13 +124,13 @@ test("status exposes watchdog phase and last event", function() {
 	let ctx = mockCtx(st);
 	ctx.watchdogPhase = function() { return "down"; };
 	ctx.lastEvent = function() { return "VPN stopped, LAN on direct."; };
-	let r = h.status(ctx);
+	let r = hstatus.status(ctx);
 	assertEq(r.wd_phase, "down");
 	assertEq(r.last_event, "VPN stopped, LAN on direct.");
 });
 
 test("status stays valid when ctx has no watchdog hooks (older runtime)", function() {
-	let r = h.status(mockCtx(freshState()));
+	let r = hstatus.status(mockCtx(freshState()));
 	assertEq(r.wd_phase, null);
 	assertEq(r.last_event, "");
 });
@@ -137,7 +142,7 @@ test("status skips lastEvent while healthy", function() {
 	let ctx = mockCtx(freshState());
 	ctx.watchdogPhase = function() { return "healthy"; };
 	ctx.lastEvent = function() { calls++; return "should not be read"; };
-	let r = h.status(ctx);
+	let r = hstatus.status(ctx);
 	assertEq(r.wd_phase, "healthy");
 	assertEq(r.last_event, "");
 	assertEq(calls, 0);
@@ -147,7 +152,7 @@ test("subscriptionUpdate stores servers, url, userinfo and auto-selects", functi
 	let st = freshState();
 	st.fetchResult = { body: SUB, userinfo: USERINFO };
 	let ctx = mockCtx(st);
-	let r = h.subscriptionUpdate(ctx, { url: "https://new/sub" });
+	let r = hsub.subscriptionUpdate(ctx, { url: "https://new/sub" });
 	assertEq(r.format, "uri-list");
 	assertEq(r.added, 2);
 	assertEq(length(st.servers), 2);
@@ -160,11 +165,11 @@ test("subscriptionUpdate preserves manual order on re-fetch", function() {
 	let st = freshState();
 	st.fetchResult = { body: SUB, userinfo: "" };
 	let ctx = mockCtx(st);
-	h.subscriptionUpdate(ctx, {});
+	hsub.subscriptionUpdate(ctx, {});
 	// эмулируем drag: реверс порядка
 	st.servers = [ st.servers[1], st.servers[0] ];
 	let firstTag = st.servers[0].tag;
-	h.subscriptionUpdate(ctx, {});
+	hsub.subscriptionUpdate(ctx, {});
 	assertEq(st.servers[0].tag, firstTag);
 	assertEq(length(st.servers), 2);
 });
@@ -173,7 +178,7 @@ test("subscriptionUpdate keeps distinct servers, collapses exact dupes (5-vs-7 f
 	let st = freshState();
 	st.fetchResult = { body: SUB_HOPS, userinfo: "" };
 	let ctx = mockCtx(st);
-	h.subscriptionUpdate(ctx, {});
+	hsub.subscriptionUpdate(ctx, {});
 	// 5 ссылок: 🛡️NL/🛡️FR (один hop, отличие только tag), 🚀NL/🚀FR (разные порты), дубль 🛡️NL.
 	// serverKey = идентичность подключения + tag -> 4 уникальных, точный дубль 🛡️NL схлопнут.
 	assertEq(length(st.servers), 4);
@@ -191,14 +196,14 @@ test("subscriptionUpdate keeps distinct servers, collapses exact dupes (5-vs-7 f
 test("subscriptionUpdate falls back to saved url when arg empty", function() {
 	let st = freshState();
 	st.fetchResult = { body: SUB, userinfo: "" };
-	let r = h.subscriptionUpdate(mockCtx(st), {});
+	let r = hsub.subscriptionUpdate(mockCtx(st), {});
 	assertEq(r.added, 2);
 });
 
 test("subscriptionUpdate errors on empty url everywhere", function() {
 	let st = freshState();
 	st.subscription = {};
-	let r = h.subscriptionUpdate(mockCtx(st), {});
+	let r = hsub.subscriptionUpdate(mockCtx(st), {});
 	assertEq(r.error, "no subscription url");
 });
 
@@ -206,7 +211,7 @@ test("subscriptionUpdate keeps old list on fetch failure", function() {
 	let st = freshState();
 	st.servers = [{ tag: "old", address: "x", port: 1, security: "tls", transport: { type: "tcp" }, uuid: "aaaaaaaa-bbbb" }];
 	st.fetchResult = null;
-	let r = h.subscriptionUpdate(mockCtx(st), {});
+	let r = hsub.subscriptionUpdate(mockCtx(st), {});
 	assertEq(r.error, "fetch failed");
 	assertEq(r.kept, 1);
 	assertEq(length(st.servers), 1);
@@ -216,7 +221,7 @@ test("subscriptionUpdate reports empty parse without wiping", function() {
 	let st = freshState();
 	st.servers = [{ tag: "old", address: "x", port: 1, security: "tls", transport: { type: "tcp" }, uuid: "u" }];
 	st.fetchResult = { body: "not a subscription", userinfo: "" };
-	let r = h.subscriptionUpdate(mockCtx(st), {});
+	let r = hsub.subscriptionUpdate(mockCtx(st), {});
 	assertEq(r.error, "no servers parsed");
 	assertEq(length(st.servers), 1);
 });
@@ -225,8 +230,8 @@ test("serversList masks uuid and exposes priority sorted", function() {
 	let st = freshState();
 	st.fetchResult = { body: SUB, userinfo: "" };
 	let ctx = mockCtx(st);
-	h.subscriptionUpdate(ctx, {});
-	let r = h.serversList(ctx);
+	hsub.subscriptionUpdate(ctx, {});
+	let r = hstatus.serversList(ctx);
 	assertEq(length(r.servers), 2);
 	assertEq(r.servers[0].uuid_masked, "1111..5555");
 	assertEq(r.servers[0].priority, 0);
@@ -241,7 +246,7 @@ test("subscriptionUpdate dedups hysteria servers by password, not address", func
 	let st = freshState();
 	st.fetchResult = { body: SUB_HY, userinfo: "" };
 	let ctx = mockCtx(st);
-	let r = h.subscriptionUpdate(ctx, {});
+	let r = hsub.subscriptionUpdate(ctx, {});
 	assertEq(r.added, 2);
 	assertEq(length(st.servers), 2);
 });
@@ -250,9 +255,9 @@ test("protocol is exposed in status and servers list", function() {
 	let st = freshState();
 	st.fetchResult = { body: SUB_HY, userinfo: "" };
 	let ctx = mockCtx(st);
-	h.subscriptionUpdate(ctx, {});
-	assertEq(h.serversList(ctx).servers[0].protocol, "hysteria2");
-	assertEq(h.status(ctx).protocol, "hysteria2");
+	hsub.subscriptionUpdate(ctx, {});
+	assertEq(hstatus.serversList(ctx).servers[0].protocol, "hysteria2");
+	assertEq(hstatus.status(ctx).protocol, "hysteria2");
 });
 
 test("configApply writes the hysteria config for a hy2 server", function() {
@@ -261,7 +266,7 @@ test("configApply writes the hysteria config for a hy2 server", function() {
 	st.hysteriaInstalled = true;
 	st.fetchResult = { body: SUB_HY, userinfo: "" };
 	let ctx = mockCtx(st);
-	h.subscriptionUpdate(ctx, {});
+	hsub.subscriptionUpdate(ctx, {});
 	let r = h.configApply(ctx);
 	assertEq(r.ok, true);
 	assertEq(json(st.hysteriaConf).auth, "pass1");
@@ -275,7 +280,7 @@ test("configApply refuses a hy2 server without the client installed", function()
 	st.global.enabled = "1";
 	st.fetchResult = { body: SUB_HY, userinfo: "" };
 	let ctx = mockCtx(st);
-	h.subscriptionUpdate(ctx, {});
+	hsub.subscriptionUpdate(ctx, {});
 	let r = h.configApply(ctx);
 	assert(r.error != null, "error returned");
 	assert(st.applied == null, "xray config not applied");
@@ -285,7 +290,7 @@ test("serviceToggle refuses a hy2 server without the client installed", function
 	let st = freshState();
 	st.fetchResult = { body: SUB_HY, userinfo: "" };
 	let ctx = mockCtx(st);
-	h.subscriptionUpdate(ctx, {});
+	hsub.subscriptionUpdate(ctx, {});
 	let r = h.serviceToggle(ctx, { enabled: true });
 	assert(r.error != null, "error returned");
 	assertEq(r.enabled, false);
@@ -300,7 +305,7 @@ test("hy2 without the client is skipped in favour of a vless below it", function
 	st.global.enabled = "1";
 	st.fetchResult = { body: SUB_HY + SUB, userinfo: "" };
 	let ctx = mockCtx(st);
-	h.subscriptionUpdate(ctx, {});
+	hsub.subscriptionUpdate(ctx, {});
 	let r = h.configApply(ctx);
 	assertEq(r.ok, true);
 	assertEq(r.server, "Server A");
@@ -314,8 +319,8 @@ test("serversList never leaks parts of a hysteria password", function() {
 	let st = freshState();
 	st.fetchResult = { body: SUB_HY, userinfo: "" };
 	let ctx = mockCtx(st);
-	h.subscriptionUpdate(ctx, {});
-	let s = h.serversList(ctx).servers[0];
+	hsub.subscriptionUpdate(ctx, {});
+	let s = hstatus.serversList(ctx).servers[0];
 	assertEq(s.uuid_masked, "****");
 	assert(!exists(s, "password"), "raw password not leaked");
 });
@@ -328,14 +333,14 @@ test("selectBest picks first by order (priority), ignoring ping", function() {
 		{ tag: "C", address: "c", port: 3 },
 	];
 	st.pings = { "A": null, "B": 50, "C": 20 };
-	let chosen = h.selectBest(mockCtx(st));
+	let chosen = hsel.selectBest(mockCtx(st));
 	assertEq(chosen.tag, "A");
 	assertEq(st.selected, "A");
 });
 
 test("selectBest returns null when no servers", function() {
 	let st = freshState();
-	assert(h.selectBest(mockCtx(st)) == null, "null on empty");
+	assert(hsel.selectBest(mockCtx(st)) == null, "null on empty");
 });
 
 test("configApply auto-selects and passes dns+anti_dpi", function() {
@@ -344,7 +349,7 @@ test("configApply auto-selects and passes dns+anti_dpi", function() {
 	st.fetchResult = { body: SUB, userinfo: "" };
 	st.anti_dpi.xhttp_padding = "1";
 	let ctx = mockCtx(st);
-	h.subscriptionUpdate(ctx, {});
+	hsub.subscriptionUpdate(ctx, {});
 	st.selected = null;
 	let r = h.configApply(ctx);
 	assertEq(r.ok, true);
@@ -361,7 +366,7 @@ test("configApply re-selects first server by order (reorder switches active)", f
 	st.global.enabled = "1";
 	st.fetchResult = { body: SUB, userinfo: "" };
 	let ctx = mockCtx(st);
-	h.subscriptionUpdate(ctx, {});
+	hsub.subscriptionUpdate(ctx, {});
 	// эмулируем drag: второй сервер становится первым
 	st.servers = [ st.servers[1], st.servers[0] ];
 	st.selected = st.servers[1].tag;   // активен пока старый первый
@@ -382,7 +387,7 @@ test("configApply surfaces apply/validation error", function() {
 	st.global.enabled = "1";
 	st.fetchResult = { body: SUB, userinfo: "" };
 	let ctx = mockCtx(st);
-	h.subscriptionUpdate(ctx, {});
+	hsub.subscriptionUpdate(ctx, {});
 	st.applyErr = "xray: invalid config";
 	let r = h.configApply(ctx);
 	assertEq(r.error, "xray: invalid config");
@@ -393,7 +398,7 @@ test("configApply fails over past unreachable server to next working", function(
 	st.global.enabled = "1";
 	st.fetchResult = { body: SUB, userinfo: "" };
 	let ctx = mockCtx(st);
-	h.subscriptionUpdate(ctx, {});
+	hsub.subscriptionUpdate(ctx, {});
 	// первый по приоритету не проходит пробу -> failover на второй (имя-агностично)
 	st.probeFail = {};
 	st.probeFail[st.servers[0].tag] = true;
@@ -409,7 +414,7 @@ test("configApply falls back to top when all probes fail (kill-switch preserved)
 	st.global.enabled = "1";
 	st.fetchResult = { body: SUB, userinfo: "" };
 	let ctx = mockCtx(st);
-	h.subscriptionUpdate(ctx, {});
+	hsub.subscriptionUpdate(ctx, {});
 	st.probeFail = {};
 	for (let s in st.servers)
 		st.probeFail[s.tag] = true;
@@ -425,7 +430,7 @@ test("configApply skips runtime work while disabled", function() {
 	let st = freshState();
 	st.fetchResult = { body: SUB, userinfo: "" };
 	let ctx = mockCtx(st);
-	h.subscriptionUpdate(ctx, {});
+	hsub.subscriptionUpdate(ctx, {});
 	let before = st.selected;
 	st.global.enabled = "0";
 	let r = h.configApply(ctx);
@@ -449,16 +454,16 @@ test("setRouting persists lists while disabled", function() {
 // оставалась пара, в которой xray гонит регион в туннель, а ядро в это же время уводит RU-CIDR
 // мимо него — трафик идёт открытым в режиме, где пользователь этого не просил.
 test("directBypass follows the routing mode and the region", function() {
-	assertEq(h.directBypass({ routing_mode: "bypass-local", local_region: "ru" }), true);
-	assertEq(h.directBypass({ routing_mode: "bypass-local", local_region: "cn" }), false);
-	assertEq(h.directBypass({ routing_mode: "bypass-local", local_region: "other" }), false);
-	assertEq(h.directBypass({ routing_mode: "gfwlist", local_region: "ru" }), false);
-	assertEq(h.directBypass({ routing_mode: "global", local_region: "ru" }), false);
+	assertEq(directBypass({ routing_mode: "bypass-local", local_region: "ru" }), true);
+	assertEq(directBypass({ routing_mode: "bypass-local", local_region: "cn" }), false);
+	assertEq(directBypass({ routing_mode: "bypass-local", local_region: "other" }), false);
+	assertEq(directBypass({ routing_mode: "gfwlist", local_region: "ru" }), false);
+	assertEq(directBypass({ routing_mode: "global", local_region: "ru" }), false);
 	// пустая секция = дефолты конфига (bypass-local + ru); пустая строка = то же самое, что
 	// отсутствие ключа — иначе расчёт разъехался бы с mb_direct_bypass() в init-скрипте
-	assertEq(h.directBypass({}), true);
-	assertEq(h.directBypass({ routing_mode: "", local_region: "" }), true);
-	assertEq(h.directBypass({ routing_mode: "", local_region: "cn" }), false);
+	assertEq(directBypass({}), true);
+	assertEq(directBypass({ routing_mode: "", local_region: "" }), true);
+	assertEq(directBypass({ routing_mode: "", local_region: "cn" }), false);
 });
 
 test("setMode commits the pair, applies it and reports the derived bypass", function() {
@@ -466,7 +471,7 @@ test("setMode commits the pair, applies it and reports the derived bypass", func
 	st.global.enabled = "1";
 	st.fetchResult = { body: SUB, userinfo: "" };
 	let ctx = mockCtx(st);
-	h.subscriptionUpdate(ctx, {});
+	hsub.subscriptionUpdate(ctx, {});
 	st.applied = null;
 	let r = h.setMode(ctx, { mode: "gfwlist", region: "ru" });
 	assertEq(st.global.routing_mode, "gfwlist");
@@ -503,7 +508,7 @@ test("setMode rolls the pair back when the apply fails", function() {
 	st.global.enabled = "1";
 	st.fetchResult = { body: SUB, userinfo: "" };
 	let ctx = mockCtx(st);
-	h.subscriptionUpdate(ctx, {});
+	hsub.subscriptionUpdate(ctx, {});
 	st.applyErr = "xray: invalid config";
 	let r = h.setMode(ctx, { mode: "global", region: "cn" });
 	assert(index(r.error, "invalid config") >= 0, "error is reported");
@@ -530,10 +535,10 @@ test("status prefers the applied bypass over the configured one", function() {
 	let st = freshState();
 	let ctx = mockCtx(st);
 	ctx.directBypassActive = function() { return false; };
-	assertEq(h.status(ctx).direct_bypass, false);
+	assertEq(hstatus.status(ctx).direct_bypass, false);
 	ctx.directBypassActive = function() { return true; };
 	st.global.routing_mode = "global";
-	assertEq(h.status(ctx).direct_bypass, true);
+	assertEq(hstatus.status(ctx).direct_bypass, true);
 });
 
 // Дефолтный cap=0 обязан значить «весь список»: жёсткий потолок делал рабочий сервер в хвосте
@@ -542,12 +547,12 @@ test("selectWorking with default cap probes every server", function() {
 	let st = freshState();
 	st.fetchResult = { body: SUB, userinfo: "" };
 	let ctx = mockCtx(st);
-	h.subscriptionUpdate(ctx, {});
+	hsub.subscriptionUpdate(ctx, {});
 	let last = st.servers[length(st.servers) - 1];
 	st.probeFail = {};
 	for (let s in st.servers)
 		st.probeFail[s.tag] = (s.tag != last.tag);
-	let r = h.selectWorking(ctx);
+	let r = hsel.selectWorking(ctx);
 	assertEq(r.probed, true);
 	assertEq(r.server.tag, last.tag);
 });
@@ -556,11 +561,11 @@ test("selectWorking honours an explicit cap", function() {
 	let st = freshState();
 	st.fetchResult = { body: SUB, userinfo: "" };
 	let ctx = mockCtx(st);
-	h.subscriptionUpdate(ctx, {});
+	hsub.subscriptionUpdate(ctx, {});
 	st.failoverCap = 1;
 	st.probeFail = {};
 	st.probeFail[st.servers[0].tag] = true;
-	let r = h.selectWorking(ctx);
+	let r = hsel.selectWorking(ctx);
 	assertEq(r.probed, false);
 	assertEq(r.server.tag, st.servers[0].tag);
 });
@@ -569,7 +574,7 @@ test("serviceToggle on connects (selects+applies+enables)", function() {
 	let st = freshState();
 	st.fetchResult = { body: SUB, userinfo: "" };
 	let ctx = mockCtx(st);
-	h.subscriptionUpdate(ctx, {});
+	hsub.subscriptionUpdate(ctx, {});
 	st.selected = null;
 	st.global.enabled = "0";
 	let r = h.serviceToggle(ctx, { enabled: true });
@@ -593,7 +598,7 @@ test("serviceToggle on surfaces apply error, stays off", function() {
 	let st = freshState();
 	st.fetchResult = { body: SUB, userinfo: "" };
 	let ctx = mockCtx(st);
-	h.subscriptionUpdate(ctx, {});
+	hsub.subscriptionUpdate(ctx, {});
 	st.applyErr = "bad config";
 	let r = h.serviceToggle(ctx, { enabled: true });
 	assertEq(r.enabled, false);
@@ -609,7 +614,7 @@ test("serviceToggle on tears down the tunnel if intent cannot be saved", functio
 	let st = freshState();
 	st.fetchResult = { body: SUB, userinfo: "" };
 	let ctx = mockCtx(st);
-	h.subscriptionUpdate(ctx, {});
+	hsub.subscriptionUpdate(ctx, {});
 	st.setEnabledFail = true;
 	let r = h.serviceToggle(ctx, { enabled: true });
 	assertEq(r.enabled, false);
@@ -631,9 +636,9 @@ test("serversPing picks best latency", function() {
 	let st = freshState();
 	st.fetchResult = { body: SUB, userinfo: "" };
 	let ctx = mockCtx(st);
-	h.subscriptionUpdate(ctx, {});
+	hsub.subscriptionUpdate(ctx, {});
 	st.pings = { "Server A": 120, "Server B": 45 };
-	let r = h.serversPing(ctx);
+	let r = hping.serversPing(ctx);
 	assertEq(r.best, "Server B");
 	assertEq(length(r.results), 2);
 });
