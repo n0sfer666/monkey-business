@@ -1,6 +1,9 @@
 import { test, assert, assertEq, assertThrows, run } from "../harness.uc";
 import { parse } from "../../src/parser/subscription.uc";
-import { generate, buildRouting, buildStreamSettings, buildDns } from "../../src/generator/xray.uc";
+import { generate } from "../../src/generator/xray.uc";
+import { buildRouting } from "../../src/generator/routing.uc";
+import { buildStreamSettings } from "../../src/generator/outbounds.uc";
+import { buildDns } from "../../src/generator/dns.uc";
 import { readfile } from "fs";
 
 const SERVERS = parse(readfile("test/fixtures/sub_urilist.txt")).servers;
@@ -67,7 +70,7 @@ test("routing mode: bypass-local default region ru", function() {
 });
 
 // Обещание дашборда: не выбрал bypass-local — geoip:<region>/geosite:<region> в direct не уходят
-// вовсе (и ядерный обход выключается вместе с ними, см. directBypass в rpcd/handlers.uc).
+// вовсе (и ядерный обход выключается вместе с ними, см. directBypass в lib/bypass.uc).
 test("region geo goes direct only in bypass-local", function() {
 	for (let mode in ["global", "gfwlist"]) {
 		let r = buildRouting({ routing_mode: mode, local_region: "ru" });

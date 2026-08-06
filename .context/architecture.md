@@ -4,13 +4,16 @@
 ┌─────────────────────────────────────────────┐
 │  LuCI client-side JS (luci/)                 │  dashboard / servers / settings / first-run
 ├─────────────────────────────────────────────┤
-│  rpcd-сервис (src/rpcd/*.uc)                 │  ubus-методы: status, servers.*, subscription.*,
-│                                              │  geo.update, config.apply, service.toggle
+│  rpcd-сервис (src/rpcd/*.uc)                 │  чистые хендлеры ubus-методов: handlers (мутации),
+│                                              │  status, subscription, select, ping, hysteria
 │                                              │  connect → selectWorking (проба серверов по порядку)
+│  Рантайм плагина (src/runtime/*.uc)          │  всё, что трогает устройство: shell, uci, net,
+│                                              │  apply (валидация+atomic install), hysteria, paths
 ├─────────────────────────────────────────────┤
 │  UCI /etc/config/monkey-business             │  источник правды
 ├─────────────────────────────────────────────┤
-│  Генератор (src/generator/xray.uc)           │  UCI-структура → Xray JSON (+ generateProbe)
+│  Генератор (src/generator/xray.uc)           │  UCI-структура → Xray JSON (+ generateProbe);
+│    inbounds/outbounds/routing/dns.uc         │  секции конфига по отдельности
 │           (src/generator/hysteria.uc)        │  сервер → конфиг hysteria-клиента + socks-аутбаунд
 │  Парсер (src/parser/subscription.uc)         │  подписка → нормализованные серверы (vless + hy2)
 │  Lib (src/lib/*.uc)                          │  общие утилиты (uri, validation)

@@ -39,7 +39,7 @@ mb_opt() {
 # наполняются ru.txt. В gfwlist/global правила geoip:<region> -> direct в конфиге нет, и обход в
 # ядре противоречил бы выбранному режиму — часть трафика минует туннель мимо намерения пользователя.
 # Здесь расчёт авторитетен для файрвола; тот же расчёт для UI/статуса — directBypass() в
-# src/rpcd/handlers.uc.
+# src/lib/bypass.uc.
 mb_direct_bypass() {
 	[ "$(mb_opt routing_mode bypass-local)" = bypass-local ] &&
 		[ "$(mb_opt local_region ru)" = ru ] && echo 1 || echo 0

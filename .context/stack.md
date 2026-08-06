@@ -23,7 +23,7 @@
 - **Direct-bypass:** nft-сеты `mb_ru4`/`mb_ru6` (`ruset.sh`) — RU-CIDR минуют TPROXY в ядре и
   проходят leak-guard. Список — текстовый CIDR-дамп Loyalsoldier/geoip (не `.dat`). Своей UCI-опции
   НЕТ: включённость производна от сплита — `routing_mode=bypass-local` + `local_region=ru`
-  (`mb_direct_bypass()` в init.d — авторитет для файрвола, `directBypass()` в rpcd/handlers.uc — для
+  (`mb_direct_bypass()` в init.d — авторитет для файрвола, `directBypass()` в lib/bypass.uc — для
   UI; в status уходит ФАКТ из nft, а не намерение). Старый ключ `global.direct_bypass` удаляется
   миграцией `mb_migrate_bypass` при старте. Xray-правило `geoip:<регион> → direct` — safety-net.
 - **DNS:** прозрачный через Xray (клиентский :53 → dns-инбаунд :5300 → dns-модуль со сплитом:

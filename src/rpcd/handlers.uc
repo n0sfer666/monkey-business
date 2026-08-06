@@ -1,6 +1,7 @@
-// Чистые rpcd-хендлеры. Зависимости (uci/ubus/сеть/файлы) инкапсулированы в `ctx` —
-// это держит логику host-тестируемой. Рантайм-привязка ctx — в
-// root/usr/share/rpcd/ucode/monkey-business.uc.
+// Чистые rpcd-хендлеры, меняющие состояние: применение конфига, тумблер, режим/правила, geo.
+// Чтение (status/servers_list) — в status.uc, подписка — в subscription.uc, выбор сервера — в
+// select.uc, замер пинга — в ping.uc. Зависимости (uci/ubus/сеть/файлы) инкапсулированы в `ctx` —
+// это держит логику host-тестируемой. Рантайм-привязка ctx — в root/usr/share/rpcd/ucode/monkey-business.uc.
 //
 // Контракт ctx:
 //   getGlobal() -> { enabled, routing_mode, local_region, tproxy_port, custom_direct, custom_proxy, ... }
@@ -8,7 +9,6 @@
 //   getSubscription() -> { url, used_upload, used_download, total, expire, ... }
 //   getServers() -> [server, ...]      setServers(arr)
 //   getSelectedServer() -> server|null   setSelected(tag) — рантайм-состояние, НЕ uci-commit
-//   setSubscriptionUrl(url)   setUserinfo({used_upload,used_download,total,expire})
 //   fetchSubscription(url) -> { body, userinfo }|null   pingServer(server) -> int(ms)|null
 //   applyConfig(jsonStr, intentOn?) -> errString|null (валидирует + запускает; intentOn=true обходит
 //     гейт по enabled в init-скрипте — только для пути включения)   stopService()
@@ -18,103 +18,16 @@
 //   setCustomRouting(direct, proxy)   setMode(mode, region) -> bool (легло ли в UCI)
 //   directBypassActive() -> bool (ФАКТ из nft, не намерение)   geoStatus() -> { state, geoip, geosite }
 //   geoInstall(which) -> { ok, detail }   checkExit(domain) -> { ip, country, code }|{ error }
+//   hysteriaInstalled() -> bool   applyHysteria(jsonStr|null) -> errString|null
 
-import { parse } from "../parser/subscription.uc";
+import { isTrue } from "../lib/val.uc";
 import { generateJson } from "../generator/xray.uc";
-import { isHysteria } from "../generator/hysteria.uc";
+import { selectWorking } from "./select.uc";
+import { directBypass } from "../lib/bypass.uc";
 import { prepareHysteria } from "./hysteria.uc";
-
-function isTrue(v) {
-	return v == true || v == "1" || v == 1;
-}
 
 const ROUTING_MODES = ["bypass-local", "gfwlist", "global"];
 const LOCAL_REGIONS = ["ru", "cn", "ir", "other"];
-
-// Ядерный обход (nft-сеты mb_ru4/mb_ru6) — производная режима, а не отдельный тумблер: RU-CIDR
-// минуют туннель в ядре только там, где регион гонит в direct и сам xray (bypass-local), и только
-// для RU (сеты наполняются ru.txt). Считается тут для UI/статуса; для файрвола тот же расчёт делает
-// mb_direct_bypass() в root/etc/init.d/monkey-business — он и передаёт MB_DIRECT_BYPASS в apply.sh.
-function directBypass(g) {
-	return (g.routing_mode || "bypass-local") == "bypass-local" && (g.local_region || "ru") == "ru";
-}
-
-function maskUuid(u) {
-	if (u == null || length(u) < 12)
-		return "****";
-	return substr(u, 0, 4) + ".." + substr(u, length(u) - 4);
-}
-
-// "upload=0; download=123; total=456; expire=789" -> объект (значения строками)
-function parseUserinfo(s) {
-	let out = { used_upload: "", used_download: "", total: "", expire: "" };
-	if (type(s) != "string" || trim(s) == "")
-		return out;
-	for (let part in split(s, ";")) {
-		let kv = split(trim(part), "=");
-		if (length(kv) != 2)
-			continue;
-		let k = trim(kv[0]), v = trim(kv[1]);
-		if (k == "upload") out.used_upload = v;
-		else if (k == "download") out.used_download = v;
-		else if (k == "total") out.total = v;
-		else if (k == "expire") out.expire = v;
-	}
-	return out;
-}
-
-// Порядок серверов = порядок секций UCI (drag-reorder в GridSection) — единственный источник
-// приоритета. Backend и UI уважают этот порядок; re-fetch его сохраняет (см. subscriptionUpdate).
-function orderedServers(ctx) {
-	return ctx.getServers();
-}
-
-// Активный сервер = ПЕРВЫЙ по приоритету (порядок секций UCI = предпочтение пользователя).
-// Probe доступности (nc/tcpPing) здесь ненадёжен (даёт ложные негативы даже на рабочих Reality-
-// серверах), поэтому не используем его для выбора. Реальный runtime-failover — через Xray balancer
-// (отдельная фича). "Test latency" в UI остаётся как информация.
-function selectBest(ctx) {
-	let servers = orderedServers(ctx);
-	if (length(servers) == 0)
-		return null;
-	let chosen = servers[0];
-	ctx.setSelected(chosen.tag);
-	return chosen;
-}
-
-// Failover по приоритету: идём по порядку, для каждого кандидата ctx.probeServer поднимает эфемерный
-// туннель и гоняет реальную пробу связности; первый прошедший — активный. Имя-агностично (только
-// порядок + результат пробы), работает на любой подписке. Если ни один не прошёл — фолбэк на servers[0]
-// (kill-switch должен остаться, а watchdog разберётся дальше). Возврат: { server, probed }.
-// Кандидат, который заведомо не поднимется (hysteria без установленного клиента), выбывает ДО пробы.
-// Иначе hysteria на первой позиции ломала фолбэк: prepareHysteria отказывал на servers[0], и
-// config_apply не применял НИЧЕГО при живых vless ниже по списку — а recovery.sh на этом отказе
-// делает фазу down терминальной (ровно тот дефект, что чинил 8146280). Незапускаемых меньше, чем
-// весь список — работаем с остатком; список ИЗ ОДНИХ таких оставляем как есть, чтобы отказ пришёл
-// от prepareHysteria с внятной причиной, а не «no servers».
-function runnableServers(ctx) {
-	let servers = orderedServers(ctx);
-	if (ctx.hysteriaInstalled == null || ctx.hysteriaInstalled())
-		return servers;
-	let rest = filter(servers, function(s) { return !isHysteria(s); });
-	return (length(rest) > 0) ? rest : servers;
-}
-
-function selectWorking(ctx) {
-	let servers = runnableServers(ctx);
-	if (length(servers) == 0)
-		return null;
-	let cap = ctx.failoverCap ? ctx.failoverCap() : 0;
-	let n = (cap > 0 && cap < length(servers)) ? cap : length(servers);
-	for (let i = 0; i < n; i++) {
-		if (ctx.probeServer(servers[i])) {
-			ctx.setSelected(servers[i].tag);
-			return { server: servers[i], probed: true };
-		}
-	}
-	ctx.setSelected(servers[0].tag);
-	return { server: servers[0], probed: false };
-}
 
 function genConfig(ctx, server) {
 	return {
@@ -125,140 +38,6 @@ function genConfig(ctx, server) {
 		test_socks: true,
 		dns_transparent: true,
 	};
-}
-
-// wd_phase: healthy|reconnecting|down|null(watchdog ещё не тикал / выключен). Фаза `down`
-// означает, что watchdog СНЯЛ туннель и LAN идёт напрямую — без этого UI показывал
-// «Starting…» и выглядел как «сейчас поднимется», хотя ничего уже не поднималось.
-function status(ctx) {
-	let g = ctx.getGlobal();
-	let s = ctx.getSelectedServer();
-	let sub = ctx.getSubscription();
-	// last_event читается только в проблемных фазах: UI показывает его лишь в плашке
-	// down/reconnecting, а status опрашивается раз в 5с — дампить за ним весь syslog постоянно
-	// значит жечь CPU роутера на строку, которую никто не видит.
-	let wd = ctx.watchdogPhase ? ctx.watchdogPhase() : null;
-	let noisy = (wd == "down" || wd == "reconnecting");
-	return {
-		enabled: isTrue(g.enabled),
-		running: ctx.serviceRunning(),
-		server: (s != null) ? s.tag : null,
-		protocol: (s != null) ? (s.protocol || "vless") : null,
-		routing_mode: g.routing_mode,
-		local_region: g.local_region,
-		// ФАКТ из nft, а не намерение из UCI: индикатор обхода — это индикатор утечки, и он обязан
-		// показывать применённое. Пара в UCI может разойтись с файрволом (ручная правка uci, провал
-		// apply, VPN выключен -> правил нет вовсе). Нет ctx.directBypassActive — фолбэк на расчёт.
-		direct_bypass: ctx.directBypassActive ? ctx.directBypassActive() : directBypass(g),
-		wd_phase: wd,
-		last_event: (noisy && ctx.lastEvent) ? ctx.lastEvent() : "",
-		traffic: {
-			used_upload: sub.used_upload || "",
-			used_download: sub.used_download || "",
-			total: sub.total || "",
-			expire: sub.expire || "",
-		},
-	};
-}
-
-function serversList(ctx) {
-	let out = [];
-	let i = 0;
-	for (let s in orderedServers(ctx)) {
-		push(out, {
-			tag: s.tag,
-			protocol: s.protocol || "vless",
-			address: s.address,
-			port: s.port,
-			security: s.security,
-			transport: (s.transport != null) ? s.transport.type : "tcp",
-			priority: i,
-			insecure: (s.insecure == "1"),
-			// У vless в uuid 36 случайных символов, и края маски безобидны. У hysteria
-			// учётные данные живут в password, а uuid парсер оставляет пустым — но секция UCI правится
-			// и руками, и попавший в uuid пароль ушёл бы краями в браузер на каждый рендер дашборда
-			// (servers_list в read-группе ACL). Сам password наружу не отдаём вообще.
-			uuid_masked: (s.protocol == "hysteria2") ? "****" : maskUuid(s.uuid),
-		});
-		i++;
-	}
-	return { servers: out };
-}
-
-function serverKey(s) {
-	let tr = (type(s.transport) == "object") ? s.transport : {};
-	let re = (type(s.reality) == "object") ? s.reality : {};
-	let ob = (type(s.obfs) == "object") ? s.obfs : {};
-	let alpn = (type(s.alpn) == "array") ? join(",", s.alpn) : "";
-	return join("|", [
-		s.tag || "",
-		s.protocol || "vless",
-		s.address || "", "" + (s.port || ""), s.uuid || "",
-		s.security || "", s.flow || "", s.sni || "", s.fingerprint || "", alpn,
-		re.publicKey || "", re.shortId || "", re.spiderX || "",
-		tr.type || "", tr.path || "", tr.host || "", tr.mode || "", tr.serviceName || "",
-		// hysteria2: учётные данные тут в password/obfs, а не в uuid — без них два разных сервера с
-		// одинаковым адресом схлопывались бы в один и re-fetch терял бы половину подписки.
-		s.password || "", ob.type || "", ob.password || "",
-		s.insecure || "", s.pin_sha256 || "", s.mport || "",
-	]);
-}
-
-function subscriptionUpdate(ctx, args) {
-	let url = (args != null && args.url != null && args.url != "") ? args.url : ctx.getSubscription().url;
-	if (url == null || url == "")
-		return { error: "no subscription url" };
-
-	let resp = ctx.fetchSubscription(url);
-	if (resp == null || resp.body == null)
-		return { error: "fetch failed", kept: length(ctx.getServers()) };
-
-	let res = parse(resp.body);
-	if (length(res.servers) == 0)
-		return { error: "no servers parsed", format: res.format, kept: length(ctx.getServers()) };
-
-	// СОХРАНИТЬ РУЧНОЙ ПОРЯДОК: выдать существующие серверы в их текущем порядке (матч по ключу,
-	// данные обновляются из свежей подписки), новые — в конец. Иначе re-fetch (Save&Apply/
-	// автообновление) сбрасывал бы drag-сортировку к порядку подписки.
-	let byKey = {};
-	for (let sv in res.servers)
-		byKey[serverKey(sv)] = sv;
-	let ordered = [];
-	let used = {};
-	for (let old in ctx.getServers()) {
-		let k = serverKey(old);
-		if (byKey[k] != null && used[k] == null) {
-			push(ordered, byKey[k]);
-			used[k] = true;
-		}
-	}
-	for (let sv in res.servers) {
-		let k = serverKey(sv);
-		if (used[k] == null) {
-			push(ordered, sv);
-			used[k] = true;
-		}
-	}
-	ctx.setServers(ordered);
-	ctx.setSubscriptionUrl(url);
-	if (resp.userinfo != null && resp.userinfo != "")
-		ctx.setUserinfo(parseUserinfo(resp.userinfo));
-	selectBest(ctx);
-	return { format: res.format, added: length(res.servers), errors: res.errors };
-}
-
-function serversPing(ctx) {
-	let results = [];
-	let best = null, bestMs = null;
-	for (let s in orderedServers(ctx)) {
-		let ms = ctx.pingServer(s);
-		push(results, { tag: s.tag, latency_ms: ms });
-		if (ms != null && (bestMs == null || ms < bestMs)) {
-			bestMs = ms;
-			best = s.tag;
-		}
-	}
-	return { results: results, best: best };
 }
 
 // При выключенном VPN рантайм не трогаем вообще: init-скрипт всё равно не поднимет xray (гейт по
@@ -375,4 +154,4 @@ function checkExit(ctx, args) {
 	return ctx.checkExit(domain);
 }
 
-export { status, serversList, subscriptionUpdate, serversPing, configApply, serviceToggle, geoUpdate, setRouting, setMode, geoStatus, geoInstall, checkExit, maskUuid, parseUserinfo, selectBest, selectWorking, directBypass };
+export { configApply, serviceToggle, geoUpdate, setRouting, setMode, geoStatus, geoInstall, checkExit };

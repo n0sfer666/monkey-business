@@ -158,14 +158,14 @@ no "intent.no_flush" "$CALLS" "flush.sh"
 # 12. Префикс MB_INTENT сшивается строкой в рантайме rpcd, и опечатка в ней (потерянный хвостовой
 #     пробел, `MB_INTENT =1`) молча ломала бы КАЖДОЕ включение при enabled=0: моки такого не видят,
 #     потому что читают переменную, а не команду. Пиним обе половины склейки.
-RT="$SELF_DIR/../../root/usr/share/rpcd/ucode/monkey-business.uc"
+RT="$SELF_DIR/../../src/runtime/apply.uc"
 has "intent.runtime_prefix" "$RT" "intentOn ? 'MB_INTENT=1 ' : ''"
 has "intent.runtime_cmd" "$RT" "+ '/etc/init.d/monkey-business reload"
 
 # 13. Ядерный обход (MB_DIRECT_BYPASS для apply.sh) — производная режима, а не отдельный тумблер:
 #     RU-CIDR минуют туннель в ядре только там, где регион гонит в direct и сам xray (bypass-local),
 #     и только для RU — сеты наполняются ru.txt. Для файрвола авторитетен именно этот расчёт
-#     (directBypass в src/rpcd/handlers.uc считает то же для UI/статуса). Ошибка здесь = часть
+#     (directBypass в src/lib/bypass.uc считает то же для UI/статуса). Ошибка здесь = часть
 #     трафика идёт мимо туннеля в режиме, где пользователь этого не просил.
 eq() { if [ "$2" = "$3" ]; then PASS=$((PASS+1)); else FAIL=$((FAIL+1)); echo "FAIL $1: want[$3] got[$2]"; fi; }
 bypass_for() { MB_MODE="$1"; MB_REGION="$2"; mb_direct_bypass; }
