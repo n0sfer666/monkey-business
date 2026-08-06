@@ -59,6 +59,8 @@ function mockCtx(state) {
 			return true;
 		},
 		updateGeo: function() { return { status: "ok", files: ["geoip.dat", "geosite.dat"] }; },
+		hysteriaInstalled: function() { return state.hysteriaInstalled === true; },
+		applyHysteria: function(j) { state.hysteriaConf = j; return null; },
 	};
 }
 
@@ -229,6 +231,93 @@ test("serversList masks uuid and exposes priority sorted", function() {
 	assertEq(r.servers[0].uuid_masked, "1111..5555");
 	assertEq(r.servers[0].priority, 0);
 	assert(!exists(r.servers[0], "uuid"), "raw uuid not leaked");
+});
+
+const SUB_HY = "hy2://pass1@h.example:443#HY-A\nhy2://pass2@h.example:443#HY-A\n";
+
+// Учётные данные hy2 лежат в password, а не в uuid: без него два разных сервера с одинаковыми
+// адресом и тегом схлопнулись бы в один и половина подписки пропала бы на re-fetch.
+test("subscriptionUpdate dedups hysteria servers by password, not address", function() {
+	let st = freshState();
+	st.fetchResult = { body: SUB_HY, userinfo: "" };
+	let ctx = mockCtx(st);
+	let r = h.subscriptionUpdate(ctx, {});
+	assertEq(r.added, 2);
+	assertEq(length(st.servers), 2);
+});
+
+test("protocol is exposed in status and servers list", function() {
+	let st = freshState();
+	st.fetchResult = { body: SUB_HY, userinfo: "" };
+	let ctx = mockCtx(st);
+	h.subscriptionUpdate(ctx, {});
+	assertEq(h.serversList(ctx).servers[0].protocol, "hysteria2");
+	assertEq(h.status(ctx).protocol, "hysteria2");
+});
+
+test("configApply writes the hysteria config for a hy2 server", function() {
+	let st = freshState();
+	st.global.enabled = "1";
+	st.hysteriaInstalled = true;
+	st.fetchResult = { body: SUB_HY, userinfo: "" };
+	let ctx = mockCtx(st);
+	h.subscriptionUpdate(ctx, {});
+	let r = h.configApply(ctx);
+	assertEq(r.ok, true);
+	assertEq(json(st.hysteriaConf).auth, "pass1");
+	assertEq(json(st.applied).outbounds[0].protocol, "socks");
+});
+
+// Молча уйти в vless-путь нельзя: xray поднялся бы с аутбаундом в пустой socks при живом
+// kill-switch, а снаружи это выглядит как «интернет пропал».
+test("configApply refuses a hy2 server without the client installed", function() {
+	let st = freshState();
+	st.global.enabled = "1";
+	st.fetchResult = { body: SUB_HY, userinfo: "" };
+	let ctx = mockCtx(st);
+	h.subscriptionUpdate(ctx, {});
+	let r = h.configApply(ctx);
+	assert(r.error != null, "error returned");
+	assert(st.applied == null, "xray config not applied");
+});
+
+test("serviceToggle refuses a hy2 server without the client installed", function() {
+	let st = freshState();
+	st.fetchResult = { body: SUB_HY, userinfo: "" };
+	let ctx = mockCtx(st);
+	h.subscriptionUpdate(ctx, {});
+	let r = h.serviceToggle(ctx, { enabled: true });
+	assert(r.error != null, "error returned");
+	assertEq(r.enabled, false);
+	assert(st.applied == null, "tunnel not started");
+});
+
+// Отказ уместен, только когда поднимать НЕЧЕГО. Живой vless ниже по списку — не тот случай:
+// иначе hysteria на первой позиции без клиента запирала бы весь конфиг, а recovery.sh на отказе
+// config_apply делает фазу down терминальной.
+test("hy2 without the client is skipped in favour of a vless below it", function() {
+	let st = freshState();
+	st.global.enabled = "1";
+	st.fetchResult = { body: SUB_HY + SUB, userinfo: "" };
+	let ctx = mockCtx(st);
+	h.subscriptionUpdate(ctx, {});
+	let r = h.configApply(ctx);
+	assertEq(r.ok, true);
+	assertEq(r.server, "Server A");
+	assertEq(json(st.applied).outbounds[0].protocol, "vless");
+	assert(st.hysteriaConf == null, "hysteria config removed, not written");
+});
+
+// Пароль hy2 живёт в том же поле, что uuid у vless, — маскировать его «краями» значило бы отдавать
+// 8 символов настоящего секрета в браузер на каждый рендер дашборда.
+test("serversList never leaks parts of a hysteria password", function() {
+	let st = freshState();
+	st.fetchResult = { body: SUB_HY, userinfo: "" };
+	let ctx = mockCtx(st);
+	h.subscriptionUpdate(ctx, {});
+	let s = h.serversList(ctx).servers[0];
+	assertEq(s.uuid_masked, "****");
+	assert(!exists(s, "password"), "raw password not leaked");
 });
 
 test("selectBest picks first by order (priority), ignoring ping", function() {

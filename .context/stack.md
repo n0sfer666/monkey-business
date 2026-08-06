@@ -12,6 +12,10 @@
 
 ## Компоненты
 - **Прокси-движок:** Xray-core (этап 3). Генератор конфига абстрагирован под будущий sing-box.
+- **Второй протокол:** hysteria2 — отдельный процесс `hysteria client` (свой QUIC-стек, в xray его
+  нет), локальный socks `127.0.0.1:10810`, в который смотрит аутбаунд `proxy` xray. Поднимается
+  вторым procd-инстансом того же сервиса при наличии `/etc/monkey-business/hysteria.json`. Бинаря в
+  feeds нет — ставится кнопкой на дашборде (`hysteria.sh install` через `mb_fetch` + sha256).
 - **Backend-логика:** **ucode** (`.uc`) — парсер подписки, генератор UCI→Xray JSON, rpcd-хендлеры.
 - **UI:** LuCI client-side JS (luci-base, ubus/rpcd).
 - **Конфиг:** UCI `/etc/config/monkey-business` → генератор → Xray JSON.

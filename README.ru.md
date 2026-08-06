@@ -3,16 +3,23 @@
 [English](README.md) | **Русский**
 
 Минималистичный VPN-клиент для роутеров на **OpenWrt / ImmortalWrt** (целевое железо — **NanoPi R2S**).
-Reality + VLESS + XHTTP с простым интерфейсом на LuCI — лёгкая альтернатива passwall / v2rayA.
+Reality + VLESS + XHTTP (и hysteria2) с простым интерфейсом на LuCI — лёгкая альтернатива
+passwall / v2rayA.
 
 ```
 LuCI (JS) → rpcd (ucode) → UCI → генератор конфига → Xray-core + nftables TPROXY + dnsmasq
 ```
 
-Импорт подписки (формат определяется автоматически) или ручное добавление `vless://`-серверов;
-сплит-маршрутизация по geoip/geosite (локальный регион — напрямую, остальное — через туннель),
-kill-switch, блокировка утечки IPv6, split-DNS поверх DoH, anti-DPI (uTLS + XHTTP-паддинг) и
-дашборд на одном экране.
+Импорт подписки (формат определяется автоматически) или ручное добавление `vless://`- и
+`hysteria2://`-серверов; сплит-маршрутизация по geoip/geosite (локальный регион — напрямую,
+остальное — через туннель), kill-switch, блокировка утечки IPv6, split-DNS поверх DoH, anti-DPI
+(uTLS + XHTTP-паддинг) и дашборд на одном экране.
+
+Оба протокола живут в **одном** списке серверов: протокол — свойство сервера, поэтому порядок
+списка остаётся единственным приоритетом, а failover перебирает кандидатов сквозь протоколы.
+hysteria2 работает отдельным клиентом рядом с Xray (аутбаунд `proxy` превращается в локальный
+socks), так что сплит, DNS и kill-switch — ровно те же, что у VLESS. Бинарь клиента ставится
+кнопкой на дашборде.
 
 Две вещи происходят без вашего участия. **Трафик локального региона минует прокси прямо в ядре**:
 его CIDR-диапазоны лежат в nftables-сетах (`mb_ru4`/`mb_ru6`), исключённых из TPROXY, поэтому он не
@@ -97,9 +104,11 @@ make package
 
 ### Первый запуск
 
-1. Вкладка **Servers** — вставьте URL подписки и нажмите *Fetch*, либо добавьте `vless://`-сервер вручную.
+1. Вкладка **Servers** — вставьте URL подписки и нажмите *Fetch*, либо добавьте `vless://`- или
+   `hysteria2://`-сервер вручную.
 2. **Dashboard** — *Update geo databases* (скачивает и валидирует geoip/geosite `.dat`).
-3. **Dashboard** — *Turn on*. *Check exit IP* подтверждает, что трафик уходит через туннель.
+3. **Dashboard** — *Install / update hysteria* — только если в списке есть hysteria2-серверы.
+4. **Dashboard** — *Turn on*. *Check exit IP* подтверждает, что трафик уходит через туннель.
 
 ---
 
@@ -117,13 +126,14 @@ make test-integ  # netns TPROXY-перехват + сгенерированны�
 
 | Путь | Что |
 |------|------|
-| `src/parser/` | парсер подписки (base64 / uri-list; авто-определение формата) |
-| `src/generator/` | генератор UCI → Xray JSON (абстрагирован под будущий бэкенд sing-box) |
+| `src/parser/` | парсер подписки (base64 / uri-list; авто-определение формата; `vless://` + `hysteria2://`) |
+| `src/generator/` | генератор UCI → Xray JSON (абстрагирован под будущий бэкенд sing-box) + конфиг hysteria-клиента |
 | `src/rpcd/` | чистые rpcd-хендлеры (host-тестируемые; привязка ubus/uci в `root/…/rpcd/ucode`) |
+| `src/runtime/` | device-привязанная обвязка, вынесенная из rpcd-плагина (конфиг/установка/проба hysteria) |
 | `src/lib/` | общие утилиты (разбор URI) |
 | `luci/` | LuCI client-side JS-вьюшки (dashboard / servers / settings) + панель сплита (`routing.js`, рендерится внутри дашборда) + меню + ACL |
 | `root/` | файлы на устройстве: UCI-дефолты, procd-init, рантайм rpcd-плагин |
-| `root/usr/share/monkey-business/` | shell на устройстве: `watchdog.sh` + `probes.sh` + `recovery.sh` + `phases.sh` (самовосстановление), `ruset.sh` (nft-сеты direct-bypass), `geo.sh`, `fetch.sh` (общая загрузка, socks-фолбэк), `boothealth.sh`, `nicfw.sh` + `nicwatch.sh` (USB-сетевуха RTL8153B, см. [гайд §9](docs/install-nanopi.ru.md#9-usb-сетевуха-rtl8153b-прошивка-и-watchdog)) |
+| `root/usr/share/monkey-business/` | shell на устройстве: `watchdog.sh` + `probes.sh` + `recovery.sh` + `phases.sh` (самовосстановление), `ruset.sh` (nft-сеты direct-bypass), `geo.sh`, `fetch.sh` (общая загрузка, socks-фолбэк), `boothealth.sh`, `hysteria.sh` (установщик клиента hysteria2), `nicfw.sh` + `nicwatch.sh` (USB-сетевуха RTL8153B, см. [гайд §9](docs/install-nanopi.ru.md#9-usb-сетевуха-rtl8153b-прошивка-и-watchdog)) |
 | `scripts/firewall/` | nftables TPROXY apply/flush |
 | `scripts/expand-sd.sh` | расширение ext4-раздела SD-карты с macOS ([док](docs/sd-expand-macos.ru.md)) |
 | `test/` | ucode-харнесс + unit/snapshot-тесты + netns-интеграция |

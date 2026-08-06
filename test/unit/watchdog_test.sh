@@ -365,5 +365,33 @@ eq "budget.reserve" \
 	"$([ "$(cat "$T/fo_left" 2>/dev/null || echo 0)" \
 		-ge "$((FAILOVER_RESERVE - REC_TRIES * (REC_TIMEOUT + 2)))" ] && echo y || echo n)" y
 
+# 17. hysteria — второй процесс того же туннеля. Идёт ПОСЛЕДНИМ: re-source recovery.sh возвращает
+#     боевые xray_pids/pidset/vpn_running вместо мок-версий выше. Мёртвый клиент (procd исчерпал
+#     respawn: неверный пароль, битая арка) при живом xray не должен читаться как «сервис жив» —
+#     иначе лестница бьёт не тот процесс, а UI пишет Connected на туннеле, через который ничего не
+#     ходит. Конфиг клиента = признак «активный сервер сейчас hysteria», его пишет rpcd.
+reset
+MB_WD_HY_CONF="$T/hysteria.json"
+pgrep() {
+	case "$*" in
+		*"xray run"*) [ -f "$T/xray_up" ] && echo 111 || return 1 ;;
+		*"hysteria client"*) [ -f "$T/hy_up" ] && echo 222 || return 1 ;;
+		*) return 1 ;;
+	esac
+}
+# shellcheck source=/dev/null
+. "$MB_WD_LIB/recovery.sh"
+: > "$T/xray_up"
+eq "hy.novless" "$(vpn_running && echo y || echo n)" y
+: > "$MB_WD_HY_CONF"
+eq "hy.dead_client" "$(vpn_running && echo y || echo n)" n
+: > "$T/hy_up"
+eq "hy.both_alive" "$(vpn_running && echo y || echo n)" y
+# Мягкая ступень обязана бить оба процесса: перезапуск одного xray оставил бы аутбаунд смотреть
+# в socks мёртвого клиента.
+eq "hy.pidset" "$(pidset)" "111 222 "
+rm -f "$T/xray_up"
+eq "hy.dead_xray" "$(vpn_running && echo y || echo n)" n
+
 printf '\nwatchdog_test: %d passed, %d failed\n' "$PASS" "$FAIL"
 [ "$FAIL" -eq 0 ]

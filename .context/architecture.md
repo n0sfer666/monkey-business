@@ -11,10 +11,11 @@
 │  UCI /etc/config/monkey-business             │  источник правды
 ├─────────────────────────────────────────────┤
 │  Генератор (src/generator/xray.uc)           │  UCI-структура → Xray JSON (+ generateProbe)
-│  Парсер (src/parser/subscription.uc)         │  подписка → нормализованные серверы
+│           (src/generator/hysteria.uc)        │  сервер → конфиг hysteria-клиента + socks-аутбаунд
+│  Парсер (src/parser/subscription.uc)         │  подписка → нормализованные серверы (vless + hy2)
 │  Lib (src/lib/*.uc)                          │  общие утилиты (uri, validation)
 ├─────────────────────────────────────────────┤
-│  procd init → Xray-core                       │
+│  procd init → Xray-core (+ hysteria client)   │  второй инстанс того же сервиса, socks :10810
 │  boothealth (mb-boothealth)                   │  ext4-rootfs: детект unclean/ro-remount, 0 периодики
 │  cron watchdog (watchdog+probes+recovery+phases)│ 1/мин; лестница soft→hard→failover→full→direct
 │  cron nicwatch (nicwatch.sh) + nicfw.sh       │  1/мин; залипание TX eth1 (RTL8153B) → bounce/re-bind
@@ -28,6 +29,13 @@
 1. **Подписка:** URL → `subscription.uc` (auto-detect формата) → нормализованный список серверов → UCI.
 2. **Apply / connect:** UCI → `selectWorking` (пробует серверы по порядку списка, первый рабочий →
    тег в `/etc/monkey-business/active`) → `xray.uc` → Xray JSON → procd restart → nftables TPROXY.
+2a. **Протоколы.** `vless` (Reality/XHTTP/ws) идёт аутбаундом самого xray; `hysteria2` — отдельным
+   процессом рядом, а аутбаунд `proxy` превращается в `socks → 127.0.0.1:10810`. Ниже этой точки
+   (маршрутизация, DNS, kill-switch, ядерный обход) о протоколе никто не знает — direct-трафик до
+   аутбаунда `proxy` не доходит вовсе. Протокол — свойство сервера: оба вида лежат в одном списке,
+   порядок = приоритет, failover перебирает кандидатов сквозь протоколы. Клиент hysteria ставится
+   кнопкой на дашборде (`hysteria.sh`), проба кандидата поднимает эфемерный клиент на :10811.
+   Решение: `.context/decisions/2026-08-06-hysteria-provider.md`.
 3. **Маршрутизация:** два слоя. Ядро: RU-CIDR из nft-сетов `mb_ru4`/`mb_ru6` не попадают в TPROXY
    (производно от сплита: `bypass-local` + регион `ru`) — быстрый путь, без прохода через xray. Xray: geoip/geosite →
    RU/CN/private direct, остальное в туннель (default bypass-RU) — safety-net для того, что не попало

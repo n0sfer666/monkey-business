@@ -14,6 +14,9 @@ import { popen, writefile, readfile, stat } from 'fs';
 // файла и остаются относительными. Путь = место установки (см. шапку и deploy/packaging).
 import * as h from '/usr/share/rpcd/ucode/lib/monkey-business/rpcd/handlers.uc';
 import { generateProbe } from '/usr/share/rpcd/ucode/lib/monkey-business/generator/xray.uc';
+import * as hy from '/usr/share/rpcd/ucode/lib/monkey-business/rpcd/hysteria.uc';
+import { isHysteria } from '/usr/share/rpcd/ucode/lib/monkey-business/generator/hysteria.uc';
+import { hysteriaRuntime } from '/usr/share/rpcd/ucode/lib/monkey-business/runtime/hysteria.uc';
 
 const CONFIG = 'monkey-business';
 const CONF_DIR = '/etc/monkey-business';
@@ -39,6 +42,10 @@ function runCapture(cmd) {
 	if (p) p.close();
 	return { out: (out != null) ? out : '', ok: index(out != null ? out : '', 'MB_EXIT:0') >= 0 };
 }
+
+// Объявление ПОСЛЕ runCapture: ucode не хойстит, ссылка на ещё не определённую функцию упала бы
+// на загрузке плагина.
+const hysteria = hysteriaRuntime(runCapture);
 
 // Служебный маркер runCapture — не часть вывода команды. Без вычистки команда, ничего не
 // напечатавшая, отдавала наружу буфер из одной строки "MB_EXIT:0", и он утекал в UI как
@@ -73,7 +80,7 @@ function loadSection(cursor, type_) {
 // UCI хранит только строки/списки, а server имеет вложенные transport/reality (объекты) и alpn.
 // Сериализуем их в JSON при записи (storeServer) и восстанавливаем при чтении (reviveServer).
 function reviveServer(s) {
-	for (let key in ["transport", "reality", "alpn"]) {
+	for (let key in ["transport", "reality", "alpn", "obfs"]) {
 		if (type(s[key]) == "string") {
 			let v = s[key];
 			if (v == "" || v == "null")
@@ -145,7 +152,16 @@ function tcpPing(server) {
 // через туннель (curl к иностранному IP), затем kill. Боевой сервис/kill-switch не трогаются (pkill
 // матчит только /tmp/mb-probe.json, не /etc/monkey-business/xray.json). true = сервер живой.
 function probeServer(global, dns, server) {
-	let cfg = generateProbe({ global: global, dns: dns, server: server, probe_port: 10809 });
+	// hysteria-кандидат: под пробу поднимается свой эфемерный клиент на 10811, и xray-проба ходит
+	// через него. Нет бинаря — кандидат считается нерабочим (иначе failover «выбрал» бы сервер,
+	// который заведомо не поднимется).
+	let hy = isHysteria(server);
+	if (hy && !hysteria.probeStart(server))
+		return false;
+	let cfg = generateProbe({
+		global: global, dns: dns, server: server, probe_port: 10809,
+		hysteria_socks_port: hysteria.PROBE_SOCKS,
+	});
 	writefile('/tmp/mb-probe.json', sprintf('%.J', cfg));
 	let sh = "pkill -f " + shq(noSelfMatch('xray run -c /tmp/mb-probe.json')) + " 2>/dev/null; " +
 		"XRAY_LOCATION_ASSET=" + GEO_DIR + " /usr/bin/xray run -c /tmp/mb-probe.json >/dev/null 2>&1 & P=$!; " +
@@ -155,6 +171,8 @@ function probeServer(global, dns, server) {
 		"kill \"$P\" 2>/dev/null; echo \"PROBE:$R\"";
 	let r = runCapture(sh);
 	system('rm -f /tmp/mb-probe.json');
+	if (hy)
+		hysteria.probeStop();
 	return index(r.out, 'PROBE:ok') >= 0;
 }
 
@@ -303,8 +321,10 @@ function buildCtx() {
 			// failover (/tmp/mb-probe.json), и чужой xray из стокового пакета -> UI врал
 			// «Connected» при отсутствующем туннеле. pgrep -x не матчит comm в этой сборке
 			// BusyBox, а -f (как в pkill выше) работает.
+			// hysteria (когда активен именно он) — часть того же туннеля: живой xray с мёртвым
+			// клиентом это не «Connected», а трафик в закрытый socks.
 			return index(runCapture('pgrep -f ' + shq(noSelfMatch('xray run -c ' + XRAY_CONF)) +
-				' >/dev/null && echo up').out, 'up') >= 0;
+				' >/dev/null && echo up').out, 'up') >= 0 && hysteria.running();
 		},
 		// Возврат = легло ли намерение в UCI: на read-only rootfs commit не проходит, а туннель к
 		// этому моменту уже поднят обходом гейта — вызывающий обязан узнать и свернуть его.
@@ -350,6 +370,10 @@ function buildCtx() {
 			return index(runCapture('nft list chain inet monkey_business prerouting 2>/dev/null').out,
 				'mb_ru4') >= 0;
 		},
+		hysteriaInstalled: function() { return hysteria.installed(); },
+		applyHysteria: function(jsonStr) { return hysteria.apply(jsonStr); },
+		hysteriaStatus: function() { return hysteria.status(); },
+		hysteriaInstall: function() { return hysteria.install(); },
 		setCustomRouting: function(direct, proxy) {
 			cursor.set(CONFIG, 'global', 'custom_direct', direct);
 			cursor.set(CONFIG, 'global', 'custom_proxy', proxy);
@@ -394,6 +418,8 @@ const methods = {
 	geo_status:           { call: function() { return h.geoStatus(buildCtx()); } },
 	geo_install:          { args: { which: '' }, call: function(req) { return h.geoInstall(buildCtx(), req.args); } },
 	check_exit:           { args: { domain: '' }, call: function(req) { return h.checkExit(buildCtx(), req.args); } },
+	hysteria_status:      { call: function() { return hy.hysteriaStatus(buildCtx()); } },
+	hysteria_install:     { call: function() { return hy.hysteriaInstall(buildCtx()); } },
 };
 
 return { 'monkey-business': methods };

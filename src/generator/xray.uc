@@ -6,6 +6,8 @@
 // server: контракт из src/parser/subscription.uc
 // DNS/anti-DPI расширяются на этапе 4 (T9).
 
+import { isHysteria, hysteriaOutbound } from "./hysteria.uc";
+
 const GEOSITE_REGION = { ru: "category-ru", cn: "cn", ir: "category-ir" };
 
 function geositeRegion(region) {
@@ -92,6 +94,9 @@ function buildStreamSettings(s, opts) {
 }
 
 function buildProxyOutbound(s, opts) {
+	// hysteria2 живёт отдельным процессом со своим SOCKS: аутбаунд смотрит в него, а не в сервер.
+	if (isHysteria(s))
+		return hysteriaOutbound(opts);
 	let user = { id: s.uuid, encryption: s.encryption };
 	if (s.flow != null && s.flow != "")
 		user.flow = s.flow;
@@ -290,7 +295,9 @@ function generateProbe(config) {
 			protocol: "socks", settings: { udp: false },
 		}],
 		outbounds: [
-			buildProxyOutbound(s, {}),
+			// hysteria-кандидат пробуется через свой эфемерный клиент на отдельном socks-порту, чтобы
+			// не трогать боевой 10810 работающего туннеля.
+			buildProxyOutbound(s, { socksPort: config.hysteria_socks_port }),
 			{ tag: "direct", protocol: "freedom", settings: {} },
 		],
 		routing: { domainStrategy: "IPIfNonMatch", rules: [

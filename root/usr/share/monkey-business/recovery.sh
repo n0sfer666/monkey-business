@@ -4,7 +4,8 @@
 # состояние — watchdog.sh, порядок вызова ступеней — phases.sh (tick_reconnecting).
 #
 # Ступени (recover_step N), каждая на своём тике:
-#   0 soft   SIGTERM xray, procd респавнит. Кроме процесса не трогаем ничего.
+#   0 soft   SIGTERM процессам туннеля (xray + клиент hysteria, если активен), procd респавнит.
+#            Кроме процессов не трогаем ничего.
 #   1 hard   SIGTERM -> ждём РЕАЛЬНОЙ смерти -> SIGKILL -> init.d start (apply.sh пересобирает
 #            nft-таблицу). Kill-switch не снимается ни на секунду.
 #   2 fail   config_apply: перебор серверов эфемерной пробой, новый конфиг, рестарт сервиса.
@@ -25,14 +26,27 @@ if command -v pgrep >/dev/null 2>&1; then
 else
 	xray_pids() { pidof xray; }
 fi
-pidset() { xray_pids 2>/dev/null | tr '\n' ' '; }
-vpn_running() { xray_pids >/dev/null 2>&1; }
+# hysteria2 — второй процесс того же туннеля (init поднимает его вторым инстансом, конфиг лежит на
+# месте ровно под hysteria-сервером). Без учёта здесь мёртвый клиент — procd прекращает respawn после
+# исчерпания retry: неверный пароль, битая арка — читался бы как «сервис жив», потому что xray-то
+# работает: лестница била бы не тот процесс, а UI писал бы Connected на мёртвом туннеле.
+HY_CONF="${MB_WD_HY_CONF:-/etc/monkey-business/hysteria.json}"
+HY_MATCH="${MB_WD_HY_MATCH:-hysteria client -c $HY_CONF}"
+hy_active() { [ -f "$HY_CONF" ]; }
+if command -v pgrep >/dev/null 2>&1; then
+	hy_pids() { hy_active && pgrep -f "$HY_MATCH"; }
+else
+	hy_pids() { hy_active && pidof hysteria; }
+fi
+
+pidset() { { xray_pids; hy_pids; } 2>/dev/null | tr '\n' ' '; }
+vpn_running() { xray_pids >/dev/null 2>&1 && { ! hy_active || hy_pids >/dev/null 2>&1; }; }
 vpn_start() { $INIT start >/dev/null 2>&1; sleep 5; }
 vpn_stop() { $INIT stop >/dev/null 2>&1; }
 
 vpn_reconnect() {
 	# shellcheck disable=SC2046
-	kill $(xray_pids) 2>/dev/null || true
+	kill $(pidset) 2>/dev/null || true
 	sleep "$RECONNECT_WAIT"
 	vpn_running || vpn_start
 }

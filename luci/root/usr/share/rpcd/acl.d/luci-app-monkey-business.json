@@ -8,6 +8,7 @@
 					"servers_list",
 					"servers_ping",
 					"geo_status",
+					"hysteria_status",
 					"check_exit"
 				]
 			},
@@ -23,6 +24,7 @@
 					"service_toggle",
 					"geo_update",
 					"geo_install",
+					"hysteria_install",
 					"set_routing",
 					"set_mode"
 				]

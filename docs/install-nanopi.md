@@ -192,9 +192,24 @@ From the shell instead:
 In **LuCI → … → Servers**:
 
 - **Subscription:** paste your provider URL and press *Fetch*. Servers are imported (format
-  auto-detected: base64 list or `vless://` URI list). The list order is your priority — drag to
+  auto-detected: base64 list or URI list). The list order is your priority — drag to
   reorder; the first server is the active one. Re-fetch preserves your manual order.
-- **Manual:** add a `vless://…` server (Reality/VLESS/XHTTP).
+- **Manual:** add a `vless://…` (Reality/VLESS/XHTTP) or `hysteria2://…` (`hy2://` alias) server.
+
+Both protocols share one list — the protocol is a property of the server, so priority is the list
+order and failover walks the candidates across protocols.
+
+**hysteria2 needs a separate client.** It is not in the OpenWrt feeds, so install it with a button:
+**Dashboard → hysteria2 client → Install / update hysteria** (the download runs in the background
+and the UI polls for status). Until it is installed, turning on with a hysteria server fails
+explicitly — deliberately: Xray would otherwise come up with its outbound pointing at a dead port
+behind a live kill-switch, which from the outside looks like "the internet is gone". From the
+shell: `sh /usr/share/monkey-business/hysteria.sh install`, check with `… hysteria.sh status`.
+VLESS/Reality works without it.
+
+The client runs as a second procd instance of the same service (it lives and dies with the tunnel),
+listens on socks `127.0.0.1:10810`, and Xray dials into it as its outbound — routing, DNS and the
+kill-switch stay exactly the ones VLESS uses.
 
 Your subscription token and server UUIDs are stored in UCI (root-only) and masked in the UI — keep
 them out of logs and issues.
