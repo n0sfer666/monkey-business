@@ -72,10 +72,19 @@ return view.extend({
 		srv.option(form.Value, 'address', _('Address'));
 		var port = srv.option(form.Value, 'port', _('Port'));
 		port.datatype = 'port';
+		var proto = srv.option(form.ListValue, 'protocol', _('Protocol'));
+		proto.value('vless', 'VLESS');
+		proto.value('hysteria2', 'hysteria2');
+		proto.default = 'vless';
 		var sec = srv.option(form.ListValue, 'security', _('Security'));
 		sec.value('reality', 'Reality');
 		sec.value('tls', 'TLS');
 		sec.value('none', _('None'));
+		// hysteria2 аутентифицируется паролем, а не uuid: без этого поля вручную заведённый hy2-сервер
+		// не поднимется, а из подписки оно приходит само.
+		var pw = srv.option(form.Value, 'password', _('Password'), _('hysteria2 authentication'));
+		pw.depends('protocol', 'hysteria2');
+		pw.password = true;
 
 		return m.render().then(function(node) {
 			node.appendChild(E('style', { 'type': 'text/css' },

@@ -5,6 +5,7 @@
 'require uci';
 'require poll';
 'require view.monkey-business.routing as mbroute';
+'require view.monkey-business.hysteria as mbhy';
 
 var callStatus = rpc.declare({ object: 'monkey-business', method: 'status' });
 var callServers = rpc.declare({ object: 'monkey-business', method: 'servers_list' });
@@ -12,6 +13,7 @@ var callPing = rpc.declare({ object: 'monkey-business', method: 'servers_ping' }
 var callGeo = rpc.declare({ object: 'monkey-business', method: 'geo_update', params: ['geoip_url', 'geosite_url'] });
 var callSetRouting = rpc.declare({ object: 'monkey-business', method: 'set_routing', params: ['direct', 'proxy'] });
 var callGeoStatus = rpc.declare({ object: 'monkey-business', method: 'geo_status' });
+var callHyStatus = rpc.declare({ object: 'monkey-business', method: 'hysteria_status' });
 var callGeoInstall = rpc.declare({ object: 'monkey-business', method: 'geo_install', params: ['which'] });
 var callCheckExit = rpc.declare({ object: 'monkey-business', method: 'check_exit', params: ['domain'] });
 var callToggle = rpc.declare({
@@ -79,7 +81,8 @@ return view.extend({
 			callStatus().catch(function() { return {}; }),
 			callServers().catch(function() { return {}; }),
 			uci.load('monkey-business').catch(function() { return null; }),
-			callGeoStatus().catch(function() { return {}; })
+			callGeoStatus().catch(function() { return {}; }),
+			callHyStatus().catch(function() { return {}; })
 		]);
 	},
 
@@ -344,7 +347,10 @@ return view.extend({
 				E('td', { 'class': 'td' }, [ '' + (s.priority != null ? s.priority : '-') ]),
 				E('td', { 'class': 'td' }, [ s.tag ]),
 				E('td', { 'class': 'td' }, [ s.address + ':' + s.port ]),
-				E('td', { 'class': 'td' }, [ s.security ]),
+				// insecure=1 из подписки отключает проверку сертификата — это обязано быть видно:
+				// иначе такой сервер выглядит ровно как проверяемый.
+				E('td', { 'class': 'td' }, [ (s.protocol || 'vless') + ' / ' + s.security +
+					(s.insecure ? _(' (insecure)') : '') ]),
 				pingTd
 			]);
 		});
@@ -354,7 +360,7 @@ return view.extend({
 				E('th', { 'class': 'th' }, [ _('Prio') ]),
 				E('th', { 'class': 'th' }, [ _('Name') ]),
 				E('th', { 'class': 'th' }, [ _('Address') ]),
-				E('th', { 'class': 'th' }, [ _('Security') ]),
+				E('th', { 'class': 'th' }, [ _('Protocol / security') ]),
 				E('th', { 'class': 'th' }, [ _('Ping') ])
 			])
 		].concat(rows));
@@ -389,6 +395,7 @@ return view.extend({
 			mbroute.render(),
 			this.renderRouting(),
 			this.renderGeo(geo),
+			mbhy.render(data[4] || {}),
 			this.renderServers(servers)
 		]);
 	},

@@ -3,15 +3,21 @@
 **English** | [Русский](README.ru.md)
 
 A minimalist VPN client for **OpenWrt / ImmortalWrt** routers (target hardware: **NanoPi R2S**).
-Reality + VLESS + XHTTP with a simple LuCI interface — a lightweight alternative to passwall / v2rayA.
+Reality + VLESS + XHTTP (and hysteria2) with a simple LuCI interface — a lightweight alternative to
+passwall / v2rayA.
 
 ```
 LuCI (JS) → rpcd (ucode) → UCI → config generator → Xray-core + nftables TPROXY + dnsmasq
 ```
 
-Subscription import (auto-detected format) or manual `vless://` servers; split routing by
-geoip/geosite (local region direct, the rest through the tunnel), kill-switch, IPv6-leak block,
-DoH split-DNS, anti-DPI (uTLS + XHTTP padding), and a one-screen dashboard.
+Subscription import (auto-detected format) or manual `vless://` / `hysteria2://` servers; split
+routing by geoip/geosite (local region direct, the rest through the tunnel), kill-switch, IPv6-leak
+block, DoH split-DNS, anti-DPI (uTLS + XHTTP padding), and a one-screen dashboard.
+
+Both protocols live in **one** server list: the protocol is a property of the server, so list order
+stays the single priority and failover crosses protocols. hysteria2 runs as a separate client next
+to Xray (its `proxy` outbound becomes a local socks) — the split, DNS and kill-switch rules are
+exactly the ones VLESS uses. The client binary is installed with a button on the dashboard.
 
 Two things happen without you asking. **Local-region traffic skips the proxy in the kernel**: its
 CIDRs live in nftables sets (`mb_ru4`/`mb_ru6`) that are excluded from TPROXY, so it never pays the
@@ -95,9 +101,11 @@ The artifact lands in the SDK's `bin/packages/aarch64*/`; copy it to the router 
 
 ### First run
 
-1. **Servers** tab — paste your subscription URL and *Fetch*, or add a `vless://` server manually.
+1. **Servers** tab — paste your subscription URL and *Fetch*, or add a `vless://` / `hysteria2://`
+   server manually.
 2. **Dashboard** — *Update geo databases* (downloads & validates geoip/geosite `.dat`).
-3. **Dashboard** — *Turn on*. *Check exit IP* confirms traffic leaves through the tunnel.
+3. **Dashboard** — *Install / update hysteria* — only if your list contains hysteria2 servers.
+4. **Dashboard** — *Turn on*. *Check exit IP* confirms traffic leaves through the tunnel.
 
 ---
 
@@ -115,13 +123,14 @@ Layout:
 
 | Path | What |
 |------|------|
-| `src/parser/` | subscription parser (base64 / uri-list; auto-detect) |
-| `src/generator/` | UCI → Xray JSON generator (abstracted for a future sing-box backend) |
+| `src/parser/` | subscription parser (base64 / uri-list; auto-detect; `vless://` + `hysteria2://`) |
+| `src/generator/` | UCI → Xray JSON generator (abstracted for a future sing-box backend) + the hysteria client config |
 | `src/rpcd/` | pure rpcd handlers (host-tested; ubus/uci bound in `root/…/rpcd/ucode`) |
+| `src/runtime/` | device-bound helpers pulled out of the rpcd plugin (hysteria config/install/probe) |
 | `src/lib/` | shared utils (URI parsing) |
 | `luci/` | LuCI client-side JS views (dashboard / servers / settings) + the split panel (`routing.js`, rendered inside the dashboard) + menu + ACL |
 | `root/` | on-device files: UCI default, procd init, runtime rpcd plugin |
-| `root/usr/share/monkey-business/` | on-device shell: `watchdog.sh` + `probes.sh` + `recovery.sh` + `phases.sh` (self-healing), `ruset.sh` (nft direct-bypass sets), `geo.sh`, `fetch.sh` (shared downloader, socks fallback), `boothealth.sh`, `nicfw.sh` + `nicwatch.sh` (RTL8153B USB NIC, see [install guide §9](docs/install-nanopi.md#9-the-rtl8153b-usb-nic-firmware--watchdog)) |
+| `root/usr/share/monkey-business/` | on-device shell: `watchdog.sh` + `probes.sh` + `recovery.sh` + `phases.sh` (self-healing), `ruset.sh` (nft direct-bypass sets), `geo.sh`, `fetch.sh` (shared downloader, socks fallback), `boothealth.sh`, `hysteria.sh` (hysteria2 client installer), `nicfw.sh` + `nicwatch.sh` (RTL8153B USB NIC, see [install guide §9](docs/install-nanopi.md#9-the-rtl8153b-usb-nic-firmware--watchdog)) |
 | `scripts/firewall/` | nftables TPROXY apply/flush |
 | `scripts/expand-sd.sh` | grow the SD card's ext4 partition from macOS ([docs](docs/sd-expand-macos.md)) |
 | `test/` | ucode harness + unit/snapshot tests + netns integration |

@@ -76,6 +76,67 @@ test("parse skips comments and blanks", function() {
 	assertEq(length(r.servers), 0);
 });
 
+test("parse normalizes hysteria2 uri into the shared contract", function() {
+	let r = parse("hysteria2://p%40ss@h.example.com:8443/?sni=cdn.example&insecure=1" +
+		"&obfs=salamander&obfs-password=zz&pinSHA256=AA:BB&mport=10000-20000#HY");
+	assertEq(length(r.errors), 0);
+	let s = r.servers[0];
+	assertEq(s.protocol, "hysteria2");
+	assertEq(s.tag, "HY");
+	assertEq(s.address, "h.example.com");
+	assertEq(s.port, 8443);
+	// userinfo декодируется: панели пишут туда пароли со спецсимволами
+	assertEq(s.password, "p@ss");
+	assertEq(s.sni, "cdn.example");
+	assertEq(s.insecure, "1");
+	assertEq(s.pin_sha256, "AA:BB");
+	assertEq(s.mport, "10000-20000");
+	assertEq(s.obfs, { type: "salamander", password: "zz" });
+	assertEq(s.uuid, "");
+	assertEq(s.transport, { type: "quic", path: "", host: "", mode: "", serviceName: "" });
+});
+
+test("hy2 alias, default port and sni fallback", function() {
+	let r = parse("hy2://secret@vpn.example.net");
+	let s = r.servers[0];
+	assertEq(s.protocol, "hysteria2");
+	assertEq(s.port, 443);
+	assertEq(s.sni, "vpn.example.net");
+	assertEq(s.tag, "vpn.example.net:443");
+	assert(s.obfs == null, "no obfs param -> null");
+	assertEq(s.insecure, "0");
+});
+
+test("hysteria2 rejects an invalid port", function() {
+	let r = parse("hy2://secret@vpn.example.net:0#bad");
+	assertEq(length(r.servers), 0);
+	assertEq(length(r.errors), 1);
+});
+
+// Диапазон в позиции порта parseUri оставляет частью host: молчаливая подстановка 443 давала бы
+// сервер "h.example:10000-20000:443", снаружи неотличимый от нерабочего.
+test("hysteria2 rejects a port range written into the address", function() {
+	let r = parse("hy2://secret@h.example:10000-20000#bad");
+	assertEq(length(r.servers), 0);
+	assertEq(length(r.errors), 1);
+});
+
+test("hysteria2 keeps a bare IPv6 literal as the address", function() {
+	let s = parse("hy2://secret@2001:db8::1#v6").servers[0];
+	assertEq(s.address, "2001:db8::1");
+	assertEq(s.port, 443);
+});
+
+// Протокол — свойство сервера: оба вида живут в ОДНОМ списке, порядок = приоритет, и failover
+// перебирает их сквозь протоколы.
+test("mixed subscription keeps both protocols in one ordered list", function() {
+	let r = parse("hy2://a@h1.example:443#one\nvless://11111111-2222-3333-4444-555555555555@h2.example:443?pbk=K#two");
+	assertEq(length(r.errors), 0);
+	assertEq(length(r.servers), 2);
+	assertEq(r.servers[0].protocol, "hysteria2");
+	assertEq(r.servers[1].protocol, "vless");
+});
+
 test("decodeBase64Maybe rejects non-base64", function() {
 	assert(decodeBase64Maybe("@@@not base64@@@") == null, "garbage -> null");
 });

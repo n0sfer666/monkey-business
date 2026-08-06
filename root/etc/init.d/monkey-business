@@ -9,6 +9,11 @@ STOP=10
 PROG=/usr/bin/xray
 CONF=/etc/monkey-business/xray.json
 FW=/usr/share/monkey-business/firewall
+# hysteria2 не встраивается в xray: свой QUIC-стек, отдельный процесс. Он поднимается ВТОРЫМ
+# инстансом того же сервиса, чтобы жить и умирать вместе с туннелем — отдельный init-скрипт
+# разъехался бы с ним при reload/stop и оставил бы клиент долбиться в сервер без маршрутов.
+HPROG=/usr/bin/hysteria
+HCONF=/etc/monkey-business/hysteria.json
 
 # enabled (тумблер в UI) — источник истины для рантайма, иначе START=95 поднимал туннель на
 # загрузке независимо от выбора пользователя, а любой config_apply при выключенном VPN включал его
@@ -69,6 +74,24 @@ start_service() {
 	procd_set_param stderr 1
 	procd_set_param file "$CONF"
 	procd_close_instance
+
+	# Конфиг клиента пишет rpcd только под hysteria-сервер (и снимает под любым другим) — наличие
+	# файла и есть признак «активный сервер сейчас hysteria». Инстанс объявляется ДО apply.sh: xray
+	# уже смотрит аутбаундом в его локальный socks.
+	if [ -f "$HCONF" ] && [ ! -x "$HPROG" ]; then
+		# Молча пропустить нельзя: xray уже смотрит аутбаундом в socks клиента, которого не будет, —
+		# снаружи это «интернет пропал», а в логе не осталось бы ни строки о причине.
+		logger -t monkey-business "hysteria config present but $HPROG is not executable: the tunnel will have no client"
+	fi
+	if [ -f "$HCONF" ] && [ -x "$HPROG" ]; then
+		procd_open_instance hysteria
+		procd_set_param command "$HPROG" client -c "$HCONF"
+		procd_set_param respawn
+		procd_set_param stdout 1
+		procd_set_param stderr 1
+		procd_set_param file "$HCONF"
+		procd_close_instance
+	fi
 
 	MB_LAN_IFACE="$(uci -q get monkey-business.global.lan_iface || echo br-lan)" \
 	MB_KILL_SWITCH="$(uci -q get monkey-business.global.kill_switch || echo 1)" \

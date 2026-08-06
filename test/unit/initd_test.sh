@@ -52,7 +52,8 @@ uci() {
 	esac
 }
 # Без стдина (миграция зовёт logger с аргументами, а не пайпом) `cat` подвис бы на терминале.
-logger() { :; }
+# Аргументы пишем в $CALLS: часть отказов (неисполняемый бинарь hysteria) видна ТОЛЬКО в логе.
+logger() { echo "logger $*" >> "$CALLS"; }
 sh() { echo "sh $*" >> "$CALLS"; }
 
 # shellcheck source=/dev/null
@@ -193,6 +194,36 @@ has "migrate.commit" "$CALLS" "uci .*commit monkey-business"
 MB_LEGACY_BYPASS=""
 start_service
 no "migrate.clean" "$CALLS" "uci .*delete"
+
+# 15. hysteria поднимается вторым инстансом того же сервиса — но только когда есть И конфиг клиента
+#     (его пишет rpcd ровно под hysteria-сервер), И сам бинарь. Объяви инстанс без бинаря — procd
+#     ушёл бы в respawn-луп на несуществующей команде; объяви без конфига — клиент долбился бы в
+#     старый сервер после переключения на vless. Инстанс xray при этом обязан остаться на месте.
+MB_ENABLED=1
+HPROG="$T/hysteria"; HCONF="$T/hysteria.json"
+printf '#!/bin/sh\nexit 0\n' > "$HPROG"; chmod +x "$HPROG"
+: > "$HCONF"
+: > "$CALLS"
+start_service
+has "hy.command"    "$CALLS" "param command $HPROG client -c $HCONF"
+has "hy.file"       "$CALLS" "param file $HCONF"
+has "hy.respawn"    "$CALLS" "param respawn"
+has "hy.xray_stays" "$CALLS" "param command /usr/bin/xray run -c $CONF"
+
+: > "$CALLS"
+rm -f "$HCONF"
+start_service
+no  "hy.noconf.no_instance" "$CALLS" "hysteria"
+has "hy.noconf.xray_stays"  "$CALLS" "param command /usr/bin/xray run -c $CONF"
+
+: > "$CALLS"
+: > "$HCONF"; chmod 644 "$HPROG"
+start_service
+no  "hy.nobin.no_instance" "$CALLS" "client -c"
+has "hy.nobin.xray_stays"  "$CALLS" "param command /usr/bin/xray run -c $CONF"
+# Молчать тут нельзя: xray уже смотрит аутбаундом в socks клиента, которого не будет, и снаружи
+# это выглядит как «интернет пропал» — в логе обязана остаться причина.
+has "hy.nobin.logged"      "$CALLS" "logger .*not executable"
 
 printf 'initd_test: %d passed, %d failed\n' "$PASS" "$FAIL"
 [ "$FAIL" -eq 0 ]

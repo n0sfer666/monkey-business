@@ -2,21 +2,19 @@
 //
 // Нормализованный server-объект (КОНТРАКТ для генератора, src/generator/xray.uc):
 //   {
-//     tag, protocol:"vless", address, port, uuid, encryption:"none",
+//     tag, protocol:"vless"|"hysteria2", address, port, uuid, encryption:"none",
 //     flow, security:"reality"|"tls"|"none", sni, fingerprint, alpn:[...],
 //     reality: { publicKey, shortId, spiderX } | null,
 //     transport: { type, path, host, mode, serviceName },
 //     source: "subscription"|"manual"
 //   }
+// hysteria2 добавляет к нему password/obfs/insecure/pin_sha256/mport (см. parser/hysteria2.uc).
 //
 // parse(raw) -> { format, servers:[...], errors:[...] }
 
 import { parseUri } from "../lib/uri.uc";
-
-function truncate(s, n) {
-	n = n || 40;
-	return (length(s) > n) ? (substr(s, 0, n) + "...") : s;
-}
+import { truncate } from "../lib/text.uc";
+import { normalizeHysteria2 } from "./hysteria2.uc";
 
 function commaList(s) {
 	let out = [];
@@ -78,6 +76,14 @@ function normalizeVless(u, raw) {
 	return { server: server };
 }
 
+// Схема -> нормализатор. Один список серверов на все протоколы: приоритет задаётся порядком, и
+// failover обязан перебирать кандидатов сквозь протоколы, а не внутри своей группы.
+const NORMALIZERS = {
+	vless: normalizeVless,
+	hysteria2: normalizeHysteria2,
+	hy2: normalizeHysteria2,
+};
+
 function parseUriList(text) {
 	let servers = [];
 	let errors = [];
@@ -90,11 +96,12 @@ function parseUriList(text) {
 			push(errors, "unparseable: " + truncate(t));
 			continue;
 		}
-		if (u.scheme != "vless") {
+		let normalize = NORMALIZERS[u.scheme];
+		if (normalize == null) {
 			push(errors, "unsupported scheme '" + u.scheme + "'");
 			continue;
 		}
-		let r = normalizeVless(u, t);
+		let r = normalize(u, t);
 		if (r.error != null)
 			push(errors, r.error);
 		else

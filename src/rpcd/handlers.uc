@@ -21,6 +21,8 @@
 
 import { parse } from "../parser/subscription.uc";
 import { generateJson } from "../generator/xray.uc";
+import { isHysteria } from "../generator/hysteria.uc";
+import { prepareHysteria } from "./hysteria.uc";
 
 function isTrue(v) {
 	return v == true || v == "1" || v == 1;
@@ -84,8 +86,22 @@ function selectBest(ctx) {
 // туннель и гоняет реальную пробу связности; первый прошедший — активный. Имя-агностично (только
 // порядок + результат пробы), работает на любой подписке. Если ни один не прошёл — фолбэк на servers[0]
 // (kill-switch должен остаться, а watchdog разберётся дальше). Возврат: { server, probed }.
-function selectWorking(ctx) {
+// Кандидат, который заведомо не поднимется (hysteria без установленного клиента), выбывает ДО пробы.
+// Иначе hysteria на первой позиции ломала фолбэк: prepareHysteria отказывал на servers[0], и
+// config_apply не применял НИЧЕГО при живых vless ниже по списку — а recovery.sh на этом отказе
+// делает фазу down терминальной (ровно тот дефект, что чинил 8146280). Незапускаемых меньше, чем
+// весь список — работаем с остатком; список ИЗ ОДНИХ таких оставляем как есть, чтобы отказ пришёл
+// от prepareHysteria с внятной причиной, а не «no servers».
+function runnableServers(ctx) {
 	let servers = orderedServers(ctx);
+	if (ctx.hysteriaInstalled == null || ctx.hysteriaInstalled())
+		return servers;
+	let rest = filter(servers, function(s) { return !isHysteria(s); });
+	return (length(rest) > 0) ? rest : servers;
+}
+
+function selectWorking(ctx) {
+	let servers = runnableServers(ctx);
 	if (length(servers) == 0)
 		return null;
 	let cap = ctx.failoverCap ? ctx.failoverCap() : 0;
@@ -127,6 +143,7 @@ function status(ctx) {
 		enabled: isTrue(g.enabled),
 		running: ctx.serviceRunning(),
 		server: (s != null) ? s.tag : null,
+		protocol: (s != null) ? (s.protocol || "vless") : null,
 		routing_mode: g.routing_mode,
 		local_region: g.local_region,
 		// ФАКТ из nft, а не намерение из UCI: индикатор обхода — это индикатор утечки, и он обязан
@@ -150,12 +167,18 @@ function serversList(ctx) {
 	for (let s in orderedServers(ctx)) {
 		push(out, {
 			tag: s.tag,
+			protocol: s.protocol || "vless",
 			address: s.address,
 			port: s.port,
 			security: s.security,
 			transport: (s.transport != null) ? s.transport.type : "tcp",
 			priority: i,
-			uuid_masked: maskUuid(s.uuid),
+			insecure: (s.insecure == "1"),
+			// У vless в uuid 36 случайных символов, и края маски безобидны. У hysteria
+			// учётные данные живут в password, а uuid парсер оставляет пустым — но секция UCI правится
+			// и руками, и попавший в uuid пароль ушёл бы краями в браузер на каждый рендер дашборда
+			// (servers_list в read-группе ACL). Сам password наружу не отдаём вообще.
+			uuid_masked: (s.protocol == "hysteria2") ? "****" : maskUuid(s.uuid),
 		});
 		i++;
 	}
@@ -165,13 +188,19 @@ function serversList(ctx) {
 function serverKey(s) {
 	let tr = (type(s.transport) == "object") ? s.transport : {};
 	let re = (type(s.reality) == "object") ? s.reality : {};
+	let ob = (type(s.obfs) == "object") ? s.obfs : {};
 	let alpn = (type(s.alpn) == "array") ? join(",", s.alpn) : "";
 	return join("|", [
 		s.tag || "",
+		s.protocol || "vless",
 		s.address || "", "" + (s.port || ""), s.uuid || "",
 		s.security || "", s.flow || "", s.sni || "", s.fingerprint || "", alpn,
 		re.publicKey || "", re.shortId || "", re.spiderX || "",
 		tr.type || "", tr.path || "", tr.host || "", tr.mode || "", tr.serviceName || "",
+		// hysteria2: учётные данные тут в password/obfs, а не в uuid — без них два разных сервера с
+		// одинаковым адресом схлопывались бы в один и re-fetch терял бы половину подписки.
+		s.password || "", ob.type || "", ob.password || "",
+		s.insecure || "", s.pin_sha256 || "", s.mport || "",
 	]);
 }
 
@@ -241,6 +270,9 @@ function configApply(ctx) {
 	let sel = selectWorking(ctx);
 	if (sel == null)
 		return { error: "no servers — add a subscription or a manual server first" };
+	let hErr = prepareHysteria(ctx, sel.server);
+	if (hErr != null)
+		return { error: hErr };
 	let jsonStr = generateJson(genConfig(ctx, sel.server));
 	let err = ctx.applyConfig(jsonStr);
 	if (err != null)
@@ -258,6 +290,9 @@ function serviceToggle(ctx, args) {
 	let sel = selectWorking(ctx);
 	if (sel == null)
 		return { error: "no servers — add a subscription first", enabled: false };
+	let hErr = prepareHysteria(ctx, sel.server);
+	if (hErr != null)
+		return { error: hErr, enabled: isTrue(ctx.getGlobal().enabled) };
 	let jsonStr = generateJson(genConfig(ctx, sel.server));
 	// Сначала поднять туннель (intentOn=true — явный обход гейта по enabled), только потом commit
 	// тумблера. Обратный порядок (setEnabled -> applyConfig) держал enabled=1 всё время пробы
