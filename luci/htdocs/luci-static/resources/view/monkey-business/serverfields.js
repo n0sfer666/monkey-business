@@ -130,8 +130,16 @@ return baseclass.extend({
 		// не трогает — source у него нет), а выбор активного берёт просто первый по порядку.
 		// Имя обязательно по той же причине: активный сервер хранится тегом, и безымянный не найдётся
 		// — туннель поднят, а дашборд показывает «сервера нет».
+		//
+		// Но обязательность включается вместе с полями (_show), а не сразу: в режиме ссылки заполнять
+		// их ещё нечем, и rmempty=false встречал бы человека тремя красными рамками на пустой форме.
+		// Пустую секцию в этот момент удерживает проверка самой ссылки (serverlink.js).
 		[ all.tag, all.address, all.port ].forEach(function(o) {
-			o.rmempty = false;
+			o.validate = function(sid, value) {
+				if (!so.shown(this, sid))
+					return true;
+				return (value != null && value !== '') ? true : _('Must not be empty');
+			};
 		});
 		all.protocol = so.choices(s.option(form.ListValue, 'protocol', _('Protocol')),
 			[ [ 'vless', 'VLESS' ], [ 'hysteria2', 'hysteria2' ] ]);
