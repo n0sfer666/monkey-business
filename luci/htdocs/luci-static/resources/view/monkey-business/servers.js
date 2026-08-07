@@ -4,6 +4,8 @@
 'require rpc';
 'require ui';
 'require uci';
+'require view.monkey-business.serverfields as fields';
+'require view.monkey-business.serverlink as link';
 
 var callSubUpdate = rpc.declare({
 	object: 'monkey-business', method: 'subscription_update', params: ['url']
@@ -68,23 +70,29 @@ return view.extend({
 		srv.anonymous = true;
 		srv.sortable = true;
 
-		srv.option(form.Value, 'tag', _('Name'));
-		srv.option(form.Value, 'address', _('Address'));
-		var port = srv.option(form.Value, 'port', _('Port'));
-		port.datatype = 'port';
-		var proto = srv.option(form.ListValue, 'protocol', _('Protocol'));
-		proto.value('vless', 'VLESS');
-		proto.value('hysteria2', 'hysteria2');
-		proto.default = 'vless';
-		var sec = srv.option(form.ListValue, 'security', _('Security'));
-		sec.value('reality', 'Reality');
-		sec.value('tls', 'TLS');
-		sec.value('none', _('None'));
-		// hysteria2 аутентифицируется паролем, а не uuid: без этого поля вручную заведённый hy2-сервер
-		// не поднимется, а из подписки оно приходит само.
-		var pw = srv.option(form.Value, 'password', _('Password'), _('hysteria2 authentication'));
-		pw.depends('protocol', 'hysteria2');
-		pw.password = true;
+		// Порядок в модалке: переключатель -> ссылка -> сами поля. Разобранная ссылка раскрывается
+		// в те же поля, поэтому перед сохранением её видно и можно поправить.
+		fields.mode(srv);
+		link.create(srv, function(section, section_id, flat) {
+			var show = section.getOption('_show');
+			var el = show ? show.getUIElement(section_id) : null;
+			if (el != null)
+				el.setValue('1');
+			fields.fill(section, section_id, flat);
+		});
+		fields.create(srv);
+
+		// Клик по Save снимает фокус со ссылки и только ЗАПУСКАЕТ разбор на устройстве — ответ
+		// придёт позже самого сохранения. Без ожидания секция сохранилась бы с пустыми полями:
+		// «Name must not be empty» на ровном месте и второй Save, чтобы всё получилось.
+		srv.handleModalSave = function() {
+			var self = this, args = arguments;
+			var save = function() {
+				return form.GridSection.prototype.handleModalSave.apply(self, args);
+			};
+			var wait = link.pending();
+			return wait ? wait.then(save, save) : save();
+		};
 
 		return m.render().then(function(node) {
 			node.appendChild(E('style', { 'type': 'text/css' },
