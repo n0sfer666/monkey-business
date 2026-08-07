@@ -14,6 +14,12 @@ DEST="${MB_HY_BIN:-/usr/bin/hysteria}"
 CONF="${MB_HY_CONF:-/etc/monkey-business/hysteria.json}"
 STATE="${MB_HY_STATE:-/tmp/mb-hysteria.state}"
 LOCK="${MB_HY_LOCK:-/tmp/mb-hysteria.lock}"
+# Суммы апстрим публикует ОДНИМ файлом на релиз, строкой на ассет; отдельных <asset>.sha256 у него
+# нет (404). За ними скрипт и ходил — и отменял установку «сумма не опубликована» на каждом прогоне.
+HASHES="${MB_HY_HASHES:-hashes.txt}"
+# Файл сумм — пара килобайт. Ждать на нём столько же, сколько на 20МБ бинаре, значит держать
+# человека у «installing…» лишние минуты на каждом мёртвом зеркале.
+SUM_TIMEOUT="${MB_HY_SUM_TIMEOUT:-30}"
 # GitHub у RU-провайдеров заблокирован, а качать нужно ДО поднятия туннеля (это и есть клиент
 # туннеля) -> gh-прокси идут первыми, сам github.com остаётся последним фолбэком.
 DEFAULT_MIRRORS="https://ghfast.top/https://github.com/apernet/hysteria/releases/latest/download https://ghproxy.net/https://github.com/apernet/hysteria/releases/latest/download https://gh-proxy.com/https://github.com/apernet/hysteria/releases/latest/download https://github.com/apernet/hysteria/releases/latest/download"
@@ -54,6 +60,23 @@ free_kb() { df -k "$1" 2>/dev/null | awk 'NR>1{print $4; exit}'; }
 
 sha_of() { sha256sum "$1" 2>/dev/null | awk '{print $1}'; }
 
+# Мелкий файл берём с укороченным лимитом, не трогая MB_FETCH_TIMEOUT у остальных вызовов:
+# переменная читается mb_fetch в момент вызова и живёт до конца процесса.
+fetch_small() { # <url> <out>
+	_t="${MB_FETCH_TIMEOUT:-120}"
+	MB_FETCH_TIMEOUT="$SUM_TIMEOUT"
+	mb_fetch "$1" "$2"; _rc=$?
+	MB_FETCH_TIMEOUT="$_t"
+	return "$_rc"
+}
+
+# Строка файла сумм: "<sha256>  build/hysteria-linux-arm64". Имя якорим на конец, иначе
+# hysteria-linux-arm подобрал бы сумму от hysteria-linux-arm64 — и бинарь не прошёл бы сверку с
+# сообщением «сумма не сошлась», уводящим от настоящей причины.
+sha_from_hashes() { # <file> <asset>
+	awk -v a="$2" '$2 ~ ("(^|/)" a "$") { print $1; exit }' "$1"
+}
+
 # Бинарь ляжет в /usr/bin и будет исполняться от root, а gh-прокси в списке зеркал по устройству —
 # MITM: сумма, взятая с того же зеркала, что и бинарь, не доказывает ничего (подменивший бинарь
 # подменит и её). Поэтому сумму собираем со ВСЕХ зеркал и требуем, чтобы независимые источники
@@ -63,8 +86,8 @@ collect_sha() { # <asset>
 	for base in $(mirrors); do
 		t="$(mktemp "${TMPDIR:-/tmp}/mb-hysum.XXXXXX")" || continue
 		s=""
-		if mb_fetch "$base/$1.sha256" "$t" 2>/dev/null && [ -s "$t" ]; then
-			s="$(awk '{print $1; exit}' "$t")"
+		if fetch_small "$base/$HASHES" "$t" 2>/dev/null && [ -s "$t" ]; then
+			s="$(sha_from_hashes "$t" "$1")"
 		fi
 		rm -f "$t"
 		[ -n "$s" ] || continue
@@ -109,20 +132,25 @@ cmd_install() {
 		set_state "error: нужно ~40MB в $(dirname "$DEST"), свободно $(( fdst / 1024 ))MB"
 		return 1
 	fi
-	last_err=""; rsum=""; sum_rc=0
+	# Сумма собирается ПЕРВОЙ. Без неё установка отменяется в любом случае (непроверяемый бинарь под
+	# root — цена выше, чем «второй протокол не заработал»), а бинарь — 20МБ, которые на gh-прокси
+	# качаются минутами: при обратном порядке человек ждал у «installing…» ровно за тем, чтобы эти
+	# мегабайты выбросили.
+	rsum="$(collect_sha "$name")"; sum_rc=$?
+	if [ "$sum_rc" != 0 ]; then
+		set_state "error: зеркала отдают разные контрольные суммы — установка отменена"
+		return 1
+	fi
+	if [ -z "$rsum" ]; then
+		set_state "error: контрольная сумма не опубликована ни на одном зеркале — установка отменена"
+		return 1
+	fi
+	last_err=""
 	for base in $(mirrors); do
 		url="$base/$name"
 		tmp="$(mktemp "${TMPDIR:-/tmp}/mb-hysteria.XXXXXX")" || { set_state "error: mktemp failed"; return 1; }
 		if ! mb_fetch "$url" "$tmp"; then last_err="unreachable"; rm -f "$tmp"; continue; fi
 		if ! err="$(check_elf "$tmp")"; then last_err="$err"; rm -f "$tmp"; continue; fi
-		# Сумма собирается один раз и только когда бинарь на руках: тянуть её раньше значит платить
-		# запросами ко всем зеркалам даже там, где качать всё равно нечего.
-		if [ -z "$rsum" ]; then rsum="$(collect_sha "$name")"; sum_rc=$?; fi
-		# Нет суммы или источники расходятся -> не ставим ВООБЩЕ (следующее зеркало положения не
-		# меняет): непроверяемый бинарь под root — цена выше, чем «второй протокол не заработал».
-		if [ "$sum_rc" != 0 ] || [ -z "$rsum" ]; then
-			last_err="nosum"; rm -f "$tmp"; break
-		fi
 		if [ "$rsum" != "$(sha_of "$tmp")" ]; then last_err="checksum"; rm -f "$tmp"; continue; fi
 		if ! err="$(check_runs "$tmp")"; then last_err="$err"; rm -f "$tmp"; continue; fi
 		if ! mv -f "$tmp" "$DEST"; then last_err="install move failed"; rm -f "$tmp"; continue; fi
@@ -133,11 +161,6 @@ cmd_install() {
 	done
 	case "$last_err" in
 		checksum) set_state "error: контрольная сумма не сошлась ни на одном зеркале" ;;
-		nosum) if [ "$sum_rc" != 0 ]; then
-				set_state "error: зеркала отдают разные контрольные суммы — установка отменена"
-			else
-				set_state "error: контрольная сумма не опубликована ни на одном зеркале — установка отменена"
-			fi ;;
 		unreachable|"") set_state "error: не скачать hysteria — все зеркала недоступны (нет интернета либо блокировка)" ;;
 		*) set_state "error: $last_err" ;;
 	esac

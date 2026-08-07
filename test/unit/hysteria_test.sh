@@ -15,19 +15,29 @@ contains() { case "$2" in *"$3"*) ok ;; *) bad "$1: в '$2' нет '$3'" ;; esac
 
 mkdir -p "$T/bin" "$T/lib"
 
-# Фейк fetch.sh: .sha256 отдаётся только при MB_TEST_SHA. Бинарь скачивается лишь с зеркала,
-# содержащего MB_TEST_OK; содержимое — псевдо-ELF (MB_TEST_BODY=html даёт страницу ошибки).
+# Фейк fetch.sh: файл сумм отдаётся только при MB_TEST_SHA, в формате апстрима (строка на ассет,
+# путь с префиксом build/). Бинарь скачивается лишь с зеркала, содержащего MB_TEST_OK; содержимое —
+# псевдо-ELF (MB_TEST_BODY=html даёт страницу ошибки). Каждый запрос пишется в MB_TEST_FETCH_LOG
+# вместе с действующим лимитом времени — по нему проверяется и порядок шагов, и укороченный таймаут.
 cat >"$T/lib/fetch.sh" <<'EOF'
 mb_fetch() {
+	[ -z "${MB_TEST_FETCH_LOG:-}" ] || echo "$1 t=${MB_FETCH_TIMEOUT:-}" >> "$MB_TEST_FETCH_LOG"
 	case "$1" in
-		*.sha256)
+		*/hashes.txt)
 			[ -n "${MB_TEST_SHA:-}" ] || return 1
 			# MB_TEST_SHA_ALT_ON=<кусок url> — это зеркало отдаёт ДРУГУЮ сумму (подмена).
 			case "$1" in
 				*"${MB_TEST_SHA_ALT_ON:-__nomatch__}"*)
-					echo "${MB_TEST_SHA_ALT:-beef}  hysteria" > "$2"; return 0 ;;
+					echo "${MB_TEST_SHA_ALT:-beef}  build/hysteria-linux-arm64" > "$2"; return 0 ;;
 			esac
-			echo "$MB_TEST_SHA  hysteria" > "$2"; return 0 ;;
+			# Соседние строки не декоративны: arm64 стоит рядом с arm, а имя ассета одного является
+			# префиксом другого — на этом и проверяется якорь в sha_from_hashes.
+			{
+				echo "${MB_TEST_SHA_ARM:-1111111111}  build/hysteria-linux-arm"
+				echo "$MB_TEST_SHA  build/hysteria-linux-arm64"
+				echo "2222222222  build/hysteria-windows-amd64.exe"
+			} > "$2"
+			return 0 ;;
 	esac
 	[ "${MB_TEST_FETCH_RC:-0}" = 0 ] || return 1
 	if [ -n "${MB_TEST_OK:-}" ]; then case "$1" in *"$MB_TEST_OK"*) : ;; *) return 1 ;; esac; fi
@@ -87,14 +97,16 @@ check    "код возврата 1"      "$rc" "1"
 contains "статус про архитектуру" "$(state)" "unsupported architecture"
 check    "бинарь не установлен"   "$([ -f "$BIN" ] && echo y || echo n)" "n"
 
+# MB_TEST_SHA здесь и ниже задан намеренно: сумма собирается ПЕРВОЙ, и без неё прогон не дошёл бы
+# до фазы скачивания, которую эти случаи и проверяют.
 echo "=== все зеркала недоступны -> внятная ошибка, мусора нет ==="
-rc="$(install_run MB_TEST_FETCH_RC=1)"
+rc="$(install_run MB_TEST_FETCH_RC=1 MB_TEST_SHA=cafe)"
 check    "код возврата 1"     "$rc" "1"
 contains "статус про зеркала"  "$(state)" "все зеркала недоступны"
 check    "бинарь не установлен" "$([ -f "$BIN" ] && echo y || echo n)" "n"
 
 echo "=== зеркало отдало HTML вместо бинаря -> отбраковка, не ставим ==="
-rc="$(install_run MB_TEST_BODY=html)"
+rc="$(install_run MB_TEST_BODY=html MB_TEST_SHA=cafe)"
 check    "код возврата 1"       "$rc" "1"
 contains "статус про не-ELF"     "$(state)" "ELF"
 check    "бинарь не установлен"  "$([ -f "$BIN" ] && echo y || echo n)" "n"
@@ -111,11 +123,28 @@ contains "статус про место"  "$(state)" "40MB"
 
 # Бинарь ляжет в /usr/bin и будет исполняться от root, а зеркала — gh-прокси, т.е. MITM по
 # устройству. Непроверяемый бинарь не ставим вообще: «второй протокол не заработал» дешевле.
-echo "=== суммы нет ни на одном зеркале -> НЕ ставим ==="
-rc="$(install_run)"
+echo "=== суммы нет ни на одном зеркале -> НЕ ставим и НЕ качаем 20МБ ==="
+: > "$T/fetch.log"
+rc="$(install_run MB_TEST_FETCH_LOG="$T/fetch.log")"
 check    "код возврата 1"      "$rc" "1"
 contains "статус про сумму"     "$(state)" "не опубликована"
 check    "бинарь не установлен"  "$([ -f "$BIN" ] && echo y || echo n)" "n"
+check    "за бинарём не ходили"  "$(grep -c 'hysteria-linux-arm64 ' "$T/fetch.log")" "0"
+
+# Файл сумм — килобайты: на мёртвом зеркале он не должен стоить столько же, сколько 20МБ бинарь.
+echo "=== файл сумм качается с укороченным лимитом, общий не затирается ==="
+: > "$T/fetch.log"
+rc="$(install_run MB_TEST_FETCH_LOG="$T/fetch.log" MB_TEST_SHA=cafe MB_TEST_LOCAL_SHA=cafe)"
+check    "код возврата 0"       "$rc" "0"
+contains "у файла сумм свой лимит" "$(grep hashes.txt "$T/fetch.log" | head -1)" "t=30"
+check    "у бинаря лимит прежний"  "$(grep -c 'hysteria-linux-arm64 t=30' "$T/fetch.log")" "0"
+
+# Сумма берётся по ИМЕНИ ассета: без якоря hysteria-linux-arm подцепил бы строку arm64, и сверка
+# упала бы с «сумма не сошлась» — то есть увела бы от настоящей причины.
+echo "=== имя ассета якорится: arm не берёт сумму от arm64 ==="
+rc="$(install_run MB_TEST_ARCH=armv7l MB_TEST_SHA=cafe MB_TEST_SHA_ARM=abc123 MB_TEST_LOCAL_SHA=abc123)"
+check    "код возврата 0" "$rc" "0"
+check    "статус ok"      "$(state)" "ok"
 
 echo "=== зеркала отдают РАЗНЫЕ суммы (подмена) -> НЕ ставим ==="
 rc="$(install_run MB_TEST_SHA=cafe MB_TEST_LOCAL_SHA=cafe MB_TEST_SHA_ALT_ON=gh-proxy.com)"
