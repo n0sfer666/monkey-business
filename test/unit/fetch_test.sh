@@ -26,6 +26,8 @@ for a in "\$@"; do
 	prev="\$a"
 done
 case "\$*" in
+	*-I\ *)    [ -f "$T/direct_ok" ] || exit 28
+	           printf 'HTTP/1.1 200 OK\r\nContent-Length: 4242\r\n'; exit 0 ;;
 	*socks5h*) [ -f "$T/socks_ok" ] || exit 7
 	           printf 'via-socks' > "\$out"; exit 0 ;;
 	*)         [ -f "$T/direct_ok" ] || { printf 'partial' > "\$out"; exit 28; }
@@ -41,6 +43,7 @@ chmod +x "$T/bin/curl" "$T/bin/pgrep"
 # PATH внутри прогона — только мок-каталог (иначе command -v нашёл бы системный curl),
 # поэтому реальные утилиты, которые нужны самому fetch.sh, кладём туда же
 ln -sf /bin/rm "$T/bin/rm"
+ln -sf "$(command -v awk)" "$T/bin/awk"
 
 # fetch.sh проверяет наличие curl через command -v -> PATH только из мок-каталога
 run() {
@@ -84,6 +87,39 @@ rm -f "$T/curl.log" "$T/out"
 PATH="$T/bin" MB_FETCH_SOCKS="10.0.0.9:1080" \
 	/bin/sh -c ". '$LIB'; mb_fetch http://x/f '$T/out'" 2>/dev/null
 check "использован заданный socks" "$(grep -c 'socks5h://10.0.0.9:1080' "$T/curl.log")" "1"
+
+# Зеркало, которое соединилось и отдаёт по ~140 байт/с, connect-timeout не ловит: без порога
+# скорости перебор сжигал по целому MB_FETCH_TIMEOUT на каждом таком (8 минут ожидания на установке
+# hysteria). Порог задаёт curl, наше дело — что он до него доходит, в обоих режимах.
+echo "=== залипшее зеркало отсекается по скорости, а не по общему таймауту ==="
+: >"$T/direct_ok"
+check "код возврата 0"          "$(run)" "0"
+check "порог скорости задан"     "$(grep -c -- '--speed-limit 1024 --speed-time 20' "$T/curl.log")" "1"
+rm -f "$T/direct_ok"; : >"$T/xray_up"; : >"$T/socks_ok"
+check "код возврата 0"                  "$(run)" "0"
+check "socks-вызов тоже с порогом"       "$(grep -c -- '--speed-limit 1024 --speed-time 20' "$T/curl.log")" "2"
+
+echo "=== порог настраивается через env ==="
+rm -f "$T/curl.log" "$T/out"; : >"$T/direct_ok"
+PATH="$T/bin" MB_FETCH_MIN_RATE=4096 MB_FETCH_STALL=5 \
+	/bin/sh -c ". '$LIB'; mb_fetch http://x/f '$T/out'" 2>/dev/null
+check "порог из env" "$(grep -c -- '--speed-limit 4096 --speed-time 5' "$T/curl.log")" "1"
+
+# hysteria.sh временно урезает MB_FETCH_TIMEOUT ради мелкого файла сумм: лимит обязан читаться в
+# момент вызова, а порог скорости при этом никуда не деваться.
+echo "=== урезанный MB_FETCH_TIMEOUT доезжает до curl, порог сохраняется ==="
+rm -f "$T/curl.log" "$T/out"
+PATH="$T/bin" MB_FETCH_TIMEOUT=30 \
+	/bin/sh -c ". '$LIB'; mb_fetch http://x/f '$T/out'" 2>/dev/null
+check "лимит из env"        "$(grep -c -- '-m 30' "$T/curl.log")" "1"
+check "порог на месте"       "$(grep -c -- '--speed-limit 1024' "$T/curl.log")" "1"
+
+echo "=== mb_remote_size: HEAD с теми же лимитами ==="
+rm -f "$T/curl.log"; : >"$T/direct_ok"
+sz="$(PATH="$T/bin" /bin/sh -c ". '$LIB'; mb_remote_size http://x/f" 2>/dev/null)"
+check "размер из Content-Length" "$sz" "4242"
+check "HEAD с порогом"           "$(grep -c -- '--speed-limit 1024 --speed-time 20' "$T/curl.log")" "1"
+check "это именно HEAD"          "$(grep -c -- '-I http://x/f' "$T/curl.log")" "1"
 
 echo "=== curl отсутствует, есть wget -> direct через wget, socks невозможен ==="
 rm -f "$T/bin/curl" "$T/out"
