@@ -174,6 +174,55 @@ test("subscriptionUpdate preserves manual order on re-fetch", function() {
 	assertEq(length(st.servers), 2);
 });
 
+// Ручной сервер в ответе панели не приходит: без отдельной ветки автообновление раз в сутки
+// молча стирало бы всё, что добавлено ссылкой или руками.
+test("subscriptionUpdate keeps a manual server at its position", function() {
+	let st = freshState();
+	st.fetchResult = { body: SUB, userinfo: "" };
+	let ctx = mockCtx(st);
+	hsub.subscriptionUpdate(ctx, {});
+	let manual = {
+		tag: "mine", protocol: "hysteria2", address: "1.2.3.4", port: 443, password: "pw",
+		uuid: "", security: "tls", sni: "s", alpn: [], reality: null,
+		transport: { type: "quic", path: "", host: "", mode: "", serviceName: "" },
+		obfs: null, source: "manual",
+	};
+	st.servers = [ st.servers[0], manual, st.servers[1] ];
+	hsub.subscriptionUpdate(ctx, {});
+	assertEq(length(st.servers), 3);
+	assertEq(st.servers[1].tag, "mine");
+});
+
+// Ссылку из формы человек обычно переименовывает. Ключ с именем такой сервер от подписочного не
+// отличает, и тот же сервер лёг бы в список вторым — дубль ищем по подключению.
+test("subscriptionUpdate does not re-add a renamed manual copy of a fetched server", function() {
+	let st = freshState();
+	st.fetchResult = { body: SUB, userinfo: "" };
+	let ctx = mockCtx(st);
+	hsub.subscriptionUpdate(ctx, {});
+	let copy = {};
+	for (let k in st.servers[0])
+		copy[k] = st.servers[0][k];
+	copy.tag = "my-favourite";
+	copy.source = "manual";
+	st.servers = [ copy ];
+	hsub.subscriptionUpdate(ctx, {});
+	assertEq(length(st.servers), 2);
+	assertEq(st.servers[0].tag, "my-favourite");
+});
+
+// Секция, заведённая в форме, может вообще не иметь source — «не subscription» и есть ручной.
+test("subscriptionUpdate keeps a server with no source at all", function() {
+	let st = freshState();
+	st.fetchResult = { body: SUB, userinfo: "" };
+	let ctx = mockCtx(st);
+	hsub.subscriptionUpdate(ctx, {});
+	st.servers = [ { tag: "hand", protocol: "vless", address: "9.9.9.9", port: 443, uuid: "u" } ];
+	hsub.subscriptionUpdate(ctx, {});
+	assertEq(st.servers[0].tag, "hand");
+	assertEq(length(st.servers), 3);
+});
+
 test("subscriptionUpdate keeps distinct servers, collapses exact dupes (5-vs-7 fix)", function() {
 	let st = freshState();
 	st.fetchResult = { body: SUB_HOPS, userinfo: "" };
@@ -248,6 +297,20 @@ test("subscriptionUpdate dedups hysteria servers by password, not address", func
 	let ctx = mockCtx(st);
 	let r = hsub.subscriptionUpdate(ctx, {});
 	assertEq(r.added, 2);
+	assertEq(length(st.servers), 2);
+});
+
+// Обфускация — часть подключения, а не косметика: с чужим obfs-password рукопожатие не проходит
+// вовсе. Два таких сервера обязаны остаться двумя.
+test("subscriptionUpdate keeps hysteria servers that differ only by obfs password", function() {
+	let st = freshState();
+	st.fetchResult = {
+		body: "hy2://pass1@h.example:443/?obfs=salamander&obfs-password=o1#HY\n" +
+			"hy2://pass1@h.example:443/?obfs=salamander&obfs-password=o2#HY\n",
+		userinfo: "",
+	};
+	let ctx = mockCtx(st);
+	assertEq(hsub.subscriptionUpdate(ctx, {}).added, 2);
 	assertEq(length(st.servers), 2);
 });
 

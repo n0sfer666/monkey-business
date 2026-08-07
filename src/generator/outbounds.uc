@@ -21,13 +21,17 @@ function buildStreamSettings(s, opts) {
 		ss.grpcSettings = { serviceName: t.serviceName };
 
 	if (s.security == "reality") {
+		// Сервер с security=reality и пустым reality форма не даёт создать, но в UCI такое можно
+		// вписать руками. Пустые ключи отвергнет `xray -test` с внятным текстом, а разыменование
+		// null уронило бы саму сборку конфига — и apply сказал бы «ошибка ucode» вместо причины.
+		let re = s.reality || {};
 		ss.security = "reality";
 		ss.realitySettings = {
 			serverName: s.sni,
 			fingerprint: s.fingerprint,
-			publicKey: s.reality.publicKey,
-			shortId: s.reality.shortId,
-			spiderX: s.reality.spiderX,
+			publicKey: re.publicKey || "",
+			shortId: re.shortId || "",
+			spiderX: re.spiderX || "",
 		};
 	} else if (s.security == "tls") {
 		ss.security = "tls";

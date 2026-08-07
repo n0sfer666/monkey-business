@@ -12,7 +12,7 @@ set -u
 SELF_DIR=$(dirname "$0")
 ROOT="$SELF_DIR/../.."
 LIB=/usr/share/rpcd/ucode/lib/monkey-business
-EXPECT="check_exit,config_apply,geo_install,geo_status,geo_update,hysteria_install,hysteria_status,servers_list,servers_ping,service_toggle,set_mode,set_routing,status,subscription_update"
+EXPECT="check_exit,config_apply,geo_install,geo_status,geo_update,hysteria_install,hysteria_status,parse_uri,servers_list,servers_ping,service_toggle,set_mode,set_routing,status,subscription_update"
 
 T=$(mktemp -d)
 trap 'rm -rf "$T"' EXIT

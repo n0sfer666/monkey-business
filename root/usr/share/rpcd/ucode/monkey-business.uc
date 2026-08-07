@@ -17,6 +17,7 @@ import * as h from '/usr/share/rpcd/ucode/lib/monkey-business/rpcd/handlers.uc';
 import * as hstatus from '/usr/share/rpcd/ucode/lib/monkey-business/rpcd/status.uc';
 import * as hsub from '/usr/share/rpcd/ucode/lib/monkey-business/rpcd/subscription.uc';
 import * as hping from '/usr/share/rpcd/ucode/lib/monkey-business/rpcd/ping.uc';
+import * as huri from '/usr/share/rpcd/ucode/lib/monkey-business/rpcd/uri.uc';
 import * as hy from '/usr/share/rpcd/ucode/lib/monkey-business/rpcd/hysteria.uc';
 import * as sh from '/usr/share/rpcd/ucode/lib/monkey-business/runtime/shell.uc';
 import { CONFIG, XRAY_CONF, WD_STATE } from '/usr/share/rpcd/ucode/lib/monkey-business/runtime/paths.uc';
@@ -142,6 +143,7 @@ const methods = {
 	servers_list:         { call: function() { return hstatus.serversList(buildCtx()); } },
 	servers_ping:         { call: function() { return hping.serversPing(buildCtx()); } },
 	subscription_update:  { args: { url: '' }, call: function(req) { return hsub.subscriptionUpdate(buildCtx(), req.args); } },
+	parse_uri:            { args: { uri: '', section: '' }, call: function(req) { return huri.parseServerUri(buildCtx(), req.args); } },
 	config_apply:         { call: function() { return h.configApply(buildCtx()); } },
 	service_toggle:       { args: { enabled: false }, call: function(req) { return h.serviceToggle(buildCtx(), req.args); } },
 	geo_update:           { args: { geoip_url: '', geosite_url: '' }, call: function(req) { return h.geoUpdate(buildCtx(), req.args); } },

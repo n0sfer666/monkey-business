@@ -17,13 +17,13 @@ function isOn(v) {
 function normalizeHysteria2(u, raw) {
 	let port = (u.port != null) ? u.port : DEFAULT_PORT;
 	if (port < 1 || port > 65535)
-		return { error: "invalid port: " + truncate(raw) };
+		return { error: "invalid port: " + truncate(raw), code: "invalid_port" };
 	// Нечисловой «порт» (частый случай — диапазон порт-хоппинга прямо в адресе, `host:10000-20000`)
 	// parseUri оставляет частью host. Молча подставить сюда 443 значит собрать конфиг с сервером
 	// "host:10000-20000:443" — снаружи это «сервер не работает». У vless такой URI отвергается,
 	// и здесь тоже: диапазон задаётся параметром mport.
 	if (u.port == null && index(u.host, ":") >= 0 && !match(u.host, /:[0-9]+$/))
-		return { error: "invalid port: " + truncate(raw) };
+		return { error: "invalid port: " + truncate(raw), code: "invalid_port" };
 
 	let q = u.query;
 	let obfs = null;

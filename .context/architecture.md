@@ -5,7 +5,7 @@
 │  LuCI client-side JS (luci/)                 │  dashboard / servers / settings / first-run
 ├─────────────────────────────────────────────┤
 │  rpcd-сервис (src/rpcd/*.uc)                 │  чистые хендлеры ubus-методов: handlers (мутации),
-│                                              │  status, subscription, select, ping, hysteria
+│                                              │  status, subscription, select, ping, hysteria, uri
 │                                              │  connect → selectWorking (проба серверов по порядку)
 │  Рантайм плагина (src/runtime/*.uc)          │  всё, что трогает устройство: shell, uci, net,
 │                                              │  apply (валидация+atomic install), hysteria, paths
@@ -16,7 +16,8 @@
 │    inbounds/outbounds/routing/dns.uc         │  секции конфига по отдельности
 │           (src/generator/hysteria.uc)        │  сервер → конфиг hysteria-клиента + socks-аутбаунд
 │  Парсер (src/parser/subscription.uc)         │  подписка → нормализованные серверы (vless + hy2)
-│  Lib (src/lib/*.uc)                          │  общие утилиты (uri, validation)
+│           (src/parser/validate.uc)           │  строгая проверка ОДНОЙ ссылки из формы
+│  Lib (src/lib/*.uc)                          │  общие утилиты (uri, validation, servermap)
 ├─────────────────────────────────────────────┤
 │  procd init → Xray-core (+ hysteria client)   │  второй инстанс того же сервиса, socks :10810
 │  boothealth (mb-boothealth)                   │  ext4-rootfs: детект unclean/ro-remount, 0 периодики
@@ -30,6 +31,11 @@
 
 ## Потоки данных
 1. **Подписка:** URL → `subscription.uc` (auto-detect формата) → нормализованный список серверов → UCI.
+1a. **Ссылка из формы:** тот же `normalizeUri` + строгий `validate.uc` (ubus `parse_uri`) → сервер
+   раскладывается по полям формы и сохраняется как `source: manual`. В UCI поля лежат плоско
+   (`tr_*`, `pbk`/`sid`/`spx`, `obfs_*`) — маппинг в контракт держит `lib/servermap.uc`, чтение
+   понимает и прежнюю JSON-схему. Ручные серверы обновление подписки не трогает.
+   Решение: `.context/decisions/2026-08-07-server-form-link-import.md`.
 2. **Apply / connect:** UCI → `selectWorking` (пробует серверы по порядку списка, первый рабочий →
    тег в `/etc/monkey-business/active`) → `xray.uc` → Xray JSON → procd restart → nftables TPROXY.
 2a. **Протоколы.** `vless` (Reality/XHTTP/ws) идёт аутбаундом самого xray; `hysteria2` — отдельным

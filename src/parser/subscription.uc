@@ -44,9 +44,9 @@ function buildTransport(q) {
 
 function normalizeVless(u, raw) {
 	if (u.user == null || u.user == "")
-		return { error: "missing uuid: " + truncate(raw) };
+		return { error: "missing uuid: " + truncate(raw), code: "missing_uuid" };
 	if (u.port == null || u.port < 1 || u.port > 65535)
-		return { error: "invalid port: " + truncate(raw) };
+		return { error: "invalid port: " + truncate(raw), code: "invalid_port" };
 
 	let q = u.query;
 	let security = q.security;
@@ -84,6 +84,15 @@ const NORMALIZERS = {
 	hy2: normalizeHysteria2,
 };
 
+// Схема -> сервер, одной точкой входа: тем же путём идут и строка подписки, и ссылка, вставленная
+// в форму (rpcd/uri.uc). Код ошибки нужен именно форме — она рисует причину, а не текст лога.
+function normalizeUri(u, raw) {
+	let normalize = NORMALIZERS[u.scheme];
+	if (normalize == null)
+		return { error: "unsupported scheme '" + u.scheme + "'", code: "unsupported_scheme", detail: u.scheme };
+	return normalize(u, raw);
+}
+
 function parseUriList(text) {
 	let servers = [];
 	let errors = [];
@@ -96,12 +105,7 @@ function parseUriList(text) {
 			push(errors, "unparseable: " + truncate(t));
 			continue;
 		}
-		let normalize = NORMALIZERS[u.scheme];
-		if (normalize == null) {
-			push(errors, "unsupported scheme '" + u.scheme + "'");
-			continue;
-		}
-		let r = normalize(u, t);
+		let r = normalizeUri(u, t);
 		if (r.error != null)
 			push(errors, r.error);
 		else
@@ -167,4 +171,4 @@ function parse(raw) {
 	return { format: "unknown", servers: [], errors: ["unrecognized subscription format"] };
 }
 
-export { parse, detectFormat, normalizeVless, parseUriList, decodeBase64Maybe };
+export { parse, detectFormat, normalizeVless, normalizeUri, parseUriList, decodeBase64Maybe };
