@@ -85,6 +85,8 @@ cpf root/usr/share/monkey-business/nicwatch.sh "$stage/usr/share/monkey-business
 chmod 755 "$stage/usr/share/monkey-business/nicwatch.sh"
 cpf root/usr/share/monkey-business/nicfw.sh "$stage/usr/share/monkey-business/nicfw.sh"
 chmod 755 "$stage/usr/share/monkey-business/nicfw.sh"
+cpf root/usr/share/monkey-business/subupdate.sh "$stage/usr/share/monkey-business/subupdate.sh"
+chmod 755 "$stage/usr/share/monkey-business/subupdate.sh"
 cpf root/usr/share/monkey-business/firmware/rtl8153b-2.fw \
 	"$stage/usr/share/monkey-business/firmware/rtl8153b-2.fw"
 chmod 644 "$stage/usr/share/monkey-business/firmware/rtl8153b-2.fw"
@@ -160,7 +162,8 @@ $SSH $SSH_OPTS -p "$PORT" "$HOST" "MB_RESPAWN='$RESPAWN' MB_ALLOW_MISSING='$ALLO
 	chmod +x /etc/init.d/monkey-business /etc/init.d/mb-boothealth \
 		/usr/share/monkey-business/firewall/*.sh \
 		/usr/share/monkey-business/watchdog.sh /usr/share/monkey-business/boothealth.sh \
-		/usr/share/monkey-business/nicwatch.sh /usr/share/monkey-business/nicfw.sh
+		/usr/share/monkey-business/nicwatch.sh /usr/share/monkey-business/nicfw.sh \
+		/usr/share/monkey-business/subupdate.sh
 	rm -f /tmp/mb-deploy.tgz /tmp/luci-indexcache* 2>/dev/null || true
 	# распакованное должно дойти до карты ДО рестартов ниже: если rpcd подвесит ubusd и роутер
 	# уедет в жёсткий сброс, недописанные файлы останутся обрезанными в журнале ext4.
@@ -206,10 +209,13 @@ $SSH $SSH_OPTS -p "$PORT" "$HOST" "MB_RESPAWN='$RESPAWN' MB_ALLOW_MISSING='$ALLO
 	sed -i '\#monkey-business/boothealth\.sh#d' /etc/crontabs/root 2>/dev/null || true
 	WD_LINE='* * * * * /usr/share/monkey-business/watchdog.sh >/dev/null 2>&1'
 	NW_LINE='* * * * * /usr/share/monkey-business/nicwatch.sh >/dev/null 2>&1'
+	SU_LINE='* * * * * /usr/share/monkey-business/subupdate.sh >/dev/null 2>&1'
 	grep -q 'monkey-business/watchdog.sh' /etc/crontabs/root 2>/dev/null \
 		|| printf '%s\n' "$WD_LINE" >> /etc/crontabs/root
 	grep -q 'monkey-business/nicwatch.sh' /etc/crontabs/root 2>/dev/null \
 		|| printf '%s\n' "$NW_LINE" >> /etc/crontabs/root
+	grep -q 'monkey-business/subupdate.sh' /etc/crontabs/root 2>/dev/null \
+		|| printf '%s\n' "$SU_LINE" >> /etc/crontabs/root
 	/etc/init.d/cron enable >/dev/null 2>&1 || true
 	/etc/init.d/cron restart >/dev/null 2>&1 || true
 

@@ -23,6 +23,7 @@
 │  boothealth (mb-boothealth)                   │  ext4-rootfs: детект unclean/ro-remount, 0 периодики
 │  cron watchdog (watchdog+probes+recovery+phases)│ 1/мин; лестница soft→hard→failover→full→direct
 │  cron nicwatch (nicwatch.sh) + nicfw.sh       │  1/мин; залипание TX eth1 (RTL8153B) → bounce/re-bind
+│  cron subupdate (subupdate.sh)                │  1/мин, гейт по update_interval; ubus subscription_update
 │  nftables TPROXY (scripts/firewall/)          │  перехват TCP+UDP; :53 → dns-in (не tproxy)
 │  nft direct-bypass (ruset.sh → mb_ru4/mb_ru6) │  RU-CIDR минуют tproxy в ядре (быстрый путь)
 │  Xray transparent DNS (dns-in :5300 + split)  │  клиентский :53 редиректится в dns-модуль
@@ -31,6 +32,9 @@
 
 ## Потоки данных
 1. **Подписка:** URL → `subscription.uc` (auto-detect формата) → нормализованный список серверов → UCI.
+   Тот же путь по расписанию: `subupdate.sh` (cron 1/мин) при `auto_update=1` раз в `update_interval`
+   (не чаще 300с) зовёт ubus `subscription_update`; после неудачи пауза 900с. Состояние — в tmpfs,
+   конфиг xray скрипт не переприменяет: это делает Apply или watchdog.
 1a. **Ссылка из формы:** тот же `normalizeUri` + строгий `validate.uc` (ubus `parse_uri`) → сервер
    раскладывается по полям формы и сохраняется как `source: manual`. В UCI поля лежат плоско
    (`tr_*`, `pbk`/`sid`/`spx`, `obfs_*`) — маппинг в контракт держит `lib/servermap.uc`, чтение

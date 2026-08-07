@@ -133,7 +133,7 @@ make test-integ  # netns TPROXY-перехват + сгенерированны�
 | `src/lib/` | общие утилиты (разбор URI) |
 | `luci/` | LuCI client-side JS-вьюшки (dashboard / servers / settings) + панель сплита (`routing.js`, рендерится внутри дашборда) + меню + ACL |
 | `root/` | файлы на устройстве: UCI-дефолты, procd-init, рантайм rpcd-плагин |
-| `root/usr/share/monkey-business/` | shell на устройстве: `watchdog.sh` + `probes.sh` + `recovery.sh` + `phases.sh` (самовосстановление), `ruset.sh` (nft-сеты direct-bypass), `geo.sh`, `fetch.sh` (общая загрузка, socks-фолбэк), `boothealth.sh`, `hysteria.sh` (установщик клиента hysteria2), `nicfw.sh` + `nicwatch.sh` (USB-сетевуха RTL8153B, см. [гайд §9](docs/install-nanopi.ru.md#9-usb-сетевуха-rtl8153b-прошивка-и-watchdog)) |
+| `root/usr/share/monkey-business/` | shell на устройстве: `watchdog.sh` + `probes.sh` + `recovery.sh` + `phases.sh` (самовосстановление), `ruset.sh` (nft-сеты direct-bypass), `geo.sh`, `fetch.sh` (общая загрузка, socks-фолбэк), `boothealth.sh`, `hysteria.sh` (установщик клиента hysteria2), `subupdate.sh` (автообновление подписки по расписанию), `nicfw.sh` + `nicwatch.sh` (USB-сетевуха RTL8153B, см. [гайд §9](docs/install-nanopi.ru.md#9-usb-сетевуха-rtl8153b-прошивка-и-watchdog)) |
 | `scripts/firewall/` | nftables TPROXY apply/flush |
 | `scripts/expand-sd.sh` | расширение ext4-раздела SD-карты с macOS ([док](docs/sd-expand-macos.ru.md)) |
 | `test/` | ucode-харнесс + unit/snapshot-тесты + netns-интеграция |
