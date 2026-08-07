@@ -36,12 +36,19 @@ return view.extend({
 		var auto = sub.option(form.Flag, 'auto_update', _('Auto-update'),
 			_('Refresh the server list on a schedule.'));
 		auto.default = '1';
+		// rmempty=false обязателен: значение, совпавшее с default, LuCI удаляет из UCI на каждом
+		// Save формы — и subupdate.sh читал бы пустоту вместо выбора пользователя.
+		auto.rmempty = false;
 
 		var interval = sub.option(form.Value, 'update_interval', _('Interval (sec)'),
-			_('How often to refresh the subscription.'));
+			_('How often to refresh the subscription. Values below 300 are clamped to 300.'));
 		interval.depends('auto_update', '1');
 		interval.datatype = 'uinteger';
 		interval.default = '86400';
+		interval.rmempty = false;
+		// Выключенное автообновление прячет поле; без retain Save стёр бы заданный интервал,
+		// и обратное включение молча вернуло бы сутки.
+		interval.retain = true;
 
 		var btn = sub.option(form.Button, '_update', _('Update now'));
 		btn.inputtitle = _('Fetch subscription');
