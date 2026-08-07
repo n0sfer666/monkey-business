@@ -1,30 +1,13 @@
-// Чтение/запись UCI-секций плагина. Отдельно, потому что тут живёт единственная нетривиальная
-// вещь: server-контракт с вложенными объектами не ложится в UCI как есть.
+// Чтение/запись UCI-секций плагина. Раскладку server-контракта по опциям держит lib/servermap.uc.
 
 import { readfile, writefile } from 'fs';
 import { CONFIG, CONF_DIR, ACTIVE_FILE } from './paths.uc';
+import { reviveServer, flattenServer } from '../lib/servermap.uc';
 
 function loadSection(cursor, type_) {
 	let res = {};
 	cursor.foreach(CONFIG, type_, function(s) { res = s; });
 	return res;
-}
-
-// UCI хранит только строки/списки, а server имеет вложенные transport/reality (объекты) и alpn.
-// Сериализуем их в JSON при записи (storeServers) и восстанавливаем при чтении (reviveServer).
-function reviveServer(s) {
-	for (let key in ["transport", "reality", "alpn", "obfs"]) {
-		if (type(s[key]) == "string") {
-			let v = s[key];
-			if (v == "" || v == "null")
-				s[key] = (key == "alpn") ? [] : null;
-			else
-				s[key] = json(v);
-		}
-	}
-	if (s.port != null)
-		s.port = int(s.port);
-	return s;
 }
 
 function loadServers(cursor) {
@@ -37,13 +20,10 @@ function storeServers(cursor, servers) {
 	cursor.foreach(CONFIG, 'server', function(s) { cursor.delete(CONFIG, s['.name']); });
 	for (let s in servers) {
 		let name = cursor.add(CONFIG, 'server');
-		for (let k in s) {
-			let v = s[k], t = type(v);
-			if (t == "object" || t == "array")
-				cursor.set(CONFIG, name, k, sprintf("%J", v));
-			else if (v != null)
-				cursor.set(CONFIG, name, k, "" + v);
-		}
+		let flat = flattenServer(s);
+		for (let k in flat)
+			if (flat[k] != null)
+				cursor.set(CONFIG, name, k, "" + flat[k]);
 	}
 	cursor.commit(CONFIG);
 }
