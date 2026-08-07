@@ -2,6 +2,7 @@
 'require baseclass';
 'require form';
 'require rpc';
+'require view.monkey-business.serveropt as so';
 
 // Поле «вставь ссылку» с живой проверкой. Разбор делает устройство (ubus parse_uri) — своего
 // парсера у формы нет намеренно: иначе она принимала бы ссылки, которые роутер поднять не может.
@@ -87,6 +88,16 @@ return baseclass.extend({
 		o.rows = 3;
 		o.depends('_mode', 'link');
 		o.placeholder = 'hy2://password@host:443/?sni=example.com#name';
+		// Обязательность в режиме ссылки держится ЗДЕСЬ, а не на полях сервера: пока ссылка не
+		// разобрана, заполнять их нечем. Иначе Save на пустой форме завёл бы безымянную секцию —
+		// подписка её не трогает, а выбор активного берёт просто первую по порядку.
+		o.validate = function(sid, value) {
+			if (so.shown(this, sid))
+				return true;
+			return (value == null || value.trim() === '')
+				? _('Paste a server link, or switch to “Enter by hand”')
+				: _('This link cannot be used yet — see the message below');
+		};
 		// Виртуальное поле: ссылка нужна только для импорта, в конфиг сервера она не входит.
 		o.cfgvalue = function() { return ''; };
 		o.write = function() {};
@@ -106,6 +117,11 @@ return baseclass.extend({
 			// Ответ на него пришёл бы в уже отсоединённые виджеты, а при следующем открытии модалки
 			// раскладывал бы прошлую ссылку по новой секции.
 			var gone = function() { return !node.isConnected; };
+			var revalidate = function() {
+				var el = clone.getUIElement(section_id);
+				if (el != null)
+					el.triggerValidation();
+			};
 			var check = function(value) {
 				value = value.trim();
 				// Тот же текст второй раз не разбираем: иначе правка полей после вставки ссылки
@@ -126,6 +142,9 @@ return baseclass.extend({
 					say(self.verdict(res));
 					if (res && res.ok)
 						onParsed(clone.section, section_id, res.server);
+					// Проверка поля отработала ДО разбора, когда поля сервера ещё не были раскрыты, и
+					// её отказ («вставьте ссылку») висел бы красным поверх уже разобранной ссылки.
+					revalidate();
 				}).catch(function(e) {
 					// Сорванная проверка не должна запирать текст навсегда: без сброса повторить её
 					// можно было бы только изменив ссылку, а поля так и остались бы пустыми.
