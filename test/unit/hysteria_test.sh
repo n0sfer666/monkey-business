@@ -102,7 +102,7 @@ check    "бинарь не установлен"   "$([ -f "$BIN" ] && echo y |
 echo "=== все зеркала недоступны -> внятная ошибка, мусора нет ==="
 rc="$(install_run MB_TEST_FETCH_RC=1 MB_TEST_SHA=cafe)"
 check    "код возврата 1"     "$rc" "1"
-contains "статус про зеркала"  "$(state)" "все зеркала недоступны"
+contains "статус про зеркала"  "$(state)" "ни одно зеркало не отдало бинарь"
 check    "бинарь не установлен" "$([ -f "$BIN" ] && echo y || echo n)" "n"
 
 echo "=== зеркало отдало HTML вместо бинаря -> отбраковка, не ставим ==="
@@ -146,11 +146,27 @@ rc="$(install_run MB_TEST_ARCH=armv7l MB_TEST_SHA=cafe MB_TEST_SHA_ARM=abc123 MB
 check    "код возврата 0" "$rc" "0"
 check    "статус ok"      "$(state)" "ok"
 
-echo "=== зеркала отдают РАЗНЫЕ суммы (подмена) -> НЕ ставим ==="
-rc="$(install_run MB_TEST_SHA=cafe MB_TEST_LOCAL_SHA=cafe MB_TEST_SHA_ALT_ON=gh-proxy.com)"
+echo "=== ничья зеркал 2:2 -> НЕ ставим ==="
+rc="$(install_run MB_HY_MIRRORS="http://a1 http://a2 http://b1 http://b2" \
+	MB_TEST_SHA=cafe MB_TEST_LOCAL_SHA=cafe MB_TEST_SHA_ALT_ON=http://b)"
 check    "код возврата 1"      "$rc" "1"
 contains "статус про расхождение" "$(state)" "разные контрольные суммы"
 check    "бинарь не установлен"  "$([ -f "$BIN" ] && echo y || echo n)" "n"
+
+# Одинокий голос — не подтверждение: перехваченный (или просто единственный доступный) прокси не
+# должен в одиночку авторизовать бинарь, поэтому порог MB_HY_MIN_VOTES жёстче, чем «большинство».
+echo "=== сумму подтвердило одно зеркало -> НЕ ставим ==="
+rc="$(install_run MB_HY_MIRRORS="http://only" MB_TEST_SHA=cafe MB_TEST_LOCAL_SHA=cafe)"
+check    "код возврата 1"       "$rc" "1"
+contains "статус про порог"      "$(state)" "меньше 2 зеркал"
+check    "бинарь не установлен"  "$([ -f "$BIN" ] && echo y || echo n)" "n"
+
+# Подмена на меньшинстве зеркал не отменяет установку: победившая сумма всё равно сверяется с
+# файлом, поэтому зеркало с подложным бинарём просто не пройдёт проверку и цикл уйдёт дальше.
+echo "=== подмена на 1 из 4 зеркал -> ставим по большинству ==="
+rc="$(install_run MB_TEST_SHA=cafe MB_TEST_LOCAL_SHA=cafe MB_TEST_SHA_ALT_ON=gh-proxy.com)"
+check    "код возврата 0" "$rc" "0"
+check    "статус ok"      "$(state)" "ok"
 
 echo "=== установка уже идёт -> второй запуск отказывает, не трогая STATE ==="
 rm -f "$BIN"; mkdir -p "$T/hy.lock"; echo running > "$STATEF"
@@ -158,6 +174,31 @@ rc="$(run sh "$HY" install)"
 check "код возврата 1" "$rc" "1"
 check "STATE не тронут" "$(state)" "running"
 rmdir "$T/hy.lock"
+
+# Reboot/OOM посреди установки оставляет каталог-замок навсегда: без сборки протухшего замка кнопка
+# «Установить» молча отказывала бы до ручного rmdir. Возраст замка берётся из mtime каталога.
+echo "=== протухший замок -> подбираем и ставим ==="
+rm -f "$BIN" "$STATEF"; mkdir -p "$T/hy.lock"
+touch -t 200001010000 "$T/hy.lock"
+rc="$(run MB_TEST_SHA=cafe MB_TEST_LOCAL_SHA=cafe sh "$HY" install)"
+check "код возврата 0" "$rc" "0"
+check "статус ok"      "$(state)" "ok"
+check "замок снят"     "$([ -d "$T/hy.lock" ] && echo y || echo n)" "n"
+
+echo "=== свежий замок -> НЕ подбираем ==="
+rm -f "$BIN"; mkdir -p "$T/hy.lock"; echo running > "$STATEF"
+rc="$(run MB_TEST_SHA=cafe MB_TEST_LOCAL_SHA=cafe sh "$HY" install)"
+check "код возврата 1"   "$rc" "1"
+check "бинарь не тронут" "$([ -f "$BIN" ] && echo y || echo n)" "n"
+rmdir "$T/hy.lock"
+
+# Кладём через .new + mv: прямая запись поверх работающего файла даёт ETXTBSY либо полубинарь,
+# который потом не запускается ни как старая версия, ни как новая.
+echo "=== установка не оставляет .new ==="
+rc="$(install_run MB_TEST_SHA=cafe MB_TEST_LOCAL_SHA=cafe)"
+check "код возврата 0"  "$rc" "0"
+check "хвоста нет"      "$([ -f "$BIN.new" ] && echo y || echo n)" "n"
+check "бинарь на месте" "$([ -x "$BIN" ] && echo y || echo n)" "y"
 
 echo "=== фолбэк: живо только 3-е зеркало -> ставим с него ==="
 M="http://dead1 http://dead2 http://good.mirror"
