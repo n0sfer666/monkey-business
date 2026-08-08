@@ -6,6 +6,7 @@ dist/
 node_modules/
 __pycache__/
 .dev-vm/
+.make/
 *.qcow2
 *.img
 *.log

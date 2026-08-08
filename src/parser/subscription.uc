@@ -2,21 +2,19 @@
 //
 // Нормализованный server-объект (КОНТРАКТ для генератора, src/generator/xray.uc):
 //   {
-//     tag, protocol:"vless", address, port, uuid, encryption:"none",
+//     tag, protocol:"vless"|"hysteria2", address, port, uuid, encryption:"none",
 //     flow, security:"reality"|"tls"|"none", sni, fingerprint, alpn:[...],
 //     reality: { publicKey, shortId, spiderX } | null,
 //     transport: { type, path, host, mode, serviceName },
 //     source: "subscription"|"manual"
 //   }
+// hysteria2 добавляет к нему password/obfs/insecure/pin_sha256/mport (см. parser/hysteria2.uc).
 //
 // parse(raw) -> { format, servers:[...], errors:[...] }
 
 import { parseUri } from "../lib/uri.uc";
-
-function truncate(s, n) {
-	n = n || 40;
-	return (length(s) > n) ? (substr(s, 0, n) + "...") : s;
-}
+import { truncate } from "../lib/text.uc";
+import { normalizeHysteria2 } from "./hysteria2.uc";
 
 function commaList(s) {
 	let out = [];
@@ -46,9 +44,9 @@ function buildTransport(q) {
 
 function normalizeVless(u, raw) {
 	if (u.user == null || u.user == "")
-		return { error: "missing uuid: " + truncate(raw) };
+		return { error: "missing uuid: " + truncate(raw), code: "missing_uuid" };
 	if (u.port == null || u.port < 1 || u.port > 65535)
-		return { error: "invalid port: " + truncate(raw) };
+		return { error: "invalid port: " + truncate(raw), code: "invalid_port" };
 
 	let q = u.query;
 	let security = q.security;
@@ -78,6 +76,23 @@ function normalizeVless(u, raw) {
 	return { server: server };
 }
 
+// Схема -> нормализатор. Один список серверов на все протоколы: приоритет задаётся порядком, и
+// failover обязан перебирать кандидатов сквозь протоколы, а не внутри своей группы.
+const NORMALIZERS = {
+	vless: normalizeVless,
+	hysteria2: normalizeHysteria2,
+	hy2: normalizeHysteria2,
+};
+
+// Схема -> сервер, одной точкой входа: тем же путём идут и строка подписки, и ссылка, вставленная
+// в форму (rpcd/uri.uc). Код ошибки нужен именно форме — она рисует причину, а не текст лога.
+function normalizeUri(u, raw) {
+	let normalize = NORMALIZERS[u.scheme];
+	if (normalize == null)
+		return { error: "unsupported scheme '" + u.scheme + "'", code: "unsupported_scheme", detail: u.scheme };
+	return normalize(u, raw);
+}
+
 function parseUriList(text) {
 	let servers = [];
 	let errors = [];
@@ -90,11 +105,7 @@ function parseUriList(text) {
 			push(errors, "unparseable: " + truncate(t));
 			continue;
 		}
-		if (u.scheme != "vless") {
-			push(errors, "unsupported scheme '" + u.scheme + "'");
-			continue;
-		}
-		let r = normalizeVless(u, t);
+		let r = normalizeUri(u, t);
 		if (r.error != null)
 			push(errors, r.error);
 		else
@@ -160,4 +171,4 @@ function parse(raw) {
 	return { format: "unknown", servers: [], errors: ["unrecognized subscription format"] };
 }
 
-export { parse, detectFormat, normalizeVless, parseUriList, decodeBase64Maybe };
+export { parse, detectFormat, normalizeVless, normalizeUri, parseUriList, decodeBase64Maybe };

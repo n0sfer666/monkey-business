@@ -3,22 +3,28 @@
 **English** | [Русский](README.ru.md)
 
 A minimalist VPN client for **OpenWrt / ImmortalWrt** routers (target hardware: **NanoPi R2S**).
-Reality + VLESS + XHTTP with a simple LuCI interface — a lightweight alternative to passwall / v2rayA.
+Reality + VLESS + XHTTP (and hysteria2) with a simple LuCI interface — a lightweight alternative to
+passwall / v2rayA.
 
 ```
 LuCI (JS) → rpcd (ucode) → UCI → config generator → Xray-core + nftables TPROXY + dnsmasq
 ```
 
-Subscription import (auto-detected format) or manual `vless://` servers; split routing by
-geoip/geosite (local region direct, the rest through the tunnel), kill-switch, IPv6-leak block,
-DoH split-DNS, anti-DPI (uTLS + XHTTP padding), and a one-screen dashboard.
+Subscription import (auto-detected format) or manual `vless://` / `hysteria2://` servers; split
+routing by geoip/geosite (local region direct, the rest through the tunnel), kill-switch, IPv6-leak
+block, DoH split-DNS, anti-DPI (uTLS + XHTTP padding), and a one-screen dashboard.
+
+Both protocols live in **one** server list: the protocol is a property of the server, so list order
+stays the single priority and failover crosses protocols. hysteria2 runs as a separate client next
+to Xray (its `proxy` outbound becomes a local socks) — the split, DNS and kill-switch rules are
+exactly the ones VLESS uses. The client binary is installed with a button on the dashboard.
 
 Two things happen without you asking. **Local-region traffic skips the proxy in the kernel**: its
 CIDRs live in nftables sets (`mb_ru4`/`mb_ru6`) that are excluded from TPROXY, so it never pays the
 Xray hop — the `geoip:<region> → direct` rule inside Xray stays as a safety net. And **a dead tunnel
-heals itself**: a cron watchdog probes the tunnel every minute and escalates *reconnect → fail over
-to the next working server → fall back to direct* rather than leaving the LAN behind a fail-closed
-kill-switch. The same kind of probe picks the server when you connect: candidates are tried in list
+heals itself**: a cron watchdog probes the tunnel every minute and climbs a ladder — *soft bounce →
+hard restart → fail over to the next working server → full stop/start → fall back to direct* —
+rather than leaving the LAN behind a fail-closed kill-switch. The same kind of probe picks the server when you connect: candidates are tried in list
 order and the first one that actually carries traffic wins.
 
 > ⚠️ **Work in progress.** The backend (subscription parser, config generator, rpcd handlers) is
@@ -95,9 +101,11 @@ The artifact lands in the SDK's `bin/packages/aarch64*/`; copy it to the router 
 
 ### First run
 
-1. **Servers** tab — paste your subscription URL and *Fetch*, or add a `vless://` server manually.
+1. **Servers** tab — paste your subscription URL and *Fetch*, or add a `vless://` / `hysteria2://`
+   server manually.
 2. **Dashboard** — *Update geo databases* (downloads & validates geoip/geosite `.dat`).
-3. **Dashboard** — *Turn on*. *Check exit IP* confirms traffic leaves through the tunnel.
+3. **Dashboard** — *Install / update hysteria* — only if your list contains hysteria2 servers.
+4. **Dashboard** — *Turn on*. *Check exit IP* confirms traffic leaves through the tunnel.
 
 ---
 
@@ -115,13 +123,14 @@ Layout:
 
 | Path | What |
 |------|------|
-| `src/parser/` | subscription parser (base64 / uri-list; auto-detect) |
-| `src/generator/` | UCI → Xray JSON generator (abstracted for a future sing-box backend) |
+| `src/parser/` | subscription parser (base64 / uri-list; auto-detect; `vless://` + `hysteria2://`) |
+| `src/generator/` | UCI → Xray JSON generator (abstracted for a future sing-box backend) + the hysteria client config |
 | `src/rpcd/` | pure rpcd handlers (host-tested; ubus/uci bound in `root/…/rpcd/ucode`) |
+| `src/runtime/` | device-bound helpers pulled out of the rpcd plugin (hysteria config/install/probe) |
 | `src/lib/` | shared utils (URI parsing) |
-| `luci/` | LuCI client-side JS views (dashboard / servers / settings) + menu + ACL |
+| `luci/` | LuCI client-side JS views (dashboard / servers / settings) + the split panel (`routing.js`, rendered inside the dashboard) + menu + ACL |
 | `root/` | on-device files: UCI default, procd init, runtime rpcd plugin |
-| `root/usr/share/monkey-business/` | on-device shell: `watchdog.sh` + `probes.sh` (self-healing), `ruset.sh` (nft direct-bypass sets), `geo.sh`, `fetch.sh` (shared downloader, socks fallback), `boothealth.sh`, `nicfw.sh` + `nicwatch.sh` (RTL8153B USB NIC, see [install guide §9](docs/install-nanopi.md#9-the-rtl8153b-usb-nic-firmware--watchdog)) |
+| `root/usr/share/monkey-business/` | on-device shell: `watchdog.sh` + `probes.sh` + `recovery.sh` + `phases.sh` (self-healing), `ruset.sh` (nft direct-bypass sets), `geo.sh`, `fetch.sh` (shared downloader: socks fallback, stalled mirrors dropped by a speed floor), `boothealth.sh`, `hysteria.sh` + `hysum.sh` (hysteria2 client installer, checksum confirmed by a majority of mirrors), `subupdate.sh` (scheduled subscription refresh), `nicfw.sh` + `nicwatch.sh` (RTL8153B USB NIC, see [install guide §9](docs/install-nanopi.md#9-the-rtl8153b-usb-nic-firmware--watchdog)) |
 | `scripts/firewall/` | nftables TPROXY apply/flush |
 | `scripts/expand-sd.sh` | grow the SD card's ext4 partition from macOS ([docs](docs/sd-expand-macos.md)) |
 | `test/` | ucode harness + unit/snapshot tests + netns integration |
@@ -221,15 +230,13 @@ can target a NanoPi R2S over SSH (see Install → Option A).
   deploy time; rebuild it by hand with `sh /usr/share/monkey-business/ruset.sh build` (there is no
   cron job and *Update geo databases* does **not** rebuild it — it only refreshes the `.dat` files).
   An empty set is not a leak: Xray's `geoip:<region> → direct` rule still routes that traffic
-  directly, just more slowly. To disable the mechanism entirely:
-  ```sh
-  # uci set monkey-business.global.direct_bypass=0
-  # uci commit monkey-business
-  # /etc/init.d/monkey-business restart
-  ```
+  directly, just more slowly. The mechanism has no switch of its own — it follows the split you
+  picked on the Dashboard and is on only for **Bypass local + Russia** (the sets are filled from a
+  RU CIDR list, so any other mode or region would send traffic around the tunnel you asked for).
+  Pick another routing mode to turn it off; the Dashboard spells out what each choice enables.
 - **The tunnel died and the router switched servers on its own.** That's the watchdog. It logs only
   transitions to syslog — `logread -f -e mb-event` to see
-  `Reconnecting…` / `Failover switched server…` / `VPN stopped, LAN on direct`. Live state is in
+  `Reconnecting…` / `VPN recovered by <step>…` / `VPN stopped, LAN on direct`. Live state is in
   `/tmp/mb-watchdog/state`. See [the install guide](docs/install-nanopi.md#8-self-healing-watchdog--failover)
   for the escalation ladder and how to tune or disable it.
 - **Direct (non-tunnelled) sites are slow while the tunnel itself is fine.** Usually `odhcp6c`

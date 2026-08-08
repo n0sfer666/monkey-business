@@ -4,6 +4,8 @@
 'require rpc';
 'require ui';
 'require uci';
+'require view.monkey-business.serverfields as fields';
+'require view.monkey-business.serverlink as link';
 
 var callSubUpdate = rpc.declare({
 	object: 'monkey-business', method: 'subscription_update', params: ['url']
@@ -34,12 +36,19 @@ return view.extend({
 		var auto = sub.option(form.Flag, 'auto_update', _('Auto-update'),
 			_('Refresh the server list on a schedule.'));
 		auto.default = '1';
+		// rmempty=false обязателен: значение, совпавшее с default, LuCI удаляет из UCI на каждом
+		// Save формы — и subupdate.sh читал бы пустоту вместо выбора пользователя.
+		auto.rmempty = false;
 
 		var interval = sub.option(form.Value, 'update_interval', _('Interval (sec)'),
-			_('How often to refresh the subscription.'));
+			_('How often to refresh the subscription. Values below 300 are clamped to 300.'));
 		interval.depends('auto_update', '1');
 		interval.datatype = 'uinteger';
 		interval.default = '86400';
+		interval.rmempty = false;
+		// Выключенное автообновление прячет поле; без retain Save стёр бы заданный интервал,
+		// и обратное включение молча вернуло бы сутки.
+		interval.retain = true;
 
 		var btn = sub.option(form.Button, '_update', _('Update now'));
 		btn.inputtitle = _('Fetch subscription');
@@ -68,14 +77,29 @@ return view.extend({
 		srv.anonymous = true;
 		srv.sortable = true;
 
-		srv.option(form.Value, 'tag', _('Name'));
-		srv.option(form.Value, 'address', _('Address'));
-		var port = srv.option(form.Value, 'port', _('Port'));
-		port.datatype = 'port';
-		var sec = srv.option(form.ListValue, 'security', _('Security'));
-		sec.value('reality', 'Reality');
-		sec.value('tls', 'TLS');
-		sec.value('none', _('None'));
+		// Порядок в модалке: переключатель -> ссылка -> сами поля. Разобранная ссылка раскрывается
+		// в те же поля, поэтому перед сохранением её видно и можно поправить.
+		fields.mode(srv);
+		link.create(srv, function(section, section_id, flat) {
+			var show = section.getOption('_show');
+			var el = show ? show.getUIElement(section_id) : null;
+			if (el != null)
+				el.setValue('1');
+			fields.fill(section, section_id, flat);
+		});
+		fields.create(srv);
+
+		// Клик по Save снимает фокус со ссылки и только ЗАПУСКАЕТ разбор на устройстве — ответ
+		// придёт позже самого сохранения. Без ожидания секция сохранилась бы с пустыми полями:
+		// «Name must not be empty» на ровном месте и второй Save, чтобы всё получилось.
+		srv.handleModalSave = function() {
+			var self = this, args = arguments;
+			var save = function() {
+				return form.GridSection.prototype.handleModalSave.apply(self, args);
+			};
+			var wait = link.pending();
+			return wait ? wait.then(save, save) : save();
+		};
 
 		return m.render().then(function(node) {
 			node.appendChild(E('style', { 'type': 'text/css' },

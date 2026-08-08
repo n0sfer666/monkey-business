@@ -3,7 +3,7 @@ INTEG := monkey-business-integ
 ROOT  := $(shell pwd)
 RUN   := docker run --rm -v $(ROOT):/w -w /w $(IMAGE)
 
-.PHONY: help test-build check lint test-unit test-integ test package deploy dev-up dev-provision dev-console dev-status dev-ssh dev-down dev-deploy dev-rebuild dev-test-split clean
+.PHONY: help test-image test-build check lint test-unit test-integ test package deploy dev-up dev-provision dev-console dev-status dev-ssh dev-down dev-deploy dev-rebuild dev-test-split clean
 
 help:
 	@echo "monkey-business — targets:"
@@ -12,6 +12,7 @@ help:
 	@echo "  make test-unit   ucode unit/snapshot tests (в контейнере)"
 	@echo "  make test-integ  netns integration (Linux/привилегированный контейнер)"
 	@echo "  make test        lint + check + test-unit"
+	@echo "  make test-build  пересобрать образ проверок (обновить alpine:edge; нужна сеть)"
 	@echo "  make package     сборка ipk (нужен OpenWrt SDK)"
 	@echo "  make deploy HOST=root@<ip>  залить/обновить на устройство (lint+check+test перед заливкой)"
 	@echo "  make dev-up        запуск dev-VM в QEMU фоном (нужен qemu)"
@@ -23,20 +24,25 @@ help:
 	@echo "  make dev-rebuild   ПОЛНОЕ восстановление VM с нуля (если зависла загрузка): clean+up+provision+deploy"
 	@echo "  make dev-test-split [d=domain]  проверить сплит: выходной IP/страна через SOCKS"
 
-test-build:
-	@docker build -q -t $(IMAGE) -f Dockerfile.test . >/dev/null
+# Проверки идут на образе с диска: сборка только если его нет или Dockerfile новее (docker-image.sh).
+test-image:
+	@sh scripts/docker-image.sh $(IMAGE) Dockerfile.test
 
-check: test-build
+# Явно обновить образ (свежий alpine:edge) — единственная цель, которой нужна сеть.
+test-build:
+	@MB_REBUILD_IMAGE=1 sh scripts/docker-image.sh $(IMAGE) Dockerfile.test
+
+check: test-image
 	@$(RUN) sh scripts/check-syntax.sh
 
-lint: test-build
+lint: test-image
 	@$(RUN) sh scripts/lint.sh
 
-test-unit: test-build
+test-unit: test-image
 	@$(RUN) sh test/run-unit.sh
 
 test-integ:
-	@docker build -q -t $(INTEG) -f Dockerfile.integ . >/dev/null
+	@sh scripts/docker-image.sh $(INTEG) Dockerfile.integ
 	@docker run --rm --privileged -v $(ROOT):/w -w /w $(INTEG) sh test/integ/run.sh
 
 test: lint check test-unit
@@ -80,3 +86,4 @@ dev-test-split:
 
 clean:
 	@docker rmi -f $(IMAGE) $(INTEG) >/dev/null 2>&1 || true
+	@rm -rf .make

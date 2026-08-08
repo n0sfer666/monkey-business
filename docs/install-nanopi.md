@@ -116,7 +116,7 @@ What this does:
   - firewall scripts → `/usr/share/monkey-business/firewall/`, geo script → `/usr/share/monkey-business/geo.sh`,
   - NIC firmware → `nicfw.sh` + `firmware/rtl8153b-2.fw`, its watchdog → `nicwatch.sh`,
     shared downloader → `fetch.sh`,
-  - watchdog → `/usr/share/monkey-business/watchdog.sh` + `probes.sh`, bypass-set builder →
+  - watchdog → `/usr/share/monkey-business/watchdog.sh` + `probes.sh` + `recovery.sh` + `phases.sh`, bypass-set builder →
     `ruset.sh`.
 - **Checks runtime deps** (`xray-core`, `kmod-nft-tproxy`, `curl`, the ucode/rpcd modules) and
   installs missing ones one at a time. If a required package fails, **the deploy fails**: silently
@@ -192,27 +192,54 @@ From the shell instead:
 In **LuCI → … → Servers**:
 
 - **Subscription:** paste your provider URL and press *Fetch*. Servers are imported (format
-  auto-detected: base64 list or `vless://` URI list). The list order is your priority — drag to
+  auto-detected: base64 list or URI list). The list order is your priority — drag to
   reorder; the first server is the active one. Re-fetch preserves your manual order.
-- **Manual:** add a `vless://…` server (Reality/VLESS/XHTTP).
+- **Manual:** add a `vless://…` (Reality/VLESS/XHTTP) or `hysteria2://…` (`hy2://` alias) server.
+
+Both protocols share one list — the protocol is a property of the server, so priority is the list
+order and failover walks the candidates across protocols.
+
+**hysteria2 needs a separate client.** It is not in the OpenWrt feeds, so install it with a button:
+**Dashboard → hysteria2 client → Install / update hysteria** (the download runs in the background
+and the UI polls for status). Until it is installed, turning on with a hysteria server fails
+explicitly — deliberately: Xray would otherwise come up with its outbound pointing at a dead port
+behind a live kill-switch, which from the outside looks like "the internet is gone". From the
+shell: `sh /usr/share/monkey-business/hysteria.sh install`, check with `… hysteria.sh status`.
+VLESS/Reality works without it.
+
+Expect the install to take about a minute: the checksum is collected first, from the release
+`hashes.txt` on every mirror, and the 21MB binary is only fetched once the mirrors agree on it. A
+mirror that accepts the connection and then stalls is dropped after ~20 seconds instead of holding
+the whole timeout, so `installing…` should not sit there for many minutes — if it does, the router
+has no route to any mirror at all. Mirrors that disagree on the checksum cancel the install: the
+binary runs as root, so an unverifiable one is not worth having.
+
+The client runs as a second procd instance of the same service (it lives and dies with the tunnel),
+listens on socks `127.0.0.1:10810`, and Xray dials into it as its outbound — routing, DNS and the
+kill-switch stay exactly the ones VLESS uses.
 
 Your subscription token and server UUIDs are stored in UCI (root-only) and masked in the UI — keep
 them out of logs and issues.
 
 ---
 
-## 5. Configure routing (Settings)
+## 5. Configure routing (Dashboard + Settings)
 
-**LuCI → … → Settings.** Sensible defaults are pre-filled:
+**LuCI → … → Dashboard → Split.** The split itself lives on the Dashboard, because it changes the
+firewall as well as the Xray config; the panel lists what the current pair actually enables (✓/✗).
 
-- **Routing mode** — `Bypass local (recommended)`: your local region (RU/CN/IR) and private
-  addresses go direct, everything else through the tunnel. Other modes: `Only blocked via VPN`
-  (gfwlist) and `Everything via VPN` (global).
-- **Local region** — which region is treated as "local" for direct routing. Pick **`Other`** if
-  your region has no geo preset: there is no predefined local geo-category, so you drive the split
-  yourself via the custom **Direct (bypass VPN)** / **Via VPN** lists on the Dashboard. Private
-  addresses stay direct, and everything not in your lists follows the **Routing mode** default
-  (bypass-local → tunnel, gfwlist → direct, global → tunnel).
+- **Routing mode** — `Bypass local`: your local region (RU/CN/IR) and private addresses go direct,
+  everything else through the tunnel. Other modes: `Only blocked via VPN` (gfwlist) and
+  `Everything via VPN` (global). Outside `Bypass local` there is no `geoip:<region> → direct` rule
+  at all, and the kernel bypass sets are dropped with it.
+- **Local region** — which region is treated as "local" for direct routing and for the DNS split.
+  Pick **`Other`** if your region has no geo preset: there is no predefined local geo-category, so
+  you drive the split yourself via the custom **Direct (bypass VPN)** / **Via VPN** lists on the
+  Dashboard. Private addresses stay direct, and everything not in your lists follows the
+  **Routing mode** default (bypass-local → tunnel, gfwlist → direct, global → tunnel).
+
+**LuCI → … → Settings** keeps everything else; sensible defaults are pre-filled:
+
 - **Kill-switch** — fail-closed (default on): LAN traffic to non-local destinations is dropped, not
   leaked direct, whenever it isn't carried by the tunnel (Xray down, a rule gap, or non-proxied
   traffic like ICMP). Disable for a direct fallback when the tunnel is down (less safe).
@@ -281,7 +308,7 @@ Verify the exit path:
   kernel bypass for them — so test with `curl`/`nc` (TCP), or add the host to *Direct* and confirm
   with **Dashboard → Check exit IP**, not with ping.
   The one exception is the **local region**: its CIDRs *are* in the kernel bypass sets
-  (`mb_ru4`/`mb_ru6`, enabled by `direct_bypass`, on by default), which the leak-guard accepts — so
+  (`mb_ru4`/`mb_ru6`, on whenever the split is `Bypass local` + `Russia`), which the leak-guard accepts — so
   those addresses do answer ping. A local-region IP that doesn't is simply missing from the set:
   ```sh
   # nft list set inet monkey_business mb_ru4 | head        # is the address in there?
@@ -342,11 +369,17 @@ it escalates:
 0. **Is the internet up at all?** If a probe *without* the proxy also fails, the problem is your
    uplink, not the tunnel — reconnecting or switching servers would be pointless. The VPN is stopped
    immediately (LAN falls back to direct) and retried every 10 minutes until the link returns.
-1. **Reconnect** — otherwise, bounce Xray (`kill`; procd respawns it). The kill-switch is *held*
-   throughout, so nothing leaks while the tunnel is down. Up to 2 attempts.
-2. **Failover** — ask the backend to re-apply the config, which re-probes the servers in list order
+1. **Soft bounce** — otherwise, bounce Xray (`kill`; procd respawns it). Fixes a dead session under
+   a live process.
+2. **Hard restart** — SIGTERM, wait for the process to *actually* die, force it with SIGKILL if
+   needed, then bring it up via `init.d start`. This is what handles a wedged Xray that ignores
+   SIGTERM, and it rebuilds the nft table and policy routing along the way.
+3. **Failover** — ask the backend to re-apply the config, which re-probes the servers in list order
    and selects the first working one.
-3. **Fall back to direct** — if no server works, stop the service. This flushes the firewall and
+4. **Full cycle** — `stop` → re-select a server → `start`: exactly what Turn Off / Turn On in LuCI
+   does. It is the only step that drops the kill-switch (for a few seconds); on steps 1–3 it is
+   *held*, so nothing leaks while the tunnel is down.
+5. **Fall back to direct** — if nothing helped, stop the service. This flushes the firewall and
    removes the kill-switch, so the LAN keeps working *without* the VPN. The watchdog then retries
    every 10 minutes and restores the tunnel when it comes back.
 

@@ -8,6 +8,7 @@
 					"servers_list",
 					"servers_ping",
 					"geo_status",
+					"hysteria_status",
 					"check_exit"
 				]
 			},
@@ -19,16 +20,23 @@
 			"ubus": {
 				"monkey-business": [
 					"subscription_update",
+					"parse_uri",
 					"config_apply",
 					"service_toggle",
 					"geo_update",
 					"geo_install",
-					"set_routing"
+					"hysteria_install",
+					"set_routing",
+					"set_mode"
 				]
 			},
 			"uci": [
 				"monkey-business"
-			]
+			],
+			"file": {
+				"/tmp/mb-upload-geoip.dat": [ "write" ],
+				"/tmp/mb-upload-geosite.dat": [ "write" ]
+			}
 		}
 	}
 }

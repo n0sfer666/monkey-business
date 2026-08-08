@@ -38,13 +38,22 @@ procd_add_reload_trigger() { echo "trigger $*" >> "$CALLS"; }
 # MB_ENABLED=missing — опции в конфиге нет: uci выходит с ошибкой и НЕ печатает ничего (так ведёт
 # себя `uci -q get` на отсутствующей опции), т.е. дефолт mb_intent реально проверяется.
 MB_ENABLED=1
+MB_MODE=bypass-local
+MB_REGION=ru
+MB_LEGACY_BYPASS=""
 uci() {
 	case "$*" in
+		*delete*|*commit*) echo "uci $*" >> "$CALLS";;
 		*.enabled) [ "$MB_ENABLED" = missing ] && return 1; echo "$MB_ENABLED";;
+		*.routing_mode) [ "$MB_MODE" = missing ] && return 1; echo "$MB_MODE";;
+		*.local_region) [ "$MB_REGION" = missing ] && return 1; echo "$MB_REGION";;
+		*.direct_bypass) echo "$MB_LEGACY_BYPASS";;
 		*) echo br-lan;;
 	esac
 }
-logger() { cat >/dev/null; }
+# Без стдина (миграция зовёт logger с аргументами, а не пайпом) `cat` подвис бы на терминале.
+# Аргументы пишем в $CALLS: часть отказов (неисполняемый бинарь hysteria) видна ТОЛЬКО в логе.
+logger() { echo "logger $*" >> "$CALLS"; }
 sh() { echo "sh $*" >> "$CALLS"; }
 
 # shellcheck source=/dev/null
@@ -149,9 +158,72 @@ no "intent.no_flush" "$CALLS" "flush.sh"
 # 12. Префикс MB_INTENT сшивается строкой в рантайме rpcd, и опечатка в ней (потерянный хвостовой
 #     пробел, `MB_INTENT =1`) молча ломала бы КАЖДОЕ включение при enabled=0: моки такого не видят,
 #     потому что читают переменную, а не команду. Пиним обе половины склейки.
-RT="$SELF_DIR/../../root/usr/share/rpcd/ucode/monkey-business.uc"
+RT="$SELF_DIR/../../src/runtime/apply.uc"
 has "intent.runtime_prefix" "$RT" "intentOn ? 'MB_INTENT=1 ' : ''"
 has "intent.runtime_cmd" "$RT" "+ '/etc/init.d/monkey-business reload"
+
+# 13. Ядерный обход (MB_DIRECT_BYPASS для apply.sh) — производная режима, а не отдельный тумблер:
+#     RU-CIDR минуют туннель в ядре только там, где регион гонит в direct и сам xray (bypass-local),
+#     и только для RU — сеты наполняются ru.txt. Для файрвола авторитетен именно этот расчёт
+#     (directBypass в src/lib/bypass.uc считает то же для UI/статуса). Ошибка здесь = часть
+#     трафика идёт мимо туннеля в режиме, где пользователь этого не просил.
+eq() { if [ "$2" = "$3" ]; then PASS=$((PASS+1)); else FAIL=$((FAIL+1)); echo "FAIL $1: want[$3] got[$2]"; fi; }
+bypass_for() { MB_MODE="$1"; MB_REGION="$2"; mb_direct_bypass; }
+eq "bypass.local_ru"   "$(bypass_for bypass-local ru)" 1
+eq "bypass.local_cn"   "$(bypass_for bypass-local cn)" 0
+eq "bypass.local_othr" "$(bypass_for bypass-local other)" 0
+eq "bypass.gfwlist"    "$(bypass_for gfwlist ru)" 0
+eq "bypass.global"     "$(bypass_for global ru)" 0
+# Опций в конфиге нет (обрезанный/старый конфиг): дефолты те же, что в root/etc/config/monkey-business.
+eq "bypass.defaults"   "$(bypass_for missing missing)" 1
+# Пустая опция (`option routing_mode ''`) — тоже «не задано»: `uci -q get` на ней выходит с 0, так
+# что `|| echo <дефолт>` не срабатывает. ucode-двойник считает "" отсутствием, копии обязаны сойтись.
+eq "bypass.empty"      "$(bypass_for '' '')" 1
+eq "bypass.empty_mode" "$(bypass_for '' cn)" 0
+
+# 14. Опция direct_bypass удалена, обход стал производным. У выставившего её в 0 (прежний README
+#     описывал такой рецепт) обход после апдейта включился бы молча — миграция обязана сказать и
+#     убрать мёртвый ключ, а на чистом конфиге не трогать UCI вообще.
+MB_MODE=bypass-local; MB_REGION=ru; MB_ENABLED=1
+: > "$CALLS"
+MB_LEGACY_BYPASS=0
+start_service
+has "migrate.delete" "$CALLS" "uci .*delete monkey-business.global.direct_bypass"
+has "migrate.commit" "$CALLS" "uci .*commit monkey-business"
+: > "$CALLS"
+MB_LEGACY_BYPASS=""
+start_service
+no "migrate.clean" "$CALLS" "uci .*delete"
+
+# 15. hysteria поднимается вторым инстансом того же сервиса — но только когда есть И конфиг клиента
+#     (его пишет rpcd ровно под hysteria-сервер), И сам бинарь. Объяви инстанс без бинаря — procd
+#     ушёл бы в respawn-луп на несуществующей команде; объяви без конфига — клиент долбился бы в
+#     старый сервер после переключения на vless. Инстанс xray при этом обязан остаться на месте.
+MB_ENABLED=1
+HPROG="$T/hysteria"; HCONF="$T/hysteria.json"
+printf '#!/bin/sh\nexit 0\n' > "$HPROG"; chmod +x "$HPROG"
+: > "$HCONF"
+: > "$CALLS"
+start_service
+has "hy.command"    "$CALLS" "param command $HPROG client -c $HCONF"
+has "hy.file"       "$CALLS" "param file $HCONF"
+has "hy.respawn"    "$CALLS" "param respawn"
+has "hy.xray_stays" "$CALLS" "param command /usr/bin/xray run -c $CONF"
+
+: > "$CALLS"
+rm -f "$HCONF"
+start_service
+no  "hy.noconf.no_instance" "$CALLS" "hysteria"
+has "hy.noconf.xray_stays"  "$CALLS" "param command /usr/bin/xray run -c $CONF"
+
+: > "$CALLS"
+: > "$HCONF"; chmod 644 "$HPROG"
+start_service
+no  "hy.nobin.no_instance" "$CALLS" "client -c"
+has "hy.nobin.xray_stays"  "$CALLS" "param command /usr/bin/xray run -c $CONF"
+# Молчать тут нельзя: xray уже смотрит аутбаундом в socks клиента, которого не будет, и снаружи
+# это выглядит как «интернет пропал» — в логе обязана остаться причина.
+has "hy.nobin.logged"      "$CALLS" "logger .*not executable"
 
 printf 'initd_test: %d passed, %d failed\n' "$PASS" "$FAIL"
 [ "$FAIL" -eq 0 ]
