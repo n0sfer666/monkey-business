@@ -7,7 +7,7 @@
 # Бинарь не пакуем в ipk и не тянем из apk: в feeds ImmortalWrt hysteria нет, а вшивать 15МБ в пакет
 # ради второго протокола дорого. Логика та же, что у geo.sh: зеркала -> скачать -> sha256 -> проверить
 # запуском -> атомарно поставить. Отличие от geo.sh: там данные, тут исполняемое под root, поэтому
-# сумма обязательна (collect_sha) и без неё установка отменяется.
+# сумма обязательна и без неё установка отменяется — сбор суммы и голосование по ней в hysum.sh.
 set -u
 
 DEST="${MB_HY_BIN:-/usr/bin/hysteria}"
@@ -20,6 +20,12 @@ HASHES="${MB_HY_HASHES:-hashes.txt}"
 # Файл сумм — пара килобайт. Ждать на нём столько же, сколько на 20МБ бинаре, значит держать
 # человека у «installing…» лишние минуты на каждом мёртвом зеркале.
 SUM_TIMEOUT="${MB_HY_SUM_TIMEOUT:-30}"
+# У бинаря лимит наоборот СВОЙ и большой: 21МБ не влезают в общие 120с ни на одном реальном канале
+# медленнее ~170КБ/с — установка отменялась бы с «все зеркала недоступны» на исправной сети. Мёртвые
+# зеркала отсекает не этот лимит, а порог скорости в fetch.sh.
+BIN_TIMEOUT="${MB_HY_BIN_TIMEOUT:-900}"
+# Возраст замка, после которого он считается брошенным (kill -9, ребут посреди закачки).
+LOCK_STALE="${MB_HY_LOCK_STALE:-900}"
 # GitHub у RU-провайдеров заблокирован, а качать нужно ДО поднятия туннеля (это и есть клиент
 # туннеля) -> gh-прокси идут первыми, сам github.com остаётся последним фолбэком.
 DEFAULT_MIRRORS="https://ghfast.top/https://github.com/apernet/hysteria/releases/latest/download https://ghproxy.net/https://github.com/apernet/hysteria/releases/latest/download https://gh-proxy.com/https://github.com/apernet/hysteria/releases/latest/download https://github.com/apernet/hysteria/releases/latest/download"
@@ -31,6 +37,14 @@ if [ -r "$LIB/fetch.sh" ]; then
 	. "$LIB/fetch.sh"
 else
 	mb_fetch() { echo "fetch.sh not found in $LIB" >&2; return 1; }
+fi
+# hysum.sh — наш модуль, лежит рядом со скриптом (MB_LIB_DIR подменяют тесты только для fetch.sh)
+SELF_DIR="$(dirname "$0")"
+if [ -r "$SELF_DIR/hysum.sh" ]; then
+	# shellcheck source-path=SCRIPTDIR source=hysum.sh
+	. "$SELF_DIR/hysum.sh"
+else
+	collect_sha() { echo "hysum.sh not found in $SELF_DIR" >&2; return 4; }
 fi
 
 set_state() { echo "$1" >"$STATE"; }
@@ -60,43 +74,6 @@ free_kb() { df -k "$1" 2>/dev/null | awk 'NR>1{print $4; exit}'; }
 
 sha_of() { sha256sum "$1" 2>/dev/null | awk '{print $1}'; }
 
-# Мелкий файл берём с укороченным лимитом, не трогая MB_FETCH_TIMEOUT у остальных вызовов:
-# переменная читается mb_fetch в момент вызова и живёт до конца процесса.
-fetch_small() { # <url> <out>
-	_t="${MB_FETCH_TIMEOUT:-120}"
-	MB_FETCH_TIMEOUT="$SUM_TIMEOUT"
-	mb_fetch "$1" "$2"; _rc=$?
-	MB_FETCH_TIMEOUT="$_t"
-	return "$_rc"
-}
-
-# Строка файла сумм: "<sha256>  build/hysteria-linux-arm64". Имя якорим на конец, иначе
-# hysteria-linux-arm подобрал бы сумму от hysteria-linux-arm64 — и бинарь не прошёл бы сверку с
-# сообщением «сумма не сошлась», уводящим от настоящей причины.
-sha_from_hashes() { # <file> <asset>
-	awk -v a="$2" '$2 ~ ("(^|/)" a "$") { print $1; exit }' "$1"
-}
-
-# Бинарь ляжет в /usr/bin и будет исполняться от root, а gh-прокси в списке зеркал по устройству —
-# MITM: сумма, взятая с того же зеркала, что и бинарь, не доказывает ничего (подменивший бинарь
-# подменит и её). Поэтому сумму собираем со ВСЕХ зеркал и требуем, чтобы независимые источники
-# сошлись. rc: 0 — сумма на stdout (пусто = не опубликована нигде), 2 — зеркала расходятся.
-collect_sha() { # <asset>
-	sum=""
-	for base in $(mirrors); do
-		t="$(mktemp "${TMPDIR:-/tmp}/mb-hysum.XXXXXX")" || continue
-		s=""
-		if fetch_small "$base/$HASHES" "$t" 2>/dev/null && [ -s "$t" ]; then
-			s="$(sha_from_hashes "$t" "$1")"
-		fi
-		rm -f "$t"
-		[ -n "$s" ] || continue
-		[ -n "$sum" ] || { sum="$s"; continue; }
-		[ "$sum" = "$s" ] || return 2
-	done
-	echo "$sum"
-}
-
 # HTML-страницу ошибки вместо бинаря ловим ДО сверки суммы: это отказ конкретного зеркала, и
 # осмысленно идти к следующему, а не объявлять подмену.
 check_elf() { # <file>
@@ -112,10 +89,23 @@ check_runs() { # <file>
 	return 0
 }
 
+# Кнопка в UI нажимается повторно, пока идёт закачка. Без замка второй прогон качал бы те же ~20МБ в
+# тот же $DEST и своей ошибкой затирал бы «ok» первого. mkdir атомарен на overlay.
+#
+# Но каталог переживает kill -9 и ребут посреди закачки, и тогда кнопка отказывала бы НАВСЕГДА
+# («install is already running»), лечилось бы только руками через ssh. Возраст каталога и есть
+# возраст попытки — тот же приём, что у watchdog.sh с его брошенным замком.
+take_lock() {
+	mkdir "$LOCK" 2>/dev/null && return 0
+	born="$(stat -c %Y "$LOCK" 2>/dev/null)" || return 1
+	[ -n "$born" ] || return 1
+	[ "$(( $(date +%s) - born ))" -gt "$LOCK_STALE" ] || return 1
+	rmdir "$LOCK" 2>/dev/null
+	mkdir "$LOCK" 2>/dev/null
+}
+
 cmd_install() {
-	# Кнопка в UI нажимается повторно, пока идёт закачка. Без замка второй прогон качал бы те же
-	# ~15МБ в тот же $DEST и своей ошибкой затирал бы «ok» первого. mkdir атомарен на overlay.
-	if ! mkdir "$LOCK" 2>/dev/null; then
+	if ! take_lock; then
 		echo "install is already running" >&2
 		return 1
 	fi
@@ -137,10 +127,12 @@ cmd_install() {
 	# качаются минутами: при обратном порядке человек ждал у «installing…» ровно за тем, чтобы эти
 	# мегабайты выбросили.
 	rsum="$(collect_sha "$name")"; sum_rc=$?
-	if [ "$sum_rc" != 0 ]; then
-		set_state "error: зеркала отдают разные контрольные суммы — установка отменена"
-		return 1
-	fi
+	case "$sum_rc" in
+		0) ;;
+		2) set_state "error: зеркала отдают разные контрольные суммы — установка отменена"; return 1 ;;
+		3) set_state "error: сумму подтвердило меньше $MIN_VOTES зеркал — установка отменена (порог MB_HY_MIN_VOTES)"; return 1 ;;
+		*) set_state "error: не удалось собрать контрольную сумму — установка отменена"; return 1 ;;
+	esac
 	if [ -z "$rsum" ]; then
 		set_state "error: контрольная сумма не опубликована ни на одном зеркале — установка отменена"
 		return 1
@@ -149,19 +141,28 @@ cmd_install() {
 	for base in $(mirrors); do
 		url="$base/$name"
 		tmp="$(mktemp "${TMPDIR:-/tmp}/mb-hysteria.XXXXXX")" || { set_state "error: mktemp failed"; return 1; }
-		if ! mb_fetch "$url" "$tmp"; then last_err="unreachable"; rm -f "$tmp"; continue; fi
+		if ! fetch_timed "$BIN_TIMEOUT" "$url" "$tmp"; then last_err="unreachable"; rm -f "$tmp"; continue; fi
 		if ! err="$(check_elf "$tmp")"; then last_err="$err"; rm -f "$tmp"; continue; fi
 		if [ "$rsum" != "$(sha_of "$tmp")" ]; then last_err="checksum"; rm -f "$tmp"; continue; fi
 		if ! err="$(check_runs "$tmp")"; then last_err="$err"; rm -f "$tmp"; continue; fi
-		if ! mv -f "$tmp" "$DEST"; then last_err="install move failed"; rm -f "$tmp"; continue; fi
-		chmod 755 "$DEST"
+		# $tmp лежит в tmpfs, а $DEST в overlay: mv между ФС — это копирование с последующим unlink,
+		# и обрыв на нём (переполнение, питание) оставил бы в /usr/bin обрезанный файл с exec-битом,
+		# который init поднял бы как рабочий клиент. Копируем рядом с целью и переименовываем уже в
+		# пределах одной ФС — вот это переименование атомарно.
+		if ! cp "$tmp" "$DEST.new" 2>/dev/null; then
+			last_err="install copy failed"; rm -f "$tmp" "$DEST.new"; continue
+		fi
+		rm -f "$tmp"
+		sync 2>/dev/null
+		chmod 755 "$DEST.new"
+		if ! mv -f "$DEST.new" "$DEST"; then last_err="install move failed"; rm -f "$DEST.new"; continue; fi
 		set_state "ok"
 		echo "hysteria installed from $url"
 		return 0
 	done
 	case "$last_err" in
 		checksum) set_state "error: контрольная сумма не сошлась ни на одном зеркале" ;;
-		unreachable|"") set_state "error: не скачать hysteria — все зеркала недоступны (нет интернета либо блокировка)" ;;
+		unreachable|"") set_state "error: не скачать hysteria — ни одно зеркало не отдало бинарь (нет интернета, блокировка либо канал медленнее порога)" ;;
 		*) set_state "error: $last_err" ;;
 	esac
 	return 1

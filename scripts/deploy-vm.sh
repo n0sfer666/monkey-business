@@ -68,6 +68,8 @@ cpf root/usr/share/monkey-business/ruset.sh "$stage/usr/share/monkey-business/ru
 chmod 755 "$stage/usr/share/monkey-business/ruset.sh"
 cpf root/usr/share/monkey-business/hysteria.sh "$stage/usr/share/monkey-business/hysteria.sh"
 chmod 755 "$stage/usr/share/monkey-business/hysteria.sh"
+cpf root/usr/share/monkey-business/hysum.sh "$stage/usr/share/monkey-business/hysum.sh"
+chmod 644 "$stage/usr/share/monkey-business/hysum.sh"
 # Библиотеки идут ПЕРЕД watchdog.sh: он сорсит их все, а cron тикает и во время заливки —
 # новый watchdog рядом со старым набором библиотек падал бы молча.
 # Самостоятельно не исполняются -> 644.
