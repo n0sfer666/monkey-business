@@ -34,7 +34,10 @@ sleep() { :; }
 read_intent() { cat "$T/intent" 2>/dev/null || echo 0; }
 vpn_running() { [ -f "$T/running" ]; }
 vpn_start() { : > "$T/running"; echo 4242 > "$T/pids"; echo start >> "$T/actions"; }
-vpn_stop() { rm -f "$T/running" "$T/pids"; echo stop >> "$T/actions"; }
+# STOP_DELAY — сколько секунд «съедает» попытка: часы в тесте заморожены, и без него не отличить
+# паузу, отсчитанную от конца попытки, от паузы от начала тика (см. 10h).
+STOP_DELAY=0
+vpn_stop() { rm -f "$T/running" "$T/pids"; echo stop >> "$T/actions"; MB_WD_NOW=$((MB_WD_NOW + STOP_DELAY)); }
 # Все ступени лестницы (vpn_reconnect/vpn_hard_restart/failover_step/vpn_full_cycle и диспетчер
 # recover_step) гоняем БОЕВЫЕ — их порядок и жёсткость и есть предмет теста. Замокан только доступ к
 # процессам: pid-файл вместо таблицы процессов, запись вместо сигналов, плюс init.d (vpn_start/stop).
@@ -292,6 +295,15 @@ runtick 7420;  eq "prog.t4" "$(sval WD_NEXT)" 7900
 runtick 7900;  eq "prog.cap" "$(sval WD_NEXT)" 8500
 runtick 8500;  eq "prog.cap2" "$(sval WD_NEXT)" 9100
 
+# 10h. Лестница отсчитывается от КОНЦА попытки, а не от начала тика. Сама попытка вправе потратить
+#      весь DOWN_BUDGET, и пауза, посчитанная от начала, на момент возврата уже была бы в прошлом:
+#      следующий cron-тик проходил бы гейт сразу, а LAN висела бы под kill-switch непрерывно.
+reset; seed_down vpn; rm -f "$T/running"; rm -f "$T/live"
+STOP_DELAY=240
+runtick 7000
+eq "endanchor.next" "$(sval WD_NEXT)" 7300
+STOP_DELAY=0
+
 # 10g. Успешный выход из down обнуляет счётчик: следующий инцидент снова начинает с 60с.
 reset; seed_down vpn; rm -f "$T/running"; rm -f "$T/live"
 runtick 7000; runtick 7060; runtick 7180
@@ -372,6 +384,11 @@ eq "budget.reserve" \
 #     ходит. Конфиг клиента = признак «активный сервер сейчас hysteria», его пишет rpcd.
 reset
 MB_WD_HY_CONF="$T/hysteria.json"
+# Признак «сервер сейчас hysteria» = конфиг И установленный бинарь: конфиг от прошлого сервера
+# переживает переключение, и без второго условия vpn_running ждал бы процесс, которого не бывает.
+MB_WD_HY_BIN="$T/hysteria"
+: > "$MB_WD_HY_BIN"
+chmod 755 "$MB_WD_HY_BIN"
 pgrep() {
 	case "$*" in
 		*"xray run"*) [ -f "$T/xray_up" ] && echo 111 || return 1 ;;
@@ -392,6 +409,11 @@ eq "hy.both_alive" "$(vpn_running && echo y || echo n)" y
 eq "hy.pidset" "$(pidset)" "111 222 "
 rm -f "$T/xray_up"
 eq "hy.dead_xray" "$(vpn_running && echo y || echo n)" n
+# Бинаря нет — конфиг сам по себе не делает туннель hysteria-туннелем: иначе после сноса клиента
+# vless-сервер считался бы мёртвым при живом xray.
+: > "$T/xray_up"
+rm -f "$T/hy_up" "$MB_WD_HY_BIN"
+eq "hy.nobin" "$(vpn_running && echo y || echo n)" y
 
 printf '\nwatchdog_test: %d passed, %d failed\n' "$PASS" "$FAIL"
 [ "$FAIL" -eq 0 ]

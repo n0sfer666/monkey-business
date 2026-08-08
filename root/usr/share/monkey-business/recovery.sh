@@ -31,8 +31,14 @@ fi
 # исчерпания retry: неверный пароль, битая арка — читался бы как «сервис жив», потому что xray-то
 # работает: лестница била бы не тот процесс, а UI писал бы Connected на мёртвом туннеле.
 HY_CONF="${MB_WD_HY_CONF:-/etc/monkey-business/hysteria.json}"
+HY_BIN="${MB_WD_HY_BIN:-/usr/bin/hysteria}"
 HY_MATCH="${MB_WD_HY_MATCH:-hysteria client -c $HY_CONF}"
-hy_active() { [ -f "$HY_CONF" ]; }
+# Клиента учитываем ровно тогда, когда init вообще способен его поднять: инстанс объявляется при
+# конфиге И [ -x ] бинаре (то же условие в installed() у rpcd). Иначе — снесённый бинарь при
+# оставшемся конфиге — hy_pids пуст НАВСЕГДА, vpn_running при живом xray вечно false, и tick_healthy
+# на каждом тике дёргал бы init.d start (а с ним пересборку nft) вместо того, чтобы дать health_check
+# признать туннель битым и увести failover на сервер, который поднимется.
+hy_active() { [ -f "$HY_CONF" ] && [ -x "$HY_BIN" ]; }
 if command -v pgrep >/dev/null 2>&1; then
 	hy_pids() { hy_active && pgrep -f "$HY_MATCH"; }
 else
