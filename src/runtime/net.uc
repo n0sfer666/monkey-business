@@ -64,7 +64,20 @@ function netRuntime(sh, hysteria, stat_) {
 			global: global, dns: dns, server: server, probe_port: 10809,
 			hysteria_socks_port: hysteria.PROBE_SOCKS,
 		});
-		writefile('/tmp/mb-probe.json', sprintf('%.J', cfg));
+		// В конфиг пробы уезжает весь аутбаунд кандидата — UUID vless, Reality-ключи, заголовки. По
+		// умолчанию writefile создал бы файл 0644 в общедоступном /tmp, и на каждом тике failover
+		// эти креды лежали бы читаемыми для любого процесса. 0600 ставится на ПУСТОЙ файл до записи
+		// (тот же приём, что в runtime/hysteria.uc), а сама запись проверяется: на переполненном
+		// tmpfs xray иначе стартовал бы со старым конфигом и вердикт «жив/мёртв» относился бы не к
+		// тому серверу.
+		let body = sprintf('%.J', cfg);
+		system('rm -f /tmp/mb-probe.json; : > /tmp/mb-probe.json; chmod 600 /tmp/mb-probe.json');
+		if (writefile('/tmp/mb-probe.json', body) != length(body)) {
+			system('rm -f /tmp/mb-probe.json');
+			if (hy)
+				hysteria.probeStop();
+			return false;
+		}
 		let cmd = "pkill -f " + shq(sh.noSelfMatch('xray run -c /tmp/mb-probe.json')) + " 2>/dev/null; " +
 			"XRAY_LOCATION_ASSET=" + GEO_DIR + " /usr/bin/xray run -c /tmp/mb-probe.json >/dev/null 2>&1 & P=$!; " +
 			"sleep 2; R=fail; " +

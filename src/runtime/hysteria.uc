@@ -8,6 +8,8 @@
 
 import { writefile, stat, readfile } from 'fs';
 import { hysteriaConfigJson } from '../generator/hysteria.uc';
+import { safeJson } from '../lib/val.uc';
+import { stripExit } from './shell.uc';
 
 const BIN = '/usr/bin/hysteria';
 const CONF_DIR = '/etc/monkey-business';
@@ -78,9 +80,13 @@ function hysteriaRuntime(run) {
 				return true;
 			return index(run("pgrep -f '[h]ysteria client -c " + CONF + "' >/dev/null && echo up").out, 'up') >= 0;
 		},
+		// Маркер runCapture снимается ДО разбора: у скрипта, который не напечатал ничего (файла нет,
+		// вывод ушёл в stderr), первой строкой окажется сам "MB_EXIT:<код>". Он не JSON, а json() в
+		// ucode на таком БРОСАЕТ — метод hysteria_status умирал бы целиком, и плитка висела бы в
+		// «unknown» вместо того, чтобы показать причину из STATE-файла.
 		status: function() {
-			let line = firstLine(run('sh ' + SCRIPT + ' status').out);
-			let j = (line != '') ? json(line) : null;
+			let line = firstLine(stripExit(run('sh ' + SCRIPT + ' status').out));
+			let j = (line != '') ? safeJson(line) : null;
 			return (type(j) == 'object') ? j : { state: 'idle', installed: installed(), version: '' };
 		},
 		// Фон: ~15МБ по медленному/проксированному каналу дольше ubus-таймаута. UI поллит hysteria_status.
