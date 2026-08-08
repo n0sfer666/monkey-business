@@ -91,6 +91,13 @@ if [ "$BYPASS" = 1 ]; then
 	[ -f "$RUSET_DIR/ru6.nft" ] && nft -f "$RUSET_DIR/ru6.nft" 2>/dev/null || true
 fi
 
+# `ip rule add` дубликаты не проверяет, а apply.sh зовётся на каждом старте и каждом config_apply
+# (watchdog делает это по нескольку раз за инцидент) — правила копились бы до flush.sh, который
+# снимает ровно одно. Снимаем все свои и ставим одно: результат не зависит от числа прошлых вызовов.
+# Потолок обязателен: цикл «пока удаляется» на стабе/реализации `ip`, всегда возвращающей 0,
+# крутился бы вечно, а восемь снятий с запасом покрывают любое реальное накопление.
+i=0
+while [ "$i" -lt 8 ] && ip rule del fwmark "$MARK" lookup "$TABLE" 2>/dev/null; do i=$((i + 1)); done
 ip rule add fwmark "$MARK" lookup "$TABLE" 2>/dev/null || true
 ip route add local 0.0.0.0/0 dev lo table "$TABLE" 2>/dev/null || true
 

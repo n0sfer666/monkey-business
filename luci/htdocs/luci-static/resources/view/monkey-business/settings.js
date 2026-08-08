@@ -12,30 +12,25 @@ return view.extend({
 		var m = new form.Map('monkey-business', _('Settings'),
 			_('Each option has a hint explaining what it does. Defaults are safe.'));
 
-		var g = m.section(form.NamedSection, 'global', 'global', _('General'));
+		// Режим маршрутизации и регион живут на дашборде: они меняют ещё и файрвол (ядерный обход
+		// в nft), а форма умеет только стейджить UCI — «сохранил, и ничего не произошло».
+		var g = m.section(form.NamedSection, 'global', 'global', _('General'),
+			_('Routing mode and local region are on the Dashboard — they change the firewall too, not just the Xray config.'));
 
-		var mode = g.option(form.ListValue, 'routing_mode', _('Routing mode'),
-			_('What goes through the VPN. "Bypass local" sends your region (RU/CN) and private addresses direct, everything else through the tunnel.'));
-		mode.value('bypass-local', _('Bypass local (recommended)'));
-		mode.value('gfwlist', _('Only blocked via VPN'));
-		mode.value('global', _('Everything via VPN'));
-		mode.default = 'bypass-local';
-
-		var region = g.option(form.ListValue, 'local_region', _('Local region'),
-			_('Region treated as "local" for direct routing (geoip/geosite). Pick "Other" if your region has no geo preset — then you drive the split yourself with the custom Direct/Via-VPN lists on the Dashboard; private stays direct and the rest follows the routing mode.'));
-		region.value('ru', 'Russia');
-		region.value('cn', 'China');
-		region.value('ir', 'Iran');
-		region.value('other', _('Other — no geo preset (custom lists drive routing)'));
-		region.default = 'ru';
-
+		// rmempty=false обязателен обоим: LuCI УДАЛЯЕТ опцию из UCI, когда её значение совпало с
+		// default (form.js parse), а у обеих default='1' — то есть простое «Save & Apply» без единой
+		// правки стирало бы включённую защиту. Для kill_switch это безобидно (init.d читает его через
+		// `|| echo 1`), а вот ipv6_block читает генератор, и его пропажа снимала бы правило ::/0 и
+		// переводила DNS с UseIPv4 на UseIP — то есть утечку мимо IPv4-туннеля, молча.
 		var ks = g.option(form.Flag, 'kill_switch', _('Kill-switch'),
 			_('Fail-closed: LAN traffic to non-local destinations is dropped instead of leaking direct whenever it is not carried by the tunnel (Xray down, rule gap, or non-proxied traffic such as ICMP). Disable for a direct fallback when the tunnel is down (less safe). Local-region and private traffic are unaffected.'));
 		ks.default = '1';
+		ks.rmempty = false;
 
 		var v6 = g.option(form.Flag, 'ipv6_block', _('Block IPv6'),
 			_('Disable IPv6 for clients so traffic cannot leak around the IPv4 tunnel.'));
 		v6.default = '1';
+		v6.rmempty = false;
 
 		var port = g.option(form.Value, 'tproxy_port', _('TPROXY port'),
 			_('Local transparent-proxy port for the Xray inbound. Change only on conflicts.'));

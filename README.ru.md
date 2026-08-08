@@ -3,23 +3,31 @@
 [English](README.md) | **Русский**
 
 Минималистичный VPN-клиент для роутеров на **OpenWrt / ImmortalWrt** (целевое железо — **NanoPi R2S**).
-Reality + VLESS + XHTTP с простым интерфейсом на LuCI — лёгкая альтернатива passwall / v2rayA.
+Reality + VLESS + XHTTP (и hysteria2) с простым интерфейсом на LuCI — лёгкая альтернатива
+passwall / v2rayA.
 
 ```
 LuCI (JS) → rpcd (ucode) → UCI → генератор конфига → Xray-core + nftables TPROXY + dnsmasq
 ```
 
-Импорт подписки (формат определяется автоматически) или ручное добавление `vless://`-серверов;
-сплит-маршрутизация по geoip/geosite (локальный регион — напрямую, остальное — через туннель),
-kill-switch, блокировка утечки IPv6, split-DNS поверх DoH, anti-DPI (uTLS + XHTTP-паддинг) и
-дашборд на одном экране.
+Импорт подписки (формат определяется автоматически) или ручное добавление `vless://`- и
+`hysteria2://`-серверов; сплит-маршрутизация по geoip/geosite (локальный регион — напрямую,
+остальное — через туннель), kill-switch, блокировка утечки IPv6, split-DNS поверх DoH, anti-DPI
+(uTLS + XHTTP-паддинг) и дашборд на одном экране.
+
+Оба протокола живут в **одном** списке серверов: протокол — свойство сервера, поэтому порядок
+списка остаётся единственным приоритетом, а failover перебирает кандидатов сквозь протоколы.
+hysteria2 работает отдельным клиентом рядом с Xray (аутбаунд `proxy` превращается в локальный
+socks), так что сплит, DNS и kill-switch — ровно те же, что у VLESS. Бинарь клиента ставится
+кнопкой на дашборде.
 
 Две вещи происходят без вашего участия. **Трафик локального региона минует прокси прямо в ядре**:
 его CIDR-диапазоны лежат в nftables-сетах (`mb_ru4`/`mb_ru6`), исключённых из TPROXY, поэтому он не
 платит за лишний хоп через Xray — а правило `geoip:<регион> → direct` внутри Xray остаётся
 подстраховкой. И **упавший туннель чинит себя сам**: cron-watchdog раз в минуту пробит туннель и
-эскалирует *reconnect → переключение на следующий рабочий сервер → откат на direct*, вместо того
-чтобы оставить LAN за fail-closed kill-switch'ем. Такая же проба выбирает сервер при подключении:
+идёт по лестнице — *мягкий bounce → жёсткий рестарт → переключение на следующий рабочий сервер →
+полный цикл stop/start → откат на direct*, вместо того чтобы оставить LAN за fail-closed
+kill-switch'ем. Такая же проба выбирает сервер при подключении:
 кандидаты перебираются по порядку списка, побеждает первый, через который реально идёт трафик.
 
 > ⚠️ **В разработке.** Бэкенд (парсер подписки, генератор конфига, rpcd-хендлеры) покрыт
@@ -96,9 +104,11 @@ make package
 
 ### Первый запуск
 
-1. Вкладка **Servers** — вставьте URL подписки и нажмите *Fetch*, либо добавьте `vless://`-сервер вручную.
+1. Вкладка **Servers** — вставьте URL подписки и нажмите *Fetch*, либо добавьте `vless://`- или
+   `hysteria2://`-сервер вручную.
 2. **Dashboard** — *Update geo databases* (скачивает и валидирует geoip/geosite `.dat`).
-3. **Dashboard** — *Turn on*. *Check exit IP* подтверждает, что трафик уходит через туннель.
+3. **Dashboard** — *Install / update hysteria* — только если в списке есть hysteria2-серверы.
+4. **Dashboard** — *Turn on*. *Check exit IP* подтверждает, что трафик уходит через туннель.
 
 ---
 
@@ -116,13 +126,14 @@ make test-integ  # netns TPROXY-перехват + сгенерированны�
 
 | Путь | Что |
 |------|------|
-| `src/parser/` | парсер подписки (base64 / uri-list; авто-определение формата) |
-| `src/generator/` | генератор UCI → Xray JSON (абстрагирован под будущий бэкенд sing-box) |
+| `src/parser/` | парсер подписки (base64 / uri-list; авто-определение формата; `vless://` + `hysteria2://`) |
+| `src/generator/` | генератор UCI → Xray JSON (абстрагирован под будущий бэкенд sing-box) + конфиг hysteria-клиента |
 | `src/rpcd/` | чистые rpcd-хендлеры (host-тестируемые; привязка ubus/uci в `root/…/rpcd/ucode`) |
+| `src/runtime/` | device-привязанная обвязка, вынесенная из rpcd-плагина (конфиг/установка/проба hysteria) |
 | `src/lib/` | общие утилиты (разбор URI) |
-| `luci/` | LuCI client-side JS-вьюшки (dashboard / servers / settings) + меню + ACL |
+| `luci/` | LuCI client-side JS-вьюшки (dashboard / servers / settings) + панель сплита (`routing.js`, рендерится внутри дашборда) + меню + ACL |
 | `root/` | файлы на устройстве: UCI-дефолты, procd-init, рантайм rpcd-плагин |
-| `root/usr/share/monkey-business/` | shell на устройстве: `watchdog.sh` + `probes.sh` (самовосстановление), `ruset.sh` (nft-сеты direct-bypass), `geo.sh`, `fetch.sh` (общая загрузка, socks-фолбэк), `boothealth.sh`, `nicfw.sh` + `nicwatch.sh` (USB-сетевуха RTL8153B, см. [гайд §9](docs/install-nanopi.ru.md#9-usb-сетевуха-rtl8153b-прошивка-и-watchdog)) |
+| `root/usr/share/monkey-business/` | shell на устройстве: `watchdog.sh` + `probes.sh` + `recovery.sh` + `phases.sh` (самовосстановление), `ruset.sh` (nft-сеты direct-bypass), `geo.sh`, `fetch.sh` (общая загрузка: socks-фолбэк, отсев залипших зеркал по порогу скорости), `boothealth.sh`, `hysteria.sh` (установщик клиента hysteria2), `subupdate.sh` (автообновление подписки по расписанию), `nicfw.sh` + `nicwatch.sh` (USB-сетевуха RTL8153B, см. [гайд §9](docs/install-nanopi.ru.md#9-usb-сетевуха-rtl8153b-прошивка-и-watchdog)) |
 | `scripts/firewall/` | nftables TPROXY apply/flush |
 | `scripts/expand-sd.sh` | расширение ext4-раздела SD-карты с macOS ([док](docs/sd-expand-macos.ru.md)) |
 | `test/` | ucode-харнесс + unit/snapshot-тесты + netns-интеграция |
@@ -223,15 +234,13 @@ make dev-test-split # проверить сплит-маршрутизацию: 
   этапе деплоя; пересоберите вручную — `sh /usr/share/monkey-business/ruset.sh build` (cron-задания
   нет, а кнопка *Update geo databases* его **не** пересобирает — она обновляет только `.dat`-файлы).
   Пустой сет — это не утечка: правило Xray `geoip:<регион> → direct` всё равно уведёт такой трафик
-  напрямую, просто медленнее. Отключить механизм целиком:
-  ```sh
-  # uci set monkey-business.global.direct_bypass=0
-  # uci commit monkey-business
-  # /etc/init.d/monkey-business restart
-  ```
+  напрямую, просто медленнее. Своего тумблера у механизма нет: он производный от сплита на
+  дашборде и включён только при **Bypass local + Russia** (сеты наполняются RU-списком CIDR, так что
+  в любом другом режиме или регионе он уводил бы мимо туннеля трафик, который вы просили в туннель).
+  Чтобы выключить — выберите другой режим маршрутизации; дашборд показывает, что включает каждый выбор.
 - **Туннель упал, и роутер сам переключил сервер.** Это watchdog. Он пишет только переходы, в
   syslog — `logread -f -e mb-event` покажет `Reconnecting…` /
-  `Failover switched server…` / `VPN stopped, LAN on direct`. Текущее состояние —
+  `VPN recovered by <ступень>…` / `VPN stopped, LAN on direct`. Текущее состояние —
   в `/tmp/mb-watchdog/state`. Лестница эскалации, тюнинг и отключение — в
   [руководстве по установке](docs/install-nanopi.ru.md#8-самовосстановление-watchdog-и-failover).
 - **Direct-сайты (мимо туннеля) тормозят при живом туннеле.** Обычно это `odhcp6c` в busy-loop на
