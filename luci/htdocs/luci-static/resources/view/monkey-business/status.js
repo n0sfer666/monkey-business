@@ -76,9 +76,12 @@ function handleToggle(on) {
 		}
 		return pollUntilRunning().then(function(ok) {
 			ui.hideModal();
-			if (!ok)
-				ui.addNotification(null, E('p', _('Service did not come up — check logs (logread | grep xray).')), 'warning');
-			window.location.reload();
+			// reload только на успехе: он уничтожает нотификацию вместе со страницей, и вместо
+			// причины отказа человек получал бы всё то же «Starting…», ради чего это и написано.
+			// Метка статуса живая (poll ниже) — без перезагрузки она догонит сама.
+			if (ok)
+				return window.location.reload();
+			ui.addNotification(null, E('p', {}, [ _('Service did not come up — check logs (logread | grep xray).') ]), 'warning');
 		});
 	}).catch(function(e) {
 		ui.hideModal();
