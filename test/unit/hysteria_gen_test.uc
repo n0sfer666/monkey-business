@@ -62,7 +62,8 @@ test("probe config uses its own socks port", function() {
 
 // Смысл всей связки: маршрутизация xray не меняется, меняется только куда смотрит "proxy".
 test("xray outbound becomes socks into the local hysteria", function() {
-	let out = generate({ global: { tproxy_port: 12345, routing_mode: "bypass-local", local_region: "ru" }, server: HY });
+	let out = generate({ global: { tproxy_port: 12345, routing_mode: "bypass-local", local_region: "ru",
+		ipv6_block: "0" }, server: HY });
 	assertEq(out.outbounds[0], {
 		tag: "proxy", protocol: "socks",
 		settings: { servers: [{ address: "127.0.0.1", port: 10810 }] },

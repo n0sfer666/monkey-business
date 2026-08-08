@@ -17,13 +17,20 @@ return view.extend({
 		var g = m.section(form.NamedSection, 'global', 'global', _('General'),
 			_('Routing mode and local region are on the Dashboard — they change the firewall too, not just the Xray config.'));
 
+		// rmempty=false обязателен обоим: LuCI УДАЛЯЕТ опцию из UCI, когда её значение совпало с
+		// default (form.js parse), а у обеих default='1' — то есть простое «Save & Apply» без единой
+		// правки стирало бы включённую защиту. Для kill_switch это безобидно (init.d читает его через
+		// `|| echo 1`), а вот ipv6_block читает генератор, и его пропажа снимала бы правило ::/0 и
+		// переводила DNS с UseIPv4 на UseIP — то есть утечку мимо IPv4-туннеля, молча.
 		var ks = g.option(form.Flag, 'kill_switch', _('Kill-switch'),
 			_('Fail-closed: LAN traffic to non-local destinations is dropped instead of leaking direct whenever it is not carried by the tunnel (Xray down, rule gap, or non-proxied traffic such as ICMP). Disable for a direct fallback when the tunnel is down (less safe). Local-region and private traffic are unaffected.'));
 		ks.default = '1';
+		ks.rmempty = false;
 
 		var v6 = g.option(form.Flag, 'ipv6_block', _('Block IPv6'),
 			_('Disable IPv6 for clients so traffic cannot leak around the IPv4 tunnel.'));
 		v6.default = '1';
+		v6.rmempty = false;
 
 		var port = g.option(form.Value, 'tproxy_port', _('TPROXY port'),
 			_('Local transparent-proxy port for the Xray inbound. Change only on conflicts.'));
