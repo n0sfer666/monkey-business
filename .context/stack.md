@@ -15,7 +15,9 @@
 - **Второй протокол:** hysteria2 — отдельный процесс `hysteria client` (свой QUIC-стек, в xray его
   нет), локальный socks `127.0.0.1:10810`, в который смотрит аутбаунд `proxy` xray. Поднимается
   вторым procd-инстансом того же сервиса при наличии `/etc/monkey-business/hysteria.json`. Бинаря в
-  feeds нет — ставится кнопкой на дашборде (`hysteria.sh install` через `mb_fetch` + sha256).
+  feeds нет — ставится кнопкой на дашборде (`hysteria.sh install` через `mb_fetch`). Сумма
+  обязательна и берётся из релизного `hashes.txt` (отдельных `<asset>.sha256` апстрим НЕ публикует),
+  собирается со всех зеркал ДО скачивания 21МБ.
 - **Backend-логика:** **ucode** (`.uc`) — парсер подписки, генератор UCI→Xray JSON, rpcd-хендлеры.
 - **UI:** LuCI client-side JS (luci-base, ubus/rpcd).
 - **Конфиг:** UCI `/etc/config/monkey-business` → генератор → Xray JSON.
