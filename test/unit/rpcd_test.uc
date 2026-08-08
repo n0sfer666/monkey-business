@@ -161,6 +161,34 @@ test("subscriptionUpdate stores servers, url, userinfo and auto-selects", functi
 	assert(st.selected != null, "auto-selected a server");
 });
 
+// Автообновление раз в сутки не вправе переключать сервер: активный переживает fetch, если он в
+// списке остался. Безусловный selectBest уводил бы человека с выбранного сервера на «лучший по
+// пингу» — а с ним и точку выхода, страну и уже поднятый туннель.
+test("subscriptionUpdate keeps the selected server", function() {
+	let st = freshState();
+	st.fetchResult = { body: SUB, userinfo: "" };
+	let ctx = mockCtx(st);
+	hsub.subscriptionUpdate(ctx, {});
+	st.selected = st.servers[1].tag;
+	st.pings = {};
+	st.pings[st.servers[0].tag] = 1;
+	st.pings[st.servers[1].tag] = 999;
+	hsub.subscriptionUpdate(ctx, {});
+	assertEq(st.selected, st.servers[1].tag);
+});
+
+// Обратная сторона: сервера с сохранённым тегом в новом списке нет — выбор обязан переехать сам,
+// иначе туннель поднимался бы по первому попавшемуся.
+test("subscriptionUpdate re-selects when the saved server is gone", function() {
+	let st = freshState();
+	st.fetchResult = { body: SUB, userinfo: "" };
+	let ctx = mockCtx(st);
+	hsub.subscriptionUpdate(ctx, {});
+	st.selected = "vanished";
+	hsub.subscriptionUpdate(ctx, {});
+	assert(st.selected != "vanished", "выбор переехал на существующий сервер");
+});
+
 test("subscriptionUpdate preserves manual order on re-fetch", function() {
 	let st = freshState();
 	st.fetchResult = { body: SUB, userinfo: "" };

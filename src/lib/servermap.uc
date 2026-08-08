@@ -6,6 +6,10 @@
 // на устройстве уже лежат серверы старой раскладки, и до первого обновления подписки они обязаны
 // работать как раньше.
 
+// Блоб прежней схемы правится руками в /etc/config: битый JSON тут уронил бы чтение списка, а с ним
+// и все ubus-методы -> safeJson. Испорченный блоб = блоба нет, поля возьмутся из плоских опций.
+import { safeJson } from "./val.uc";
+
 // Имена плоских опций дублирует таблица LEGACY в luci/.../serveropt.js (форма достаёт из прежнего
 // блоба то же самое) — менять эти три карты и её нужно вместе.
 const TRANSPORT = { tr_type: "type", tr_path: "path", tr_host: "host", tr_mode: "mode", tr_service: "serviceName" };
@@ -14,16 +18,6 @@ const OBFS = { obfs_type: "type", obfs_password: "password" };
 
 function str(v) {
 	return (v != null) ? "" + v : "";
-}
-
-// Блоб прежней схемы правится руками в /etc/config — битый JSON тут уронил бы чтение списка, а с
-// ним и все ubus-методы. Испорченный блоб = блоба нет: поля возьмутся из плоских опций.
-function safeJson(v) {
-	try {
-		return json(v);
-	} catch (e) {
-		return null;
-	}
 }
 
 function fromFlat(s, map_) {

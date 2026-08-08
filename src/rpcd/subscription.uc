@@ -112,7 +112,13 @@ function subscriptionUpdate(ctx, args) {
 	ctx.setSubscriptionUrl(url);
 	if (resp.userinfo != null && resp.userinfo != "")
 		ctx.setUserinfo(parseUserinfo(resp.userinfo));
-	selectBest(ctx);
+	// Перевыбираем активный ТОЛЬКО если прежнего в списке больше нет. Обновление подписки идёт и по
+	// крону (subupdate.sh, config_apply он намеренно не зовёт), а безусловный selectBest возвращал бы
+	// указатель на servers[0] раз в сутки: failover, уведший трафик на живой сервер, оказывался бы
+	// отменён на бумаге — дашборд показывал бы не тот сервер, через который идёт трафик, а watchdog
+	// принял бы смену тега за ручной выбор человека, сбросил фазу и обнулил backoff посреди инцидента.
+	if (ctx.getSelectedServer() == null)
+		selectBest(ctx);
 	return { format: res.format, added: length(res.servers), errors: res.errors };
 }
 
