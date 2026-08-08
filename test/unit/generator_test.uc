@@ -17,7 +17,8 @@ function cfg(global, server) {
 test("bypass-ru matches golden snapshot", function() {
 	let golden = json(readfile("test/fixtures/xray_bypass_ru.json"));
 	let out = generate(cfg(
-		{ tproxy_port: 12345, routing_mode: "bypass-local", local_region: "ru", log_level: "warning" },
+		{ tproxy_port: 12345, routing_mode: "bypass-local", local_region: "ru", log_level: "warning",
+		  ipv6_block: "0" },
 		SERVER_A));
 	assertEq(out, golden);
 });
@@ -52,19 +53,19 @@ test("flow omitted when empty", function() {
 });
 
 test("routing mode: global", function() {
-	let r = buildRouting({ routing_mode: "global" });
+	let r = buildRouting({ routing_mode: "global", ipv6_block: "0" });
 	assertEq(r.rules[0].ip, ["geoip:private"]);
 	assertEq(r.rules[length(r.rules) - 1].outboundTag, "proxy");
 });
 
 test("routing mode: gfwlist", function() {
-	let r = buildRouting({ routing_mode: "gfwlist", local_region: "ru" });
+	let r = buildRouting({ routing_mode: "gfwlist", local_region: "ru", ipv6_block: "0" });
 	assertEq(r.rules[length(r.rules) - 1].outboundTag, "direct");
 	assert(r.rules[1].domain[0] == "geosite:geolocation-!ru", "proxy by !region list");
 });
 
 test("routing mode: bypass-local default region ru", function() {
-	let r = buildRouting({});
+	let r = buildRouting({ ipv6_block: "0" });
 	assertEq(r.rules[0].ip, ["geoip:private", "geoip:ru"]);
 	assertEq(r.rules[1].domain, ["geosite:private", "geosite:category-ru"]);
 });
@@ -86,7 +87,7 @@ test("region geo goes direct only in bypass-local", function() {
 });
 
 test("routing region other: drops region geo, private direct, default by mode", function() {
-	let r = buildRouting({ local_region: "other", routing_mode: "bypass-local" });
+	let r = buildRouting({ local_region: "other", routing_mode: "bypass-local", ipv6_block: "0" });
 	assertEq(r.rules[0].ip, ["geoip:private"]);
 	assertEq(r.rules[0].outboundTag, "direct");
 	assertEq(r.rules[1].domain, ["geosite:private"]);
@@ -105,7 +106,7 @@ test("routing region other: ipv6 block kept first", function() {
 
 test("routing region other: custom lists drive split, no region geo category", function() {
 	let r = buildRouting({
-		local_region: "other", routing_mode: "bypass-local",
+		local_region: "other", routing_mode: "bypass-local", ipv6_block: "0",
 		custom_direct: "a.com", custom_proxy: "b.com",
 	});
 	assertEq(r.rules[0].domain, ["a.com"]);
@@ -187,8 +188,17 @@ test("ipv6 block adds blackhole rule first", function() {
 });
 
 test("no ipv6 rule when ipv6_block off", function() {
-	let r = buildRouting({ routing_mode: "bypass-local" });
+	let r = buildRouting({ routing_mode: "bypass-local", ipv6_block: "0" });
 	assertEq(r.rules[0].outboundTag, "direct");
+});
+
+// Опцию из UCI удаляет сама форма LuCI, когда значение совпало с default; трактовать это как
+// «выключено» значило бы снимать блок ::/0 после обычного Save & Apply.
+test("ipv6 block stays on when the option is missing", function() {
+	let r = buildRouting({ routing_mode: "bypass-local" });
+	assertEq(r.rules[0].ip, ["::/0"]);
+	assertEq(r.rules[0].outboundTag, "block");
+	assertEq(buildDns({}, "ru", null).queryStrategy, "UseIPv4");
 });
 
 test("routing pins direct_dns resolver to direct (bootstrap)", function() {
@@ -199,7 +209,7 @@ test("routing pins direct_dns resolver to direct (bootstrap)", function() {
 });
 
 test("routing without direct_dns arg unchanged (backward compat)", function() {
-	let r = buildRouting({ routing_mode: "bypass-local", local_region: "ru" });
+	let r = buildRouting({ routing_mode: "bypass-local", local_region: "ru", ipv6_block: "0" });
 	assertEq(r.rules[0].ip, ["geoip:private", "geoip:ru"]);
 });
 
@@ -333,7 +343,8 @@ test("no socks inbound by default", function() {
 });
 
 test("custom lists ignored in global mode", function() {
-	let r = buildRouting({ routing_mode: "global", custom_direct: "example.com", custom_proxy: "x.com" });
+	let r = buildRouting({ routing_mode: "global", custom_direct: "example.com", custom_proxy: "x.com",
+		ipv6_block: "0" });
 	for (let rule in r.rules)
 		assert(!(exists(rule, "domain") && index(rule.domain, "example.com") >= 0), "no custom rule in global");
 	assertEq(r.rules[0].ip, ["geoip:private"]);

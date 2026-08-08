@@ -1,7 +1,7 @@
 // Правила маршрутизации: режимы сплита, custom-списки пользователя, порядок правил.
 // Порядок здесь — это и есть сплит, поэтому он собран в одном месте.
 
-import { isTrue, isIpLike } from "../lib/val.uc";
+import { isTrueByDefault, isIpLike } from "../lib/val.uc";
 
 const GEOSITE_REGION = { ru: "category-ru", cn: "cn", ir: "category-ir" };
 
@@ -87,7 +87,10 @@ function buildRouting(g, directDns) {
 	if (directDns != null && directDns != "" && isIpLike(directDns))
 		push(rules, { type: "field", ip: [directDns], outboundTag: "direct" });
 
-	if (isTrue(g.ipv6_block))
+	// Отсутствие опции = блок ВКЛЮЧЁН: дефолтный конфиг её содержит, и пропасть она может только
+	// одним способом — LuCI стёр её как совпавшую с default. Читать это как «человек выключил»
+	// значит снимать защиту от утечки по факту чужой особенности формы.
+	if (isTrueByDefault(g.ipv6_block))
 		push(rules, { type: "field", ip: ["::/0"], outboundTag: "block" });
 
 	for (let r in modeRules(mode, region, other))

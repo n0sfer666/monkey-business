@@ -18,4 +18,23 @@ function isIpLike(t) {
 	return false;
 }
 
-export { isTrue, isIpLike };
+// «Опции нет» и «опция выключена» — разные вещи для настроек, чья выключенность означает утечку.
+// LuCI удаляет опцию из UCI, когда её значение совпало с default (form.js parse + rmempty), поэтому
+// отсутствие встречается на совершенно исправном конфиге, а явное выключение всегда записано "0".
+function isTrueByDefault(v) {
+	return v == null || v == "" || isTrue(v);
+}
+
+// json() в ucode на невалидном вводе БРОСАЕТ, а разбирается тут всегда чужой текст: блоб из
+// /etc/config, правленный руками, и вывод скриптов, у которых при отказе на stdout пусто (в буфере
+// остаётся служебный MB_EXIT:<код>). Непойманное исключение убивает весь ubus-метод, то есть вместо
+// внятной ошибки в UI приходит пустой ответ.
+function safeJson(v) {
+	try {
+		return json(v);
+	} catch (e) {
+		return null;
+	}
+}
+
+export { isTrue, isTrueByDefault, isIpLike, safeJson };
