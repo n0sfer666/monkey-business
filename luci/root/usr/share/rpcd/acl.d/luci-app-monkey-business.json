@@ -32,7 +32,11 @@
 			},
 			"uci": [
 				"monkey-business"
-			]
+			],
+			"file": {
+				"/tmp/mb-upload-geoip.dat": [ "write" ],
+				"/tmp/mb-upload-geosite.dat": [ "write" ]
+			}
 		}
 	}
 }

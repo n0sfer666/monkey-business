@@ -8,8 +8,26 @@
 // читается прежняя схема — в serveropt.js. Значение по умолчанию задаёт первый пункт списка, а не
 // свойство default: см. комментарий там же.
 
+// Ссылку без этих полей устройство отвергает (missing_uuid/missing_password/missing_obfs_password
+// в serverlink.js), значит и ручной ввод обязан спотыкаться на них же. Иначе секция спокойно уезжает
+// в UCI, генератор собирает конфиг с пустым паролем/UUID, туннель не поднимается — и снаружи это
+// выглядит как «watchdog зачем-то крутит failover», а не как незаполненное поле.
+//
+// Проверка привязана к видимости (so.shown) и к depends самого поля: у скрытого протоколом поля LuCI
+// валидацию не запускает вовсе (form.js parse: isActive), поэтому vless-сервер не спотыкается о
+// пустой hysteria-пароль.
+function requireFilled(o, msg) {
+	o.validate = function(sid, value) {
+		if (!so.shown(this, sid))
+			return true;
+		return (value != null && value !== '') ? true : msg;
+	};
+	return o;
+}
+
 function vlessFields(s, all) {
 	all.uuid = so.depends(so.value(s, form.Value, 'uuid', _('UUID')), [ { protocol: 'vless' } ]);
+	requireFilled(all.uuid, _('VLESS needs a UUID'));
 
 	all.flow = so.choices(so.value(s, form.ListValue, 'flow', _('Flow')),
 		[ [ '', _('none') ], [ 'xtls-rprx-vision', 'xtls-rprx-vision' ],
@@ -72,11 +90,14 @@ function vlessFields(s, all) {
 function hysteriaFields(s, all) {
 	all.password = so.value(s, form.Value, 'password', _('Password'), _('hysteria2 authentication'));
 	all.password.password = true;
+	requireFilled(all.password, _('hysteria2 needs a password'));
 	all.insecure = so.value(s, form.Flag, 'insecure', _('Skip certificate check'),
 		_('insecure=1 in the link: traffic stays encrypted, but the server is not verified.'));
 	all.obfs_type = so.choices(so.value(s, form.ListValue, 'obfs_type', _('Obfuscation')),
 		[ [ '', _('none') ], [ 'salamander', 'salamander' ] ]);
 	all.obfs_password = so.value(s, form.Value, 'obfs_password', _('Obfuscation password'));
+	// salamander без пароля обфускации — тот же отказ на стороне устройства, что и без пароля вовсе.
+	requireFilled(all.obfs_password, _('salamander needs an obfuscation password'));
 	all.pin_sha256 = so.value(s, form.Value, 'pin_sha256', _('Certificate pin (SHA256)'));
 	all.mport = so.value(s, form.Value, 'mport', _('Port hopping'), _('Range, e.g. 10000-20000'));
 
@@ -135,11 +156,7 @@ return baseclass.extend({
 		// их ещё нечем, и rmempty=false встречал бы человека тремя красными рамками на пустой форме.
 		// Пустую секцию в этот момент удерживает проверка самой ссылки (serverlink.js).
 		[ all.tag, all.address, all.port ].forEach(function(o) {
-			o.validate = function(sid, value) {
-				if (!so.shown(this, sid))
-					return true;
-				return (value != null && value !== '') ? true : _('Must not be empty');
-			};
+			requireFilled(o, _('Must not be empty'));
 		});
 		all.protocol = so.choices(s.option(form.ListValue, 'protocol', _('Protocol')),
 			[ [ 'vless', 'VLESS' ], [ 'hysteria2', 'hysteria2' ] ]);
