@@ -207,6 +207,13 @@ behind a live kill-switch, which from the outside looks like "the internet is go
 shell: `sh /usr/share/monkey-business/hysteria.sh install`, check with `… hysteria.sh status`.
 VLESS/Reality works without it.
 
+Expect the install to take about a minute: the checksum is collected first, from the release
+`hashes.txt` on every mirror, and the 21MB binary is only fetched once the mirrors agree on it. A
+mirror that accepts the connection and then stalls is dropped after ~20 seconds instead of holding
+the whole timeout, so `installing…` should not sit there for many minutes — if it does, the router
+has no route to any mirror at all. Mirrors that disagree on the checksum cancel the install: the
+binary runs as root, so an unverifiable one is not worth having.
+
 The client runs as a second procd instance of the same service (it lives and dies with the tunnel),
 listens on socks `127.0.0.1:10810`, and Xray dials into it as its outbound — routing, DNS and the
 kill-switch stay exactly the ones VLESS uses.
