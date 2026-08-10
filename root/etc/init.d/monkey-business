@@ -93,9 +93,14 @@ start_service() {
 		procd_close_instance
 	fi
 
+	# custom_proxy уезжает в файрвол СЫРЫМ: разбор и валидация живут в apply.sh — он единственный
+	# потребитель и единственное место, где известно, что примет nft. Без force-сетов явный выбор
+	# пользователя проигрывал ядерному обходу: RU-адрес из «через туннель» отсекался @mb_ru4 return
+	# раньше tproxy, до Xray не доходил, и правило в xray.json оставалось мёртвым.
 	MB_LAN_IFACE="$(uci -q get monkey-business.global.lan_iface || echo br-lan)" \
 	MB_KILL_SWITCH="$(uci -q get monkey-business.global.kill_switch || echo 1)" \
 	MB_DIRECT_BYPASS="$(mb_direct_bypass)" \
+	MB_FORCE_PROXY="$(mb_opt custom_proxy '')" \
 		sh "$FW/apply.sh" 2>&1 | logger -t monkey-business
 }
 
