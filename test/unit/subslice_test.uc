@@ -93,8 +93,8 @@ test("subscriptionUpdate leaves servers of a second subscription alone", functio
 		setServers: function(a) { st.servers = a; },
 		getSelectedServer: function() { return null; },
 		setSelected: function(t) { st.selected = t; },
-		setSubscriptionUrl: function(u) { st.subscription.url = u; },
-		setUserinfo: function(_o) {},
+		setSubscriptionUrl: function(_id, u) { st.subscription.url = u; },
+		setUserinfo: function(_id, _o) {},
 		fetchSubscription: function(_u) {
 			return { body: "vless://u@3.3.3.4:443?security=none&type=tcp#fresh", userinfo: "" };
 		},

@@ -26,8 +26,8 @@ function mockCtx(state) {
 		setServers: function(a) { state.servers = a; },
 		getSelectedServer: function() { return findSelected(state.servers, state.selected); },
 		setSelected: function(tag) { state.selected = tag; },
-		setSubscriptionUrl: function(u) { state.subscription.url = u; },
-		setUserinfo: function(o) {
+		setSubscriptionUrl: function(_id, u) { state.subscription.url = u; },
+		setUserinfo: function(_id, o) {
 			state.subscription.used_upload = o.used_upload;
 			state.subscription.used_download = o.used_download;
 			state.subscription.total = o.total;

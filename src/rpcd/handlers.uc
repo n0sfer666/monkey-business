@@ -8,6 +8,8 @@
 //   getDns() -> { mode, direct_dns, doh_url }   getAntiDpi() -> { default_fingerprint, xhttp_padding }
 //   getSubscriptions() -> [{ ".name", name, url, used_upload, used_download, total, expire, ... }]
 //   getSubscription(id) -> subscription|null   setActiveSub(id) -> bool (легло ли в UCI)
+//   setSubscriptionUrl(id, url)   setUserinfo(id, { used_upload, used_download, total, expire })
+//   getAutoswitch() -> { from, reason }|null   setAutoswitch(from, reason)   clearAutoswitch() (tmpfs)
 //   getServers() -> [server, ...]      setServers(arr)
 //   getSelectedServer() -> server|null   getSelectedId() -> string   setSelected(id) — рантайм-состояние,
 //     НЕ uci-commit
@@ -29,7 +31,7 @@ import { generateJson } from "../generator/xray.uc";
 import { selectWorking, listedServers } from "./select.uc";
 import { directBypass } from "../lib/bypass.uc";
 import { prepareHysteria } from "./hysteria.uc";
-import { serverId, findSub, activeSubId } from "../lib/subs.uc";
+import { serverId, activeSubId, selectError } from "../lib/subs.uc";
 
 const ROUTING_MODES = ["bypass-local", "gfwlist", "global"];
 const LOCAL_REGIONS = ["ru", "cn", "ir", "other"];
@@ -154,11 +156,14 @@ function setMode(ctx, args) {
 function subscriptionSelect(ctx, args) {
 	let want = (args != null) ? args.sub : null;
 	let subs = ctx.getSubscriptions();
-	if (want == null || want == "" || findSub(subs, want) == null)
-		return { error: "unknown subscription" };
+	let err = selectError(subs, want, ctx.now());
+	if (err != null)
+		return { error: err };
 	let prev = ctx.getGlobal().active_sub || "";
-	if (activeSubId(subs, prev) == want)
+	if (activeSubId(subs, prev) == want) {
+		ctx.clearAutoswitch();
 		return { ok: true, active_sub: want, unchanged: true };
+	}
 	let prevId = ctx.getSelectedId();
 	if (!ctx.setActiveSub(want))
 		return { error: "could not save the subscription choice (read-only config?)" };
@@ -168,6 +173,7 @@ function subscriptionSelect(ctx, args) {
 		ctx.setSelected(prevId);
 		return res;
 	}
+	ctx.clearAutoswitch();
 	res.active_sub = want;
 	return res;
 }

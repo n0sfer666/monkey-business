@@ -79,6 +79,8 @@ cpf root/usr/share/monkey-business/recovery.sh "$stage/usr/share/monkey-business
 chmod 644 "$stage/usr/share/monkey-business/recovery.sh"
 cpf root/usr/share/monkey-business/phases.sh "$stage/usr/share/monkey-business/phases.sh"
 chmod 644 "$stage/usr/share/monkey-business/phases.sh"
+cpf root/usr/share/monkey-business/wdlock.sh "$stage/usr/share/monkey-business/wdlock.sh"
+chmod 644 "$stage/usr/share/monkey-business/wdlock.sh"
 cpf root/usr/share/monkey-business/watchdog.sh "$stage/usr/share/monkey-business/watchdog.sh"
 chmod 755 "$stage/usr/share/monkey-business/watchdog.sh"
 cpf root/usr/share/monkey-business/boothealth.sh "$stage/usr/share/monkey-business/boothealth.sh"

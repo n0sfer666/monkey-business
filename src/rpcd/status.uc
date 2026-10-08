@@ -44,6 +44,7 @@ function status(ctx) {
 		active_sub: active,
 		reserve: via != null && via != active,
 		subscriptions: subscriptionsView(subs, time()),
+		autoswitch: ctx.getAutoswitch ? ctx.getAutoswitch() : null,
 		protocol: (s != null) ? (s.protocol || "vless") : null,
 		routing_mode: g.routing_mode,
 		local_region: g.local_region,

@@ -99,7 +99,10 @@ function mergeKeepingOrder(existing, fresh, id) {
 }
 
 function subscriptionUpdate(ctx, args) {
-	let sub = ctx.getSubscription(LEGACY_SUB) || {};
+	let id = (args != null && args.sub != null && args.sub != "") ? args.sub : LEGACY_SUB;
+	let sub = ctx.getSubscription(id);
+	if (sub == null)
+		return { error: "unknown subscription" };
 	let url = (args != null && args.url != null && args.url != "") ? args.url : sub.url;
 	if (url == null || url == "")
 		return { error: "no subscription url" };
@@ -112,10 +115,10 @@ function subscriptionUpdate(ctx, args) {
 	if (length(res.servers) == 0)
 		return { error: "no servers parsed", format: res.format, kept: length(ctx.getServers()) };
 
-	ctx.setServers(mergeKeepingOrder(ctx.getServers(), res.servers, LEGACY_SUB));
-	ctx.setSubscriptionUrl(url);
+	ctx.setServers(mergeKeepingOrder(ctx.getServers(), res.servers, id));
+	ctx.setSubscriptionUrl(id, url);
 	if (resp.userinfo != null && resp.userinfo != "")
-		ctx.setUserinfo(parseUserinfo(resp.userinfo));
+		ctx.setUserinfo(id, parseUserinfo(resp.userinfo));
 	// Перевыбираем активный ТОЛЬКО если прежнего в списке больше нет. Обновление подписки идёт и по
 	// крону (subupdate.sh, config_apply он намеренно не зовёт), а безусловный selectBest возвращал бы
 	// указатель на servers[0] раз в сутки: failover, уведший трафик на живой сервер, оказывался бы

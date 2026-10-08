@@ -23,7 +23,7 @@
 │  boothealth (mb-boothealth)                   │  ext4-rootfs: детект unclean/ro-remount, 0 периодики
 │  cron watchdog (watchdog+probes+recovery+phases)│ 1/мин; лестница soft→hard→failover→full→direct
 │  cron nicwatch (nicwatch.sh) + nicfw.sh       │  1/мин; залипание TX eth1 (RTL8153B) → bounce/re-bind
-│  cron subupdate (subupdate.sh)                │  1/мин, гейт по update_interval; ubus subscription_update
+│  cron subupdate (subupdate.sh)                │  1/мин, по подпискам; ubus subscription_update/_autoswitch
 │  nftables TPROXY (scripts/firewall/)          │  перехват TCP+UDP; :53 → dns-in (не tproxy)
 │  nft direct-bypass (ruset.sh → mb_ru4/mb_ru6) │  RU-CIDR минуют tproxy в ядре (быстрый путь)
 │  Xray transparent DNS (dns-in :5300 + split)  │  клиентский :53 редиректится в dns-модуль
@@ -32,9 +32,14 @@
 
 ## Потоки данных
 1. **Подписка:** URL → `subscription.uc` (auto-detect формата) → нормализованный список серверов → UCI.
-   Тот же путь по расписанию: `subupdate.sh` (cron 1/мин) при `auto_update=1` раз в `update_interval`
-   (не чаще 300с) зовёт ubus `subscription_update`; после неудачи пауза 900с. Состояние — в tmpfs,
-   конфиг xray скрипт не переприменяет: это делает Apply или watchdog.
+   Тот же путь по расписанию: `subupdate.sh` (cron 1/мин) для каждой секции `subscription` (имена из `uci -X show`, анонимные тоже) при её
+   `auto_update=1` раз в её `update_interval` (не чаще 300с) зовёт ubus `subscription_update {sub}`;
+   после неудачи пауза 900с. Состояние — в tmpfs (`/tmp/mb-subupdate/<id>`), провал одной подписки
+   не блокирует остальные; конфиг xray обновление не переприменяет: это делает Apply или watchdog.
+   При ≥ 2 подписках тот же тик зовёт `subscription_autoswitch {check}` (только чтение); если активная
+   мертва и есть живая — берёт лок watchdog (`/tmp/mb-watchdog/lock`, общий `wdlock.sh`; занят дольше 30с — тик
+   пропускается) и зовёт `subscription_autoswitch {deadline}`: событийная запись `active_sub`, причина
+   в `/tmp/mb-autoswitch`, apply — только если туннель шёл через мёртвую подписку.
    Сервер подписки несёт опцию `sub` (id секции `subscription`); `source=subscription` без `sub`
    при чтении приписывается легаси-подписке `subscription` (`lib/subs.uc` `serverSub`). Merge
    работает по срезу `sub`: чужие подписки и ручные серверы остаются на своих позициях.

@@ -51,9 +51,9 @@ FAILOVER_RESERVE="${MB_WD_FAILOVER_RESERVE:-150}"
 DOWN_BACKOFF0="${MB_WD_DOWN_BACKOFF0:-60}"
 XRAY_MATCH="${MB_WD_XRAY_MATCH:-xray run -c $XRAY_CONF}"
 MB_WD_LIB="${MB_WD_LIB:-$(dirname "$0")}"
-# Проверяем ВСЕ три: `.` на отсутствующем файле валит скрипт молча, и watchdog умирал бы на каждом
+# Проверяем ВСЕ четыре: `.` на отсутствующем файле валит скрипт молча, и watchdog умирал бы на каждом
 # тике, ничего не оставляя в logread. Достижимо в окне деплоя и при частичном обновлении.
-for f in probes.sh recovery.sh phases.sh; do
+for f in probes.sh recovery.sh phases.sh wdlock.sh; do
 	[ -f "$MB_WD_LIB/$f" ] || { MB_WD_LIB=/usr/share/monkey-business; break; }
 done
 # shellcheck source=root/usr/share/monkey-business/probes.sh disable=SC1091
@@ -64,6 +64,8 @@ done
 . "$MB_WD_LIB/recovery.sh"
 # shellcheck source=root/usr/share/monkey-business/phases.sh disable=SC1091
 . "$MB_WD_LIB/phases.sh"
+# shellcheck source=root/usr/share/monkey-business/wdlock.sh disable=SC1091
+. "$MB_WD_LIB/wdlock.sh"
 
 now() { echo "${MB_WD_NOW:-$(date +%s)}"; }
 sig() { printf '%s' "${1:-}" | cksum | cut -d' ' -f1; }
@@ -162,24 +164,8 @@ tick() {
 }
 
 main() {
-	mkdir -p "$STATE_DIR" 2>/dev/null || true
-	if command -v flock >/dev/null 2>&1; then
-		exec 9>"$LOCK"
-		flock -n 9 || exit 0
-	else
-		# Без flock cron-тики наслаивались (tick спит до ~90с) и гонка портила state.
-		# mkdir атомарен; протухший лок (>15 мин) снимаем, иначе watchdog умрёт навсегда.
-		# Гонка на снятии протухшего лока безопасна: тики раз в минуту, а победитель сразу
-		# обновляет mtime каталога — второй претендент уже не увидит его протухшим.
-		if ! mkdir "$LOCK.d" 2>/dev/null; then
-			age=$(stat -c %Y "$LOCK.d" 2>/dev/null || echo 0)
-			[ "$(( $(date +%s) - age ))" -gt 900 ] || exit 0
-			rmdir "$LOCK.d" 2>/dev/null
-			mkdir "$LOCK.d" 2>/dev/null || exit 0
-		fi
-		trap 'rmdir "$LOCK.d" 2>/dev/null' EXIT
-		trap 'rmdir "$LOCK.d" 2>/dev/null; exit 143' INT TERM
-	fi
+	# Без лока cron-тики наслаивались (tick спит до ~90с) и гонка портила state.
+	wd_lock "$LOCK" || exit 0
 	tick
 }
 

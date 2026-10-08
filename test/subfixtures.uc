@@ -40,6 +40,7 @@ function mkState(servers, subs, active) {
 		anti_dpi: { default_fingerprint: "chrome", xhttp_padding: "0" },
 		subs: subs, servers: servers, selected: "", probeFail: {}, applyErr: null, applies: 0, writes: 0,
 		pingMs: {}, pingDown: {}, pingStore: {}, pinged: [], probed: [], clock: NOW,
+		autoswitch: null, urls: {}, userinfo: {}, fetched: {},
 	};
 }
 
@@ -85,6 +86,13 @@ function mockCtx(st) {
 			return st.applyErr;
 		},
 		serviceRunning: function() { return true; },
+		getAutoswitch: function() { return st.autoswitch; },
+		setAutoswitch: function(from, reason) { st.autoswitch = { from: from, reason: reason }; },
+		clearAutoswitch: function() { st.autoswitch = null; },
+		setServers: function(a) { st.servers = a; },
+		setSubscriptionUrl: function(id, u) { st.urls[id] = u; },
+		setUserinfo: function(id, o) { st.userinfo[id] = o; },
+		fetchSubscription: function(u) { return st.fetched[u]; },
 	};
 }
 

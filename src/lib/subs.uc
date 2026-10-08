@@ -39,12 +39,40 @@ function num(v) {
 	return (type(n) == "int" && n > 0) ? n : 0;
 }
 
-function subAlive(sub, now) {
+function subDeath(sub, now) {
 	let total = num(sub.total);
 	if (total > 0 && num(sub.used_upload) + num(sub.used_download) >= total)
-		return false;
+		return "exhausted";
 	let expire = num(sub.expire);
-	return !(expire > 0 && now >= expire);
+	return (expire > 0 && now >= expire) ? "expired" : null;
+}
+
+function subAlive(sub, now) {
+	return subDeath(sub, now) == null;
+}
+
+function nextAlive(subs, from, now) {
+	let n = length(subs);
+	let at = 0;
+	for (let i = 0; i < n; i++)
+		if (subId(subs[i]) == from)
+			at = i;
+	for (let k = 1; k < n; k++) {
+		let sub = subs[(at + k) % n];
+		if (subAlive(sub, now))
+			return sub;
+	}
+	return null;
+}
+
+function selectError(subs, id, now) {
+	let sub = (id != null && id != "") ? findSub(subs, id) : null;
+	if (sub == null)
+		return "unknown subscription";
+	let dead = subDeath(sub, now);
+	if (dead != null && nextAlive(subs, id, now) != null)
+		return "subscription is " + dead + ": update it or pick an alive one";
+	return null;
 }
 
 function dropOrphans(servers, subs) {
@@ -70,5 +98,5 @@ function findSelected(servers, sel) {
 	return null;
 }
 
-export { LEGACY_SUB, isManual, serverSub, serverId, subId, findSub, activeSubId, subAlive, dropOrphans,
-	subsOrLegacy, findSelected };
+export { LEGACY_SUB, isManual, serverSub, serverId, subId, findSub, activeSubId, subDeath, subAlive,
+	nextAlive, selectError, dropOrphans, subsOrLegacy, findSelected };

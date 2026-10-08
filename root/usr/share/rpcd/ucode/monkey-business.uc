@@ -17,6 +17,7 @@ import * as h from '/usr/share/rpcd/ucode/lib/monkey-business/rpcd/handlers.uc';
 import * as hstatus from '/usr/share/rpcd/ucode/lib/monkey-business/rpcd/status.uc';
 import * as hsub from '/usr/share/rpcd/ucode/lib/monkey-business/rpcd/subscription.uc';
 import * as hping from '/usr/share/rpcd/ucode/lib/monkey-business/rpcd/ping.uc';
+import * as hswitch from '/usr/share/rpcd/ucode/lib/monkey-business/rpcd/autoswitch.uc';
 import * as huri from '/usr/share/rpcd/ucode/lib/monkey-business/rpcd/uri.uc';
 import * as hy from '/usr/share/rpcd/ucode/lib/monkey-business/rpcd/hysteria.uc';
 import * as sh from '/usr/share/rpcd/ucode/lib/monkey-business/runtime/shell.uc';
@@ -25,6 +26,8 @@ import { loadSection, loadSubscriptions, loadServers, storeServers, selectedId, 
 	from '/usr/share/rpcd/ucode/lib/monkey-business/runtime/uci.uc';
 import { findSub } from '/usr/share/rpcd/ucode/lib/monkey-business/lib/subs.uc';
 import { loadPings, storePings } from '/usr/share/rpcd/ucode/lib/monkey-business/runtime/pings.uc';
+import { loadAutoswitch, storeAutoswitch, clearAutoswitch }
+	from '/usr/share/rpcd/ucode/lib/monkey-business/runtime/autoswitch.uc';
 import { netRuntime } from '/usr/share/rpcd/ucode/lib/monkey-business/runtime/net.uc';
 import { applyRuntime } from '/usr/share/rpcd/ucode/lib/monkey-business/runtime/apply.uc';
 import { hysteriaRuntime } from '/usr/share/rpcd/ucode/lib/monkey-business/runtime/hysteria.uc';
@@ -50,17 +53,20 @@ function buildCtx() {
 		getSelectedServer: function() { return selectedServer(cursor); },
 		getSelectedId: function() { return selectedId(); },
 		setSelected: function(id) { storeSelected(sh, id); },
-		setSubscriptionUrl: function(url) {
-			cursor.set(CONFIG, 'subscription', 'url', url);
+		setSubscriptionUrl: function(id, url) {
+			cursor.set(CONFIG, id, 'url', url);
 			cursor.commit(CONFIG);
 		},
-		setUserinfo: function(o) {
-			cursor.set(CONFIG, 'subscription', 'used_upload', o.used_upload || '');
-			cursor.set(CONFIG, 'subscription', 'used_download', o.used_download || '');
-			cursor.set(CONFIG, 'subscription', 'total', o.total || '');
-			cursor.set(CONFIG, 'subscription', 'expire', o.expire || '');
+		setUserinfo: function(id, o) {
+			cursor.set(CONFIG, id, 'used_upload', o.used_upload || '');
+			cursor.set(CONFIG, id, 'used_download', o.used_download || '');
+			cursor.set(CONFIG, id, 'total', o.total || '');
+			cursor.set(CONFIG, id, 'expire', o.expire || '');
 			cursor.commit(CONFIG);
 		},
+		getAutoswitch: function() { return loadAutoswitch(); },
+		setAutoswitch: function(from, reason) { storeAutoswitch(from, reason); },
+		clearAutoswitch: function() { clearAutoswitch(); },
 		fetchSubscription: function(url) { return net.fetchSubscription(url); },
 		pingServers: function(servers, limitMs) { return net.tcpPings(servers, limitMs); },
 		getPings: function() { return loadPings(); },
@@ -155,7 +161,8 @@ const methods = {
 	servers_ping:         { call: function() { return hping.serversPing(buildCtx()); } },
 	subscription_ping:    { args: { sub: '' }, call: function(req) { return hping.subscriptionPing(buildCtx(), req.args); } },
 	server_ping:          { args: { id: '' }, call: function(req) { return hping.serverPing(buildCtx(), req.args); } },
-	subscription_update:  { args: { url: '' }, call: function(req) { return hsub.subscriptionUpdate(buildCtx(), req.args); } },
+	subscription_update:  { args: { url: '', sub: '' }, call: function(req) { return hsub.subscriptionUpdate(buildCtx(), req.args); } },
+	subscription_autoswitch: { args: { check: false, deadline: 0 }, call: function(req) { return hswitch.subscriptionAutoswitch(buildCtx(), req.args); } },
 	subscription_select:  { args: { sub: '' }, call: function(req) { return h.subscriptionSelect(buildCtx(), req.args); } },
 	parse_uri:            { args: { uri: '', section: '' }, call: function(req) { return huri.parseServerUri(buildCtx(), req.args); } },
 	config_apply:         { args: { deadline: 0 }, call: function(req) { return h.configApply(buildCtx(), req.args); } },
