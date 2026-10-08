@@ -41,9 +41,11 @@ MB_ENABLED=1
 MB_MODE=bypass-local
 MB_REGION=ru
 MB_LEGACY_BYPASS=""
+MB_CUSTOM_PROXY=""
 uci() {
 	case "$*" in
 		*delete*|*commit*) echo "uci $*" >> "$CALLS";;
+		*.custom_proxy) echo "$MB_CUSTOM_PROXY";;
 		*.enabled) [ "$MB_ENABLED" = missing ] && return 1; echo "$MB_ENABLED";;
 		*.routing_mode) [ "$MB_MODE" = missing ] && return 1; echo "$MB_MODE";;
 		*.local_region) [ "$MB_REGION" = missing ] && return 1; echo "$MB_REGION";;
@@ -224,6 +226,14 @@ has "hy.nobin.xray_stays"  "$CALLS" "param command /usr/bin/xray run -c $CONF"
 # Молчать тут нельзя: xray уже смотрит аутбаундом в socks клиента, которого не будет, и снаружи
 # это выглядит как «интернет пропал» — в логе обязана остаться причина.
 has "hy.nobin.logged"      "$CALLS" "logger .*not executable"
+
+# 16. custom_proxy уезжает в файрвол СЫРЫМ (MB_FORCE_PROXY): разбор и валидация — в apply.sh, он
+#     единственный потребитель и единственный, кто знает, что примет nft (разбор пинится в
+#     firewall_test.sh). Здесь пинится только сшивка окружения: без неё force-сеты остались бы
+#     пустыми, а RU-адрес из «через туннель» — уходить напрямую мимо туннеля.
+INITD="$SELF_DIR/../../root/etc/init.d/monkey-business"
+has "force.env_wired" "$INITD" 'MB_FORCE_PROXY=.*mb_opt custom_proxy'
+no  "force.no_parser" "$INITD" "grep -E .*0-9A-Fa-f"
 
 printf 'initd_test: %d passed, %d failed\n' "$PASS" "$FAIL"
 [ "$FAIL" -eq 0 ]
