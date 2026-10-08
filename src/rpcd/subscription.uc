@@ -2,6 +2,7 @@
 
 import { parse } from "../parser/subscription.uc";
 import { selectBest } from "./select.uc";
+import { LEGACY_SUB, isManual, serverSub } from "../lib/subs.uc";
 
 // "upload=0; download=123; total=456; expire=789" -> объект (значения строками)
 function parseUserinfo(s) {
@@ -49,12 +50,6 @@ function serverKey(s) {
 	return (s.tag || "") + "|" + connectionKey(s);
 }
 
-// Заведён руками (форма LuCI), а не подпиской. Секция, созданная в форме, может вообще не иметь
-// source — подписка же проставляет его всегда, поэтому «не subscription» и есть признак ручного.
-function isManual(s) {
-	return s.source != "subscription";
-}
-
 // СОХРАНИТЬ РУЧНОЙ ПОРЯДОК: выдать существующие серверы в их текущем порядке (матч по ключу,
 // данные обновляются из свежей подписки), новые — в конец. Иначе re-fetch (Save&Apply/
 // автообновление) сбрасывал бы drag-сортировку к порядку подписки.
@@ -63,10 +58,12 @@ function isManual(s) {
 // автообновление раз в сутки молча стирало бы всё, что добавлено ссылкой или руками. Совпавший по
 // ключу сервер подписки при этом не добавляется вторым — данные у них одинаковы по определению
 // ключа, а приоритет задаёт ручная позиция.
-function mergeKeepingOrder(existing, fresh) {
+function mergeKeepingOrder(existing, fresh, id) {
 	let byKey = {};
-	for (let sv in fresh)
+	for (let sv in fresh) {
+		sv.sub = id;
 		byKey[serverKey(sv)] = sv;
+	}
 	let ordered = [];
 	let used = {};
 	let manual = {};
@@ -78,6 +75,10 @@ function mergeKeepingOrder(existing, fresh) {
 			// Дубль ручного сервера ищем по подключению, а не по ключу с именем: сервер, добавленный
 			// ссылкой и переименованный, иначе лёг бы в список вторым — уже из подписки.
 			manual[connectionKey(old)] = true;
+			continue;
+		}
+		if (serverSub(old) != id) {
+			push(ordered, old);
 			continue;
 		}
 		if (byKey[k] != null && used[k] == null) {
@@ -108,7 +109,7 @@ function subscriptionUpdate(ctx, args) {
 	if (length(res.servers) == 0)
 		return { error: "no servers parsed", format: res.format, kept: length(ctx.getServers()) };
 
-	ctx.setServers(mergeKeepingOrder(ctx.getServers(), res.servers));
+	ctx.setServers(mergeKeepingOrder(ctx.getServers(), res.servers, LEGACY_SUB));
 	ctx.setSubscriptionUrl(url);
 	if (resp.userinfo != null && resp.userinfo != "")
 		ctx.setUserinfo(parseUserinfo(resp.userinfo));
@@ -122,4 +123,4 @@ function subscriptionUpdate(ctx, args) {
 	return { format: res.format, added: length(res.servers), errors: res.errors };
 }
 
-export { subscriptionUpdate, parseUserinfo, serverKey, connectionKey };
+export { subscriptionUpdate, parseUserinfo, serverKey, connectionKey, mergeKeepingOrder };

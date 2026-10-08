@@ -35,6 +35,10 @@
    Тот же путь по расписанию: `subupdate.sh` (cron 1/мин) при `auto_update=1` раз в `update_interval`
    (не чаще 300с) зовёт ubus `subscription_update`; после неудачи пауза 900с. Состояние — в tmpfs,
    конфиг xray скрипт не переприменяет: это делает Apply или watchdog.
+   Сервер подписки несёт опцию `sub` (id секции `subscription`); `source=subscription` без `sub`
+   при чтении приписывается легаси-подписке `subscription` (`lib/subs.uc` `serverSub`). Merge
+   работает по срезу `sub`: чужие подписки и ручные серверы остаются на своих позициях.
+   Спека: `.context/specs/2026-10-08-multi-subscription.md`.
 1a. **Ссылка из формы:** тот же `normalizeUri` + строгий `validate.uc` (ubus `parse_uri`) → сервер
    раскладывается по полям формы и сохраняется как `source: manual`. В UCI поля лежат плоско
    (`tr_*`, `pbk`/`sid`/`spx`, `obfs_*`) — маппинг в контракт держит `lib/servermap.uc`, чтение

@@ -9,6 +9,7 @@
 // Блоб прежней схемы правится руками в /etc/config: битый JSON тут уронил бы чтение списка, а с ним
 // и все ubus-методы -> safeJson. Испорченный блоб = блоба нет, поля возьмутся из плоских опций.
 import { safeJson } from "./val.uc";
+import { serverSub } from "./subs.uc";
 
 // Имена плоских опций дублирует таблица LEGACY в luci/.../serveropt.js (форма достаёт из прежнего
 // блоба то же самое) — менять эти три карты и её нужно вместе.
@@ -99,6 +100,11 @@ function reviveServer(s) {
 		s.encryption = "none";
 	if (s.port != null)
 		s.port = int(s.port);
+	let sub = serverSub(s);
+	if (sub != null)
+		s.sub = sub;
+	else
+		delete s.sub;
 	return s;
 }
 
