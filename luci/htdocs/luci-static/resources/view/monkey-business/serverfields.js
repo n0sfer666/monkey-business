@@ -190,7 +190,7 @@ return baseclass.extend({
 	// такие поля не учитывает (src/rpcd/subscription.uc).
 	fill: function(section, sid, flat) {
 		section.children.forEach(function(o) {
-			if (o.option.charAt(0) === '_')
+			if (o.option.charAt(0) === '_' || o.option === 'disabled')
 				return;
 			var el = o.getUIElement(sid);
 			if (el == null)

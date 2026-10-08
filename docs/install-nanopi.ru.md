@@ -192,6 +192,7 @@ Xray не стартует без `geoip.dat` и `geosite.dat`. Проще вс�
 - **Подписка:** вставьте URL провайдера и нажмите *Fetch*. Серверы импортируются (формат
   определяется автоматически: base64-список или список URI). Порядок списка — это ваш
   приоритет; перетаскивайте для сортировки, первый сервер — активный. Re-fetch сохраняет ваш ручной порядок.
+  Больше одного провайдера: *Add subscription* — см. [§10](#10-несколько-подписок).
 - **Вручную:** добавьте `vless://…` (Reality/VLESS/XHTTP) или `hysteria2://…` (алиас `hy2://`).
 
 Оба протокола лежат в одном списке — протокол это свойство сервера, поэтому приоритет задаётся
@@ -443,3 +444,98 @@ transmit queue 0 timed out`, пакеты теряются, соединения
 # cat /tmp/mb-nicwatch/state         # tx_errors tx_packets страйки
 # logread -e mb-nicwatch
 ```
+
+---
+
+## 10. Несколько подписок
+
+**Servers → Subscriptions → Add subscription** добавляет второго (третьего, …) провайдера. У каждого
+блока свои *Name*, *URL*, *Auto-update*, *Interval*, *Fetch subscription* и *Ping servers*. *Fetch* в
+ещё не сохранённом блоке сначала сохраняет форму. Существующий конфиг с одной подпиской работает как
+есть — без миграции.
+
+- **Одна подписка активная, остальные — резерв.** Порядок кандидатов: серверы активной подписки
+  вместе с ручными (в порядке перетаскивания), затем остальные подписки по порядку. Failover может
+  сам уйти в резерв, активная при этом не меняется, и следующее применение снова начинает с неё.
+  Сама активная меняется только когда умирает (ниже); обратно — только вручную.
+- **Переключение:** при двух и более подписках в **Dashboard → Status** появляется селект
+  *Subscription*. Выбор применяется сразу (при выключенном VPN — только сохраняется) и откатывается,
+  если применить не удалось. *now via reserve: B* — трафик сейчас идёт через резервную подписку.
+- **Мёртвая подписка** (истёк срок или кончился трафик по userinfo провайдера) помечена в селекте и
+  не используется как резерв. Если умерла **активная**, в течение минуты активной становится
+  следующая живая, а Dashboard показывает *Switched automatically: A expired.* Ручной выбор мёртвой
+  подписки отклоняется, пока есть живая, — сначала обновите её (*Fetch*), потом выбирайте.
+- **Плашка трафика** показывает подписку, через которую идёт туннель.
+- **Пинг:** *Test latency* (все), *Ping* у группы подписки и в строке сервера на Dashboard, *Ping
+  servers* в блоке подписки на Servers. Сервер медленнее 1 с или недоступный помечается *auto-off* и
+  пропускается при подключении до следующего успешного пинга (результаты — в RAM). hysteria2 (UDP)
+  TCP-пингом не измерить — *n/a*. Колонка **Off** в таблице Servers исключает сервер насовсем; в
+  списках он остаётся и пингуется.
+
+### Ручная проверка на роутере
+
+Прогонять после деплоя изменений, затрагивающих подписки. `<A>` — id секции активной подписки,
+`<B>` — второй (`uci show monkey-business | grep =subscription`). Сначала включите VPN.
+
+1. **Две подписки.** Добавьте B и нажмите *Fetch*. Ожидание: на Dashboard появился селект
+   *Subscription*, таблица серверов разбита на *Active: A* и *Reserve: B*.
+2. **Переключение.** Выберите B на Dashboard. Ожидание: страница перезагрузилась подключённой, и
+
+   ```sh
+   # ubus call monkey-business status | grep -E '"(active_sub|sub|reserve)"'   # active_sub = <B>
+   # cat /etc/monkey-business/active                                            # <B>/<tag>
+   ```
+
+   Ручной сервер выше серверов B выбирается первым: тогда в `active` голый `<tag>`, а `sub` = null.
+   Проверяйте с ручными серверами ниже или выключенными (*Off*). Перед следующими шагами снова
+   выберите A.
+3. **Автопереключение.** Сделайте A истёкшей и выключите её обновление (fetch вернул бы настоящий
+   срок):
+
+   ```sh
+   # uci set monkey-business.<A>.auto_update=0
+   # uci set monkey-business.<A>.expire=1
+   # uci commit monkey-business
+   # sh /usr/share/monkey-business/subupdate.sh      # или дождаться следующей минуты cron
+   # logread -e mb-subupdate | tail -n 3
+   # uci get monkey-business.global.active_sub       # <B>
+   # cat /tmp/mb-autoswitch                           # <A> expired
+   ```
+
+   Ожидание: строка лога `подписка <A> expired: активной стала <B>`, плашка на Dashboard
+   *Switched automatically: A expired.*, в селекте выбрана B, A помечена мёртвой. Исчерпанный трафик —
+   так же: `uci set monkey-business.<A>.total=1` и `uci set monkey-business.<A>.used_download=1`
+   вместо `expire`; плашка тогда пишет *ran out of traffic*.
+4. **Без повторных записей.** Запустите `subupdate.sh` ещё раз: новой строки `mb-subupdate` нет, и
+   `date -r /etc/config/monkey-business` не меняется.
+5. **Отказ выбора мёртвой.** Выберите A на Dashboard. Ожидание: предупреждение *Subscription not
+   switched: subscription is expired: update it or pick an alive one*; селект возвращается на B.
+6. **Вернуть A.**
+
+   ```sh
+   # uci set monkey-business.<A>.expire=''
+   # uci set monkey-business.<A>.total=''
+   # uci set monkey-business.<A>.used_download=''
+   # uci set monkey-business.<A>.auto_update=1
+   # uci commit monkey-business
+   ```
+
+   *Fetch* у A на Servers, выбрать A на Dashboard. Ожидание: плашка пропала (`/tmp/mb-autoswitch`
+   удалён).
+7. **Общий лок с watchdog.** Займите лок watchdog и сделайте A истёкшей, как в шаге 3:
+
+   ```sh
+   # flock /tmp/mb-watchdog/lock sleep 60 &          # без flock: mkdir /tmp/mb-watchdog/lock.d
+   # uci set monkey-business.<A>.auto_update=0
+   # uci set monkey-business.<A>.expire=1
+   # uci commit monkey-business
+   # sh /usr/share/monkey-business/subupdate.sh
+   # logread -e mb-subupdate | tail -n 1
+   ```
+
+   Ожидание: примерно через 30 с — `автопереключение подписки отложено: watchdog занят`, `active_sub`
+   по-прежнему `<A>`. Отпустите лок (дождитесь конца `sleep` или `rmdir /tmp/mb-watchdog/lock.d`) и
+   запустите `subupdate.sh` снова — теперь переключается на B. Верните A, как в шаге 6.
+8. **Пинг и Off.** Нажмите кнопки *Ping*: в ячейках `N ms`, `auto-off` или `n/a`. Отметьте *Off* у
+   сервера на Servers, *Save & Apply*: его строка на Dashboard приглушена и помечена *off*, и он
+   никогда не становится подключённым сервером.

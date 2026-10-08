@@ -3,7 +3,7 @@
 'require form';
 'require rpc';
 'require ui';
-'require uci';
+'require view.monkey-business.commit as commit';
 
 var callApply = rpc.declare({ object: 'monkey-business', method: 'config_apply' });
 
@@ -72,21 +72,21 @@ return view.extend({
 	},
 
 	handleSaveApply: function(ev, mode) {
-		// handleSave только стейджит -> нужен uci.apply() (commit), иначе config_apply читает
+		// handleSave только стейджит -> нужен commit, иначе config_apply читает
 		// старый UCI и изменения висят в "Unsaved Changes".
 		return this.handleSave(ev).then(function() {
-			return uci.apply();
+			return commit.apply();
 		}).then(function() {
 			return callApply();
 		}).then(function(res) {
 			if (res && res.error)
-				ui.addNotification(null, E('p', _('Apply failed: ') + res.error), 'warning');
+				ui.addNotification(null, E('p', {}, [ _('Apply failed: ') + res.error ]), 'warning');
 			else if (res && res.skipped == 'disabled')
-				ui.addNotification(null, E('p', _('Saved. The VPN is off — settings will apply when you turn it on.')), 'info');
+				ui.addNotification(null, E('p', {}, [ _('Saved. The VPN is off — settings will apply when you turn it on.') ]), 'info');
 			else
-				ui.addNotification(null, E('p', _('Configuration applied.')), 'info');
+				ui.addNotification(null, E('p', {}, [ _('Configuration applied.') ]), 'info');
 		}).catch(function(e) {
-			ui.addNotification(null, E('p', _('Apply failed: ') + e), 'error');
+			ui.addNotification(null, E('p', {}, [ _('Apply failed: ') + e ]), 'error');
 		});
 	}
 });

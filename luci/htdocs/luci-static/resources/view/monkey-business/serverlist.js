@@ -2,28 +2,115 @@
 'require baseclass';
 'require rpc';
 'require ui';
+'require view.monkey-business.subs as subs';
+'require view.monkey-business.icons as icons';
 
-// Таблица серверов на дашборде (read-only) + разовый замер latency.
 var callPing = rpc.declare({ object: 'monkey-business', method: 'servers_ping' });
+var callSubPing = rpc.declare({ object: 'monkey-business', method: 'subscription_ping', params: ['sub'] });
+var callServerPing = rpc.declare({ object: 'monkey-business', method: 'server_ping', params: ['id'] });
+
+var COLUMNS = 6;
+
+function pingText(ms, na, autoOff) {
+	if (na)
+		return _('n/a');
+	if (ms != null)
+		return ms + ' ms' + (autoOff ? ' · ' + _('auto-off') : '');
+	return autoOff ? _('down · auto-off') : '—';
+}
+
+function nameText(s, multi) {
+	var marks = [];
+	if (multi && s.sub == null)
+		marks.push(_('manual'));
+	if (s.disabled)
+		marks.push(_('off'));
+	return marks.length ? s.tag + ' · ' + marks.join(' · ') : s.tag;
+}
+
+function groupKey(s) {
+	return s.reserve ? s.sub : '';
+}
+
+function groupTitle(key, st) {
+	if (key === '')
+		return _('Active: ') + subs.name(st.subscriptions, st.active_sub);
+	return _('Reserve: ') + subs.name(st.subscriptions, key);
+}
+
+function resultsOf(res) {
+	if (res && res.results)
+		return res.results;
+	return (res && res.id != null) ? [ res ] : [];
+}
 
 return baseclass.extend({
-	render: function(servers) {
-		// tag приходит из подписки (внешний источник) -> не строим CSS-селектор по нему.
-		// Держим ссылки на ping-ячейки в map по tag и обновляем напрямую.
-		var pingCells = {};
-		var rows = (servers || []).map(function(s) {
-			var pingTd = E('td', { 'class': 'td' }, [ '—' ]);
-			pingCells[s.tag] = pingTd;
+	render: function(servers, st) {
+		var multi = (st.subscriptions || []).length > 1;
+		var cells = {};
+
+		function ping(call) {
+			return call.then(function(res) {
+				if (res && res.error)
+					return ui.addNotification(null, E('p', {}, [ _('Latency test failed: ') + res.error ]), 'warning');
+				resultsOf(res).forEach(function(r) {
+					var cell = cells[r.id];
+					if (cell)
+						cell.textContent = pingText(r.latency_ms, r.na, r.auto_disabled);
+				});
+			}).catch(function(e) {
+				ui.addNotification(null, E('p', {}, [ _('Latency test failed: ') + e ]), 'error');
+			});
+		}
+
+		function pingButton(label, run, hint) {
+			return icons.button('ping', label, ui.createHandlerFn(null, run), hint);
+		}
+
+		var manualIds = (servers || []).filter(function(s) { return s.sub == null; })
+			.map(function(s) { return s.id; });
+
+		function pingGroup(key) {
+			if (key !== '')
+				return ping(callSubPing(key));
+			return Promise.all([ ping(callSubPing(st.active_sub)) ].concat(manualIds.map(function(id) {
+				return ping(callServerPing(id));
+			})));
+		}
+
+		function groupRow(key) {
 			return E('tr', { 'class': 'tr' }, [
+				E('td', { 'class': 'td', 'colspan': COLUMNS }, [
+					E('strong', {}, [ groupTitle(key, st) ]), ' ',
+					pingButton(_('Ping'), function() { return pingGroup(key); })
+				])
+			]);
+		}
+
+		function serverRow(s) {
+			var pingTd = E('td', { 'class': 'td' }, [ pingText(s.latency_ms, s.ping_na, s.auto_disabled) ]);
+			cells[s.id] = pingTd;
+			return E('tr', { 'class': 'tr', 'style': s.disabled ? 'opacity:.55' : '' }, [
 				E('td', { 'class': 'td' }, [ '' + (s.priority != null ? s.priority : '-') ]),
-				E('td', { 'class': 'td' }, [ s.tag ]),
+				E('td', { 'class': 'td' }, [ nameText(s, multi) ]),
 				E('td', { 'class': 'td' }, [ s.address + ':' + s.port ]),
 				// insecure=1 из подписки отключает проверку сертификата — это обязано быть видно:
 				// иначе такой сервер выглядит ровно как проверяемый.
 				E('td', { 'class': 'td' }, [ (s.protocol || 'vless') + ' / ' + s.security +
 					(s.insecure ? _(' (insecure)') : '') ]),
-				pingTd
+				pingTd,
+				E('td', { 'class': 'td' }, [ pingButton('', function() { return ping(callServerPing(s.id)); }, _('Ping')) ])
 			]);
+		}
+
+		var rows = [];
+		var prev = null;
+		(servers || []).forEach(function(s) {
+			var key = groupKey(s);
+			if (multi && key !== prev)
+				rows.push(groupRow(key));
+			prev = key;
+			rows.push(serverRow(s));
 		});
 
 		var table = E('table', { 'class': 'table' }, [
@@ -32,26 +119,14 @@ return baseclass.extend({
 				E('th', { 'class': 'th' }, [ _('Name') ]),
 				E('th', { 'class': 'th' }, [ _('Address') ]),
 				E('th', { 'class': 'th' }, [ _('Protocol / security') ]),
-				E('th', { 'class': 'th' }, [ _('Ping') ])
+				E('th', { 'class': 'th' }, [ _('Ping') ]),
+				E('th', { 'class': 'th' }, [])
 			])
 		].concat(rows));
 
 		return E('div', { 'class': 'cbi-section' }, [
 			E('h3', {}, [ _('Servers') ]),
-			E('button', {
-				'class': 'btn cbi-button',
-				'click': ui.createHandlerFn(this, function() {
-					return callPing().then(function(res) {
-						(res.results || []).forEach(function(r) {
-							var cell = pingCells[r.tag];
-							if (cell)
-								cell.textContent = (r.latency_ms != null) ? (r.latency_ms + ' ms') : _('down');
-						});
-					}).catch(function(e) {
-						ui.addNotification(null, E('p', _('Latency test failed: ') + e), 'error');
-					});
-				})
-			}, [ _('Test latency') ]),
+			pingButton(_('Test latency'), function() { return ping(callPing()); }),
 			table
 		]);
 	}

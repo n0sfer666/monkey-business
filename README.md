@@ -103,6 +103,8 @@ The artifact lands in the SDK's `bin/packages/aarch64*/`; copy it to the router 
 
 1. **Servers** tab — paste your subscription URL and *Fetch*, or add a `vless://` / `hysteria2://`
    server manually.
+   A second provider is another *Add subscription*; the active one is switched on the Dashboard
+   ([multiple subscriptions](docs/install-nanopi.md#10-multiple-subscriptions)).
 2. **Dashboard** — *Update geo databases* (downloads & validates geoip/geosite `.dat`).
 3. **Dashboard** — *Install / update hysteria* — only if your list contains hysteria2 servers.
 4. **Dashboard** — *Turn on*. *Check exit IP* confirms traffic leaves through the tunnel.

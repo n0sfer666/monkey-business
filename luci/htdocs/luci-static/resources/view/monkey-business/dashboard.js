@@ -30,13 +30,13 @@ return view.extend({
 		var servers = (data[1] || {}).servers || [];
 		var geo = data[3] || {};
 		return E('div', {}, [
-			mbtraffic.render(st.traffic),
+			mbtraffic.render(st),
 			mbstatus.render(st),
 			mbroute.render(),
 			mbsplit.render(),
 			mbgeo.render(geo),
 			mbhy.render(data[4] || {}),
-			mbservers.render(servers)
+			mbservers.render(servers, st)
 		]);
 	},
 

@@ -194,6 +194,7 @@ In **LuCI → … → Servers**:
 - **Subscription:** paste your provider URL and press *Fetch*. Servers are imported (format
   auto-detected: base64 list or URI list). The list order is your priority — drag to
   reorder; the first server is the active one. Re-fetch preserves your manual order.
+  More than one provider: *Add subscription* — see [§10](#10-multiple-subscriptions).
 - **Manual:** add a `vless://…` (Reality/VLESS/XHTTP) or `hysteria2://…` (`hy2://` alias) server.
 
 Both protocols share one list — the protocol is a property of the server, so priority is the list
@@ -444,3 +445,99 @@ you're trying to fix it by hand.
 # cat /tmp/mb-nicwatch/state         # tx_errors tx_packets strikes
 # logread -e mb-nicwatch
 ```
+
+---
+
+## 10. Multiple subscriptions
+
+**Servers → Subscriptions → Add subscription** adds a second (third, …) provider. Each block has its
+own *Name*, *URL*, *Auto-update*, *Interval*, *Fetch subscription* and *Ping servers*. *Fetch* on a
+block that is not saved yet saves the form first. An existing single-subscription config keeps
+working as is — no migration.
+
+- **One subscription is active, the others are a reserve.** Candidates go in this order: servers of
+  the active subscription plus your manual servers (drag order), then the other subscriptions, in
+  their order. Failover may walk into the reserve on its own without changing the active one; the
+  next apply starts from the active one again. The active subscription changes by itself only when it
+  dies (below); switching back is manual.
+- **Switching:** with two or more subscriptions, **Dashboard → Status** shows a *Subscription*
+  selector. A choice is applied at once (with the VPN off it is only saved) and rolled back if the
+  apply fails. *now via reserve: B* means traffic currently goes through a reserve subscription.
+- **A dead subscription** (expired, or out of traffic per the provider's userinfo) is marked in the
+  selector and skipped as a reserve. If the **active** one dies, the next alive subscription becomes
+  active within a minute, and the Dashboard shows *Switched automatically: A expired.* Picking a dead
+  subscription by hand is refused while an alive one exists — refresh it first (*Fetch*), then pick.
+- **The traffic bar** shows the subscription the tunnel goes through.
+- **Ping:** *Test latency* (all), *Ping* per subscription group and per server row on the Dashboard,
+  *Ping servers* per subscription block on Servers. A server slower than 1 s or unreachable is
+  marked *auto-off* and skipped when connecting until a later ping succeeds (the results live in
+  RAM). hysteria2 (UDP) cannot be TCP-pinged and shows *n/a*. The **Off** column in the Servers
+  table excludes a server for good; it is still listed and pinged.
+
+### Manual check on the router
+
+Run after deploying a change that touches subscriptions. `<A>` is the active subscription's section
+id, `<B>` the other one (`uci show monkey-business | grep =subscription`). Turn the VPN on first.
+
+1. **Two subscriptions.** Add B and *Fetch*. Expect: the Dashboard shows the *Subscription* selector,
+   the server table is grouped into *Active: A* and *Reserve: B*.
+2. **Switching.** Pick B on the Dashboard. Expect: the page reloads connected, and
+
+   ```sh
+   # ubus call monkey-business status | grep -E '"(active_sub|sub|reserve)"'   # active_sub = <B>
+   # cat /etc/monkey-business/active                                            # <B>/<tag>
+   ```
+
+   A manual server placed above B's servers is picked first: then `active` holds a bare `<tag>` and
+   `sub` is null. Run this check with manual servers below or turned *Off*. Pick A again before the
+   next steps.
+3. **Automatic switch.** Make A expired and stop its refresh (a fetch would restore the real expiry):
+
+   ```sh
+   # uci set monkey-business.<A>.auto_update=0
+   # uci set monkey-business.<A>.expire=1
+   # uci commit monkey-business
+   # sh /usr/share/monkey-business/subupdate.sh      # or wait for the next cron minute
+   # logread -e mb-subupdate | tail -n 3
+   # uci get monkey-business.global.active_sub       # <B>
+   # cat /tmp/mb-autoswitch                           # <A> expired
+   ```
+
+   Expect the log line `подписка <A> expired: активной стала <B>`, the Dashboard banner
+   *Switched automatically: A expired.*, and the selector showing B with A marked dead. Out of traffic
+   works the same way — `uci set monkey-business.<A>.total=1` and
+   `uci set monkey-business.<A>.used_download=1` instead of `expire`; the banner then says *ran out of
+   traffic*.
+4. **No repeated writes.** Run `subupdate.sh` again: no new `mb-subupdate` line, and
+   `date -r /etc/config/monkey-business` does not change.
+5. **Dead pick refused.** Pick A on the Dashboard. Expect the warning *Subscription not switched:
+   subscription is expired: update it or pick an alive one*; the selector returns to B.
+6. **Restore A.**
+
+   ```sh
+   # uci set monkey-business.<A>.expire=''
+   # uci set monkey-business.<A>.total=''
+   # uci set monkey-business.<A>.used_download=''
+   # uci set monkey-business.<A>.auto_update=1
+   # uci commit monkey-business
+   ```
+
+   *Fetch* A on Servers, pick A on the Dashboard. Expect the banner to disappear
+   (`/tmp/mb-autoswitch` is gone).
+7. **Lock shared with the watchdog.** Hold the watchdog lock, then expire A as in step 3:
+
+   ```sh
+   # flock /tmp/mb-watchdog/lock sleep 60 &          # without flock: mkdir /tmp/mb-watchdog/lock.d
+   # uci set monkey-business.<A>.auto_update=0
+   # uci set monkey-business.<A>.expire=1
+   # uci commit monkey-business
+   # sh /usr/share/monkey-business/subupdate.sh
+   # logread -e mb-subupdate | tail -n 1
+   ```
+
+   Expect, after about 30 s, `автопереключение подписки отложено: watchdog занят` and `active_sub`
+   still `<A>`. Release the lock (wait for `sleep`, or `rmdir /tmp/mb-watchdog/lock.d`) and run
+   `subupdate.sh` again — now it switches to B. Restore A as in step 6.
+8. **Ping and Off.** Press the *Ping* buttons: cells show `N ms`, `auto-off` or `n/a`. Tick *Off* on a
+   server in Servers, *Save & Apply*: its Dashboard row is dimmed and marked *off*, and it is never
+   the connected server.

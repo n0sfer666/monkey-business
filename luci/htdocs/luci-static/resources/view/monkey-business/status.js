@@ -4,6 +4,7 @@
 'require ui';
 'require poll';
 'require view.monkey-business.util as mbutil';
+'require view.monkey-business.substatus as mbsub';
 
 // Секция «Status»: живая метка состояния, тумблер и проверка точки выхода.
 var callStatus = rpc.declare({ object: 'monkey-business', method: 'status' });
@@ -64,14 +65,14 @@ function pollUntilRunning() {
 function handleToggle(on) {
 	if (!on)
 		return callToggle(false).then(function() { window.location.reload(); }).catch(function(e) {
-			ui.addNotification(null, E('p', _('Turn off failed: ') + e), 'error');
+			ui.addNotification(null, E('p', {}, [ _('Turn off failed: ') + e ]), 'error');
 		});
 
 	ui.showModal(_('Connecting…'), [ E('p', { 'class': 'spinning' }, _('Selecting server and starting Xray')) ]);
 	return callToggle(true).then(function(res) {
 		if (res && res.error) {
 			ui.hideModal();
-			ui.addNotification(null, E('p', _('Connect failed: ') + res.error), 'error');
+			ui.addNotification(null, E('p', {}, [ _('Connect failed: ') + res.error ]), 'error');
 			return;
 		}
 		return pollUntilRunning().then(function(ok) {
@@ -85,7 +86,7 @@ function handleToggle(on) {
 		});
 	}).catch(function(e) {
 		ui.hideModal();
-		ui.addNotification(null, E('p', _('Connect error: ') + e), 'error');
+		ui.addNotification(null, E('p', {}, [ _('Connect error: ') + e ]), 'error');
 	});
 }
 
@@ -117,6 +118,7 @@ return baseclass.extend({
 		var info = phaseInfo(st);
 
 		var labelEl = E('p', { 'style': 'font-size:1.4em;color:' + info.color }, [ info.label ]);
+		var subEl = mbsub.render(st);
 		var serverEl = E('p', {}, [ _('Server: ') + (st.server || _('none')) ]);
 		var noteEl = E('div', {
 			'style': 'display:' + (info.note ? 'block' : 'none') +
@@ -136,6 +138,7 @@ return baseclass.extend({
 				var next = phaseInfo(cur);
 				labelEl.textContent = next.label;
 				labelEl.style.color = next.color;
+				subEl.update(cur);
 				serverEl.textContent = _('Server: ') + (cur.server || _('none'));
 				routingEl.textContent = routingText(cur);
 				noteEl.style.display = next.note ? 'block' : 'none';
@@ -160,6 +163,8 @@ return baseclass.extend({
 			E('h3', {}, [ _('Status') ]),
 			labelEl,
 			noteEl,
+			subEl.banner,
+			subEl.row,
 			serverEl,
 			routingEl,
 			toggleEl,

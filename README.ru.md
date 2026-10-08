@@ -106,6 +106,8 @@ make package
 
 1. Вкладка **Servers** — вставьте URL подписки и нажмите *Fetch*, либо добавьте `vless://`- или
    `hysteria2://`-сервер вручную.
+   Второй провайдер — ещё одна *Add subscription*; активная переключается на Dashboard
+   ([несколько подписок](docs/install-nanopi.ru.md#10-несколько-подписок)).
 2. **Dashboard** — *Update geo databases* (скачивает и валидирует geoip/geosite `.dat`).
 3. **Dashboard** — *Install / update hysteria* — только если в списке есть hysteria2-серверы.
 4. **Dashboard** — *Turn on*. *Check exit IP* подтверждает, что трафик уходит через туннель.

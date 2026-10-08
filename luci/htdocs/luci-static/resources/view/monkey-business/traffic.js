@@ -1,5 +1,6 @@
 'use strict';
 'require baseclass';
+'require view.monkey-business.subs as subs';
 
 // Остаток трафика подписки. Рисуется, только если подписка его вообще прислала:
 // пустая полоса «0 / 0 GB» выглядела бы как исчерпанный лимит.
@@ -15,15 +16,23 @@ function fmtDate(epoch) {
 	return new Date(n * 1000).toISOString().slice(0, 10);
 }
 
+function title(st) {
+	var list = st.subscriptions || [];
+	if (list.length < 2)
+		return _('Subscription traffic');
+	return _('Subscription traffic') + ': ' + subs.name(list, st.sub || st.active_sub);
+}
+
 return baseclass.extend({
-	render: function(t) {
+	render: function(st) {
+		var t = st.traffic;
 		if (!t || !t.total || toGB(t.total) <= 0)
 			return E([]);
 		var used = toGB(t.used_download) + toGB(t.used_upload);
 		var total = toGB(t.total);
 		var pct = total > 0 ? Math.min(100, Math.round(used / total * 100)) : 0;
 		return E('div', { 'class': 'cbi-section' }, [
-			E('h3', {}, [ _('Subscription traffic') ]),
+			E('h3', {}, [ title(st) ]),
 			E('p', {}, [ used.toFixed(1) + ' / ' + total.toFixed(1) + ' GB (' + pct + '%)' ]),
 			E('div', { 'style': 'background:#ddd;border-radius:4px;height:14px;width:100%;max-width:420px;overflow:hidden' }, [
 				E('div', { 'style': 'background:' + (pct < 90 ? '#33a02c' : '#e31a1c') + ';height:14px;width:' + pct + '%' }, [])
