@@ -2,11 +2,44 @@
 // решается, какой сервер получит трафик, и его цена — «интернета нет» при ошибке.
 
 import { isHysteria } from "../generator/hysteria.uc";
+import { isTrue } from "../lib/val.uc";
+import { serverSub, serverId, subId, activeSubId, subAlive } from "../lib/subs.uc";
 
-// Порядок серверов = порядок секций UCI (drag-reorder в GridSection) — единственный источник
-// приоритета. Backend и UI уважают этот порядок; re-fetch его сохраняет (см. subscriptionUpdate).
+// Приоритет = сначала группа: активная подписка вместе с ручными, затем резервные подписки по их
+// порядку; внутри группы — порядок секций UCI (drag-reorder в GridSection). Backend и UI уважают этот
+// порядок; re-fetch его сохраняет (см. subscriptionUpdate).
+function grouped(servers, subs, want) {
+	let active = activeSubId(subs, want);
+	let out = filter(servers, function(s) {
+		let sub = serverSub(s);
+		return sub == null || sub == active;
+	});
+	for (let sub in subs)
+		if (subId(sub) != active)
+			for (let s in servers)
+				if (serverSub(s) == subId(sub))
+					push(out, s);
+	return out;
+}
+
+function candidates(servers, subs, want, now) {
+	let active = activeSubId(subs, want);
+	let dead = {};
+	for (let sub in subs)
+		if (subId(sub) != active && !subAlive(sub, now))
+			dead[subId(sub)] = true;
+	return filter(grouped(servers, subs, want), function(s) {
+		let sub = serverSub(s);
+		return !isTrue(s.disabled) && (sub == null || dead[sub] != true);
+	});
+}
+
+function listedServers(ctx) {
+	return grouped(ctx.getServers(), ctx.getSubscriptions(), ctx.getGlobal().active_sub);
+}
+
 function orderedServers(ctx) {
-	return ctx.getServers();
+	return candidates(ctx.getServers(), ctx.getSubscriptions(), ctx.getGlobal().active_sub, time());
 }
 
 // Активный сервер = ПЕРВЫЙ по приоритету (порядок секций UCI = предпочтение пользователя).
@@ -18,7 +51,7 @@ function selectBest(ctx) {
 	if (length(servers) == 0)
 		return null;
 	let chosen = servers[0];
-	ctx.setSelected(chosen.tag);
+	ctx.setSelected(serverId(chosen));
 	return chosen;
 }
 
@@ -48,12 +81,12 @@ function selectWorking(ctx) {
 	let n = (cap > 0 && cap < length(servers)) ? cap : length(servers);
 	for (let i = 0; i < n; i++) {
 		if (ctx.probeServer(servers[i])) {
-			ctx.setSelected(servers[i].tag);
+			ctx.setSelected(serverId(servers[i]));
 			return { server: servers[i], probed: true };
 		}
 	}
-	ctx.setSelected(servers[0].tag);
+	ctx.setSelected(serverId(servers[0]));
 	return { server: servers[0], probed: false };
 }
 
-export { orderedServers, selectBest, selectWorking };
+export { grouped, candidates, listedServers, orderedServers, selectBest, selectWorking };

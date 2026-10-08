@@ -21,8 +21,9 @@ import * as huri from '/usr/share/rpcd/ucode/lib/monkey-business/rpcd/uri.uc';
 import * as hy from '/usr/share/rpcd/ucode/lib/monkey-business/rpcd/hysteria.uc';
 import * as sh from '/usr/share/rpcd/ucode/lib/monkey-business/runtime/shell.uc';
 import { CONFIG, XRAY_CONF, WD_STATE } from '/usr/share/rpcd/ucode/lib/monkey-business/runtime/paths.uc';
-import { loadSection, loadServers, storeServers, selectedServer, storeSelected }
+import { loadSection, loadSubscriptions, loadServers, storeServers, selectedId, selectedServer, storeSelected }
 	from '/usr/share/rpcd/ucode/lib/monkey-business/runtime/uci.uc';
+import { findSub } from '/usr/share/rpcd/ucode/lib/monkey-business/lib/subs.uc';
 import { netRuntime } from '/usr/share/rpcd/ucode/lib/monkey-business/runtime/net.uc';
 import { applyRuntime } from '/usr/share/rpcd/ucode/lib/monkey-business/runtime/apply.uc';
 import { hysteriaRuntime } from '/usr/share/rpcd/ucode/lib/monkey-business/runtime/hysteria.uc';
@@ -37,11 +38,17 @@ function buildCtx() {
 		getGlobal: function() { return loadSection(cursor, 'global'); },
 		getDns: function() { return loadSection(cursor, 'dns'); },
 		getAntiDpi: function() { return loadSection(cursor, 'anti_dpi'); },
-		getSubscription: function() { return loadSection(cursor, 'subscription'); },
+		getSubscriptions: function() { return loadSubscriptions(cursor); },
+		getSubscription: function(id) { return findSub(loadSubscriptions(cursor), id); },
+		setActiveSub: function(id) {
+			cursor.set(CONFIG, 'global', 'active_sub', id);
+			return cursor.commit(CONFIG) === true;
+		},
 		getServers: function() { return loadServers(cursor); },
 		setServers: function(servers) { storeServers(cursor, servers); },
 		getSelectedServer: function() { return selectedServer(cursor); },
-		setSelected: function(tag) { storeSelected(sh, tag); },
+		getSelectedId: function() { return selectedId(); },
+		setSelected: function(id) { storeSelected(sh, id); },
 		setSubscriptionUrl: function(url) {
 			cursor.set(CONFIG, 'subscription', 'url', url);
 			cursor.commit(CONFIG);
@@ -143,6 +150,7 @@ const methods = {
 	servers_list:         { call: function() { return hstatus.serversList(buildCtx()); } },
 	servers_ping:         { call: function() { return hping.serversPing(buildCtx()); } },
 	subscription_update:  { args: { url: '' }, call: function(req) { return hsub.subscriptionUpdate(buildCtx(), req.args); } },
+	subscription_select:  { args: { sub: '' }, call: function(req) { return h.subscriptionSelect(buildCtx(), req.args); } },
 	parse_uri:            { args: { uri: '', section: '' }, call: function(req) { return huri.parseServerUri(buildCtx(), req.args); } },
 	config_apply:         { call: function() { return h.configApply(buildCtx()); } },
 	service_toggle:       { args: { enabled: false }, call: function(req) { return h.serviceToggle(buildCtx(), req.args); } },

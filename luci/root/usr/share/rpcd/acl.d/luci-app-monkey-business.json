@@ -20,6 +20,7 @@
 			"ubus": {
 				"monkey-business": [
 					"subscription_update",
+					"subscription_select",
 					"parse_uri",
 					"config_apply",
 					"service_toggle",

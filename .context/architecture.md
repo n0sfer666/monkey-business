@@ -44,8 +44,14 @@
    (`tr_*`, `pbk`/`sid`/`spx`, `obfs_*`) — маппинг в контракт держит `lib/servermap.uc`, чтение
    понимает и прежнюю JSON-схему. Ручные серверы обновление подписки не трогает.
    Решение: `.context/decisions/2026-08-07-server-form-link-import.md`.
-2. **Apply / connect:** UCI → `selectWorking` (пробует серверы по порядку списка, первый рабочий →
-   тег в `/etc/monkey-business/active`) → `xray.uc` → Xray JSON → procd restart → nftables TPROXY.
+2. **Apply / connect:** UCI → `selectWorking` (пробует кандидатов по порядку, первый рабочий →
+   идентичность `<sub>/<tag>`, у ручного `<tag>`, в `/etc/monkey-business/active`) → `xray.uc` →
+   Xray JSON → procd restart → nftables TPROXY. Кандидаты (`select.uc` `candidates`): серверы
+   `global.active_sub` (пусто/нет секции → первая подписка) + ручные в drag-порядке, затем серверы
+   остальных живых подписок по порядку подписок; ручной `disabled='1'` и мёртвые резервные подписки
+   (`subAlive`: трафик исчерпан / `expire` прошёл) — не кандидаты. Серверы удалённой подписки
+   (сироты) отбрасываются при чтении (`loadServers`) и выпадают при следующей записи списка.
+   Смена подписки — `subscription_select` (запись → apply → откат при ошибке).
 2a. **Протоколы.** `vless` (Reality/XHTTP/ws) идёт аутбаундом самого xray; `hysteria2` — отдельным
    процессом рядом, а аутбаунд `proxy` превращается в `socks → 127.0.0.1:10810`. Ниже этой точки
    (маршрутизация, DNS, kill-switch, ядерный обход) о протоколе никто не знает — direct-трафик до

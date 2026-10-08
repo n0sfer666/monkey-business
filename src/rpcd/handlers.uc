@@ -6,9 +6,11 @@
 // Контракт ctx:
 //   getGlobal() -> { enabled, routing_mode, local_region, tproxy_port, custom_direct, custom_proxy, ... }
 //   getDns() -> { mode, direct_dns, doh_url }   getAntiDpi() -> { default_fingerprint, xhttp_padding }
-//   getSubscription() -> { url, used_upload, used_download, total, expire, ... }
+//   getSubscriptions() -> [{ ".name", name, url, used_upload, used_download, total, expire, ... }]
+//   getSubscription(id) -> subscription|null   setActiveSub(id) -> bool (легло ли в UCI)
 //   getServers() -> [server, ...]      setServers(arr)
-//   getSelectedServer() -> server|null   setSelected(tag) — рантайм-состояние, НЕ uci-commit
+//   getSelectedServer() -> server|null   getSelectedId() -> string   setSelected(id) — рантайм-состояние,
+//     НЕ uci-commit
 //   fetchSubscription(url) -> { body, userinfo }|null   pingServer(server) -> int(ms)|null
 //   applyConfig(jsonStr, intentOn?) -> errString|null (валидирует + запускает; intentOn=true обходит
 //     гейт по enabled в init-скрипте — только для пути включения)   stopService()
@@ -22,9 +24,10 @@
 
 import { isTrue } from "../lib/val.uc";
 import { generateJson } from "../generator/xray.uc";
-import { selectWorking } from "./select.uc";
+import { selectWorking, listedServers } from "./select.uc";
 import { directBypass } from "../lib/bypass.uc";
 import { prepareHysteria } from "./hysteria.uc";
+import { serverId, findSub, activeSubId } from "../lib/subs.uc";
 
 const ROUTING_MODES = ["bypass-local", "gfwlist", "global"];
 const LOCAL_REGIONS = ["ru", "cn", "ir", "other"];
@@ -43,12 +46,18 @@ function genConfig(ctx, server) {
 // При выключенном VPN рантайм не трогаем вообще: init-скрипт всё равно не поднимет xray (гейт по
 // enabled), а без раннего выхода мы бы зря поднимали эфемерный xray на пробу серверов и меняли
 // активный сервер. `skipped` нужен UI, чтобы не врать «applied», когда ничего не применялось.
+function noServers(ctx, hint) {
+	if (length(listedServers(ctx)) > 0)
+		return "no usable servers — all are disabled or in expired subscriptions; enable a server or switch the subscription";
+	return "no servers — " + hint;
+}
+
 function configApply(ctx) {
 	if (!isTrue(ctx.getGlobal().enabled))
 		return { ok: true, skipped: "disabled" };
 	let sel = selectWorking(ctx);
 	if (sel == null)
-		return { error: "no servers — add a subscription or a manual server first" };
+		return { error: noServers(ctx, "add a subscription or a manual server first") };
 	let hErr = prepareHysteria(ctx, sel.server);
 	if (hErr != null)
 		return { error: hErr };
@@ -56,7 +65,8 @@ function configApply(ctx) {
 	let err = ctx.applyConfig(jsonStr);
 	if (err != null)
 		return { error: err };
-	return { ok: true, server: sel.server.tag, probed: sel.probed, bytes: length(jsonStr) };
+	return { ok: true, server: sel.server.tag, server_id: serverId(sel.server), probed: sel.probed,
+		bytes: length(jsonStr) };
 }
 
 function serviceToggle(ctx, args) {
@@ -68,7 +78,7 @@ function serviceToggle(ctx, args) {
 	}
 	let sel = selectWorking(ctx);
 	if (sel == null)
-		return { error: "no servers — add a subscription first", enabled: false };
+		return { error: noServers(ctx, "add a subscription first"), enabled: false };
 	let hErr = prepareHysteria(ctx, sel.server);
 	if (hErr != null)
 		return { error: hErr, enabled: isTrue(ctx.getGlobal().enabled) };
@@ -88,7 +98,7 @@ function serviceToggle(ctx, args) {
 		ctx.stopService();
 		return { error: "could not save the toggle state (read-only config?)", enabled: false };
 	}
-	return { enabled: true, server: sel.server.tag, probed: sel.probed };
+	return { enabled: true, server: sel.server.tag, server_id: serverId(sel.server), probed: sel.probed };
 }
 
 function geoUpdate(ctx, args) {
@@ -136,6 +146,27 @@ function setMode(ctx, args) {
 	return res;
 }
 
+function subscriptionSelect(ctx, args) {
+	let want = (args != null) ? args.sub : null;
+	let subs = ctx.getSubscriptions();
+	if (want == null || want == "" || findSub(subs, want) == null)
+		return { error: "unknown subscription" };
+	let prev = ctx.getGlobal().active_sub || "";
+	if (activeSubId(subs, prev) == want)
+		return { ok: true, active_sub: want, unchanged: true };
+	let prevId = ctx.getSelectedId();
+	if (!ctx.setActiveSub(want))
+		return { error: "could not save the subscription choice (read-only config?)" };
+	let res = configApply(ctx);
+	if (res.error != null) {
+		ctx.setActiveSub(prev);
+		ctx.setSelected(prevId);
+		return res;
+	}
+	res.active_sub = want;
+	return res;
+}
+
 function geoStatus(ctx) {
 	return ctx.geoStatus();
 }
@@ -154,4 +185,5 @@ function checkExit(ctx, args) {
 	return ctx.checkExit(domain);
 }
 
-export { configApply, serviceToggle, geoUpdate, setRouting, setMode, geoStatus, geoInstall, checkExit };
+export { configApply, serviceToggle, geoUpdate, setRouting, setMode, subscriptionSelect, geoStatus, geoInstall,
+	checkExit };

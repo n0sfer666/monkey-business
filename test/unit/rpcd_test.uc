@@ -6,6 +6,7 @@ import * as hping from "../../src/rpcd/ping.uc";
 import { directBypass } from "../../src/lib/bypass.uc";
 import * as hsel from "../../src/rpcd/select.uc";
 import { readfile } from "fs";
+import { findSelected, serverId } from "../../src/lib/subs.uc";
 
 const SUB = readfile("test/fixtures/sub_urilist.txt");
 const SUB_HOPS = readfile("test/fixtures/sub_hop_dupes.txt");
@@ -16,15 +17,14 @@ function mockCtx(state) {
 		getGlobal: function() { return state.global; },
 		getDns: function() { return state.dns; },
 		getAntiDpi: function() { return state.anti_dpi; },
-		getSubscription: function() { return state.subscription; },
+		getSubscriptions: function() {
+			state.subscription[".name"] = "subscription";
+			return [ state.subscription ];
+		},
+		getSubscription: function(_id) { return state.subscription; },
 		getServers: function() { return state.servers; },
 		setServers: function(a) { state.servers = a; },
-		getSelectedServer: function() {
-			for (let s in state.servers)
-				if (s.tag == state.selected)
-					return s;
-			return null;
-		},
+		getSelectedServer: function() { return findSelected(state.servers, state.selected); },
 		setSelected: function(tag) { state.selected = tag; },
 		setSubscriptionUrl: function(u) { state.subscription.url = u; },
 		setUserinfo: function(o) {
@@ -463,7 +463,7 @@ test("configApply re-selects first server by order (reorder switches active)", f
 	st.selected = st.servers[1].tag;   // активен пока старый первый
 	st.pings = {};                      // никто не пингуется -> fallback на первый по порядку
 	h.configApply(ctx);
-	assertEq(st.selected, st.servers[0].tag);
+	assertEq(st.selected, serverId(st.servers[0]));
 });
 
 test("configApply errors with no servers", function() {
@@ -496,7 +496,7 @@ test("configApply fails over past unreachable server to next working", function(
 	let r = h.configApply(ctx);
 	assertEq(r.probed, true);
 	assertEq(r.server, st.servers[1].tag);
-	assertEq(st.selected, st.servers[1].tag);
+	assertEq(st.selected, serverId(st.servers[1]));
 	assert(index(st.applied, st.servers[1].address) >= 0, "applied uses second server");
 });
 
@@ -731,6 +731,8 @@ test("serversPing picks best latency", function() {
 	st.pings = { "Server A": 120, "Server B": 45 };
 	let r = hping.serversPing(ctx);
 	assertEq(r.best, "Server B");
+	assertEq(r.best_id, "subscription/Server B");
+	assertEq(r.results[0].id, "subscription/Server A");
 	assertEq(length(r.results), 2);
 });
 

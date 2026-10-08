@@ -71,6 +71,14 @@ test("merge still skips a fresh server that duplicates a manual one", function()
 	assertEq(tags(out), [ "renamed" ]);
 });
 
+test("merge keeps the manual disabled flag of a refreshed subscription server", function() {
+	let off = srv("a1", "1.1.1.1", "a");
+	off.disabled = "1";
+	let out = hsub.mergeKeepingOrder([ off, srv("a2", "1.1.1.2", "a") ],
+		[ srv("a1", "1.1.1.1"), srv("a2", "1.1.1.2") ], "a");
+	assertEq(map(out, function(s) { return s.disabled; }), [ "1", null ]);
+});
+
 test("subscriptionUpdate leaves servers of a second subscription alone", function() {
 	let st = {
 		subscription: { url: "https://example/sub" },
@@ -78,7 +86,9 @@ test("subscriptionUpdate leaves servers of a second subscription alone", functio
 		selected: "b1",
 	};
 	let ctx = {
-		getSubscription: function() { return st.subscription; },
+		getGlobal: function() { return {}; },
+		getSubscriptions: function() { return [ { ".name": LEGACY_SUB }, { ".name": "b" } ]; },
+		getSubscription: function(_id) { return st.subscription; },
 		getServers: function() { return st.servers; },
 		setServers: function(a) { st.servers = a; },
 		getSelectedServer: function() { return null; },

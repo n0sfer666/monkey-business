@@ -82,6 +82,8 @@ function mergeKeepingOrder(existing, fresh, id) {
 			continue;
 		}
 		if (byKey[k] != null && used[k] == null) {
+			if (old.disabled != null)
+				byKey[k].disabled = old.disabled;
 			push(ordered, byKey[k]);
 			used[k] = true;
 		}
@@ -97,7 +99,8 @@ function mergeKeepingOrder(existing, fresh, id) {
 }
 
 function subscriptionUpdate(ctx, args) {
-	let url = (args != null && args.url != null && args.url != "") ? args.url : ctx.getSubscription().url;
+	let sub = ctx.getSubscription(LEGACY_SUB) || {};
+	let url = (args != null && args.url != null && args.url != "") ? args.url : sub.url;
 	if (url == null || url == "")
 		return { error: "no subscription url" };
 
