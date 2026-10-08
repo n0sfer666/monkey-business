@@ -7,6 +7,8 @@
 					"status",
 					"servers_list",
 					"servers_ping",
+					"subscription_ping",
+					"server_ping",
 					"geo_status",
 					"hysteria_status",
 					"check_exit"

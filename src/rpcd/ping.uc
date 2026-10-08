@@ -1,22 +1,45 @@
-// Замер latency по всему списку серверов (кнопка «Test latency» в UI). Это не выбор сервера:
-// результат никуда не применяется, порядок и активный сервер не меняются.
+// Замер latency по кнопкам UI: все серверы, серверы подписки, один сервер. Порядок и активный сервер
+// не меняются.
 
 import { listedServers } from "./select.uc";
-import { serverId } from "../lib/subs.uc";
+import { measure, pingView } from "./latency.uc";
+import { serverSub, serverId, findSub } from "../lib/subs.uc";
 
-function serversPing(ctx) {
-	let results = [];
-	let best = null, bestId = null, bestMs = null;
-	for (let s in listedServers(ctx)) {
-		let ms = ctx.pingServer(s);
-		push(results, { id: serverId(s), tag: s.tag, latency_ms: ms });
-		if (ms != null && (bestMs == null || ms < bestMs)) {
-			bestMs = ms;
-			best = s.tag;
-			bestId = serverId(s);
-		}
-	}
-	return { results: results, best: best, best_id: bestId };
+function view(pings, s) {
+	let v = pingView(pings, s);
+	v.id = serverId(s);
+	v.tag = s.tag;
+	return v;
 }
 
-export { serversPing };
+function pingList(ctx, servers) {
+	let pings = measure(ctx, servers);
+	return map(servers, function(s) { return view(pings, s); });
+}
+
+function serversPing(ctx) {
+	let results = pingList(ctx, listedServers(ctx));
+	let best = null;
+	for (let r in results)
+		if (r.latency_ms != null && (best == null || r.latency_ms < best.latency_ms))
+			best = r;
+	return { results: results, best: (best != null) ? best.tag : null, best_id: (best != null) ? best.id : null };
+}
+
+function subscriptionPing(ctx, args) {
+	let want = (args != null) ? args.sub : null;
+	if (want == null || findSub(ctx.getSubscriptions(), want) == null)
+		return { error: "unknown subscription" };
+	let servers = filter(listedServers(ctx), function(s) { return serverSub(s) == want; });
+	return { sub: want, results: pingList(ctx, servers) };
+}
+
+function serverPing(ctx, args) {
+	let want = (args != null) ? args.id : null;
+	for (let s in listedServers(ctx))
+		if (serverId(s) == want)
+			return pingList(ctx, [ s ])[0];
+	return { error: "unknown server" };
+}
+
+export { serversPing, subscriptionPing, serverPing };

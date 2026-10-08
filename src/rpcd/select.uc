@@ -4,6 +4,14 @@
 import { isHysteria } from "../generator/hysteria.uc";
 import { isTrue } from "../lib/val.uc";
 import { serverSub, serverId, subId, activeSubId, subAlive } from "../lib/subs.uc";
+import { reachable } from "./latency.uc";
+
+const PROBE_COST = 12;
+const HYSTERIA_PROBE_COST = 15;
+
+function probeCost(s) {
+	return isHysteria(s) ? HYSTERIA_PROBE_COST : PROBE_COST;
+}
 
 // Приоритет = сначала группа: активная подписка вместе с ручными, затем резервные подписки по их
 // порядку; внутри группы — порядок секций UCI (drag-reorder в GridSection). Backend и UI уважают этот
@@ -43,9 +51,8 @@ function orderedServers(ctx) {
 }
 
 // Активный сервер = ПЕРВЫЙ по приоритету (порядок секций UCI = предпочтение пользователя).
-// Probe доступности (nc/tcpPing) здесь ненадёжен (даёт ложные негативы даже на рабочих Reality-
-// серверах), поэтому не используем его для выбора. Реальный runtime-failover — через Xray balancer
-// (отдельная фича). "Test latency" в UI остаётся как информация.
+// TCP-пинг здесь не используется (даёт ложные негативы даже на рабочих Reality-серверах): для
+// selectWorking он лишь пре-фильтр с фолбэком на полный список.
 function selectBest(ctx) {
 	let servers = orderedServers(ctx);
 	if (length(servers) == 0)
@@ -69,17 +76,22 @@ function runnableServers(ctx) {
 	return (length(rest) > 0) ? rest : servers;
 }
 
-// Failover по приоритету: идём по порядку, для каждого кандидата ctx.probeServer поднимает эфемерный
-// туннель и гоняет реальную пробу связности; первый прошедший — активный. Имя-агностично (только
-// порядок + результат пробы), работает на любой подписке. Если ни один не прошёл — фолбэк на servers[0]
+// Failover по приоритету: кандидаты сначала проходят TCP-пинг (reachable; не прошёл ни один TCP —
+// берутся все), затем по порядку для каждого ctx.probeServer поднимает эфемерный туннель и гоняет
+// реальную пробу связности; первый прошедший — активный. Имя-агностично (только порядок + результат
+// пробы), работает на любой подписке. Если ни один не прошёл — фолбэк на первого после пре-фильтра
 // (kill-switch должен остаться, а watchdog разберётся дальше). Возврат: { server, probed }.
-function selectWorking(ctx) {
-	let servers = runnableServers(ctx);
-	if (length(servers) == 0)
+// deadline (epoch, 0 = без потолка): проба, которая не успеет закончиться до него, не начинается.
+function selectWorking(ctx, deadline) {
+	let all = runnableServers(ctx);
+	if (length(all) == 0)
 		return null;
+	let servers = reachable(ctx, all);
 	let cap = ctx.failoverCap ? ctx.failoverCap() : 0;
 	let n = (cap > 0 && cap < length(servers)) ? cap : length(servers);
 	for (let i = 0; i < n; i++) {
+		if (deadline > 0 && ctx.now() + probeCost(servers[i]) > deadline)
+			break;
 		if (ctx.probeServer(servers[i])) {
 			ctx.setSelected(serverId(servers[i]));
 			return { server: servers[i], probed: true };
@@ -89,4 +101,4 @@ function selectWorking(ctx) {
 	return { server: servers[0], probed: false };
 }
 
-export { grouped, candidates, listedServers, orderedServers, selectBest, selectWorking };
+export { probeCost, grouped, candidates, listedServers, orderedServers, selectBest, selectWorking };

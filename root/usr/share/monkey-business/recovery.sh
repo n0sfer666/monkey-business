@@ -111,7 +111,10 @@ vpn_full_cycle() {
 # не удалось»: health-проверка пропускалась, и watchdog уходил в down по живому туннелю — а
 # пользователь тем же самым тумблером поднимал его руками с первого раза.
 failover_switch() {
-	res=$(ubus -t "${1:-$UBUS_TIMEOUT}" call "$CONFIG" config_apply 2>/dev/null) || return 1
+	cap="${1:-$UBUS_TIMEOUT}"
+	budget=$((cap - APPLY_MARGIN))
+	[ "$budget" -lt 1 ] && budget=1
+	res=$(ubus -t "$cap" call "$CONFIG" config_apply "{\"deadline\":$(($(now) + budget))}" 2>/dev/null) || return 1
 	WD_PROBED=0
 	printf '%s' "$res" | grep -q '"probed": *true' && WD_PROBED=1
 	! printf '%s' "$res" | grep -q '"error"[[:space:]]*:'

@@ -24,6 +24,7 @@ import { CONFIG, XRAY_CONF, WD_STATE } from '/usr/share/rpcd/ucode/lib/monkey-bu
 import { loadSection, loadSubscriptions, loadServers, storeServers, selectedId, selectedServer, storeSelected }
 	from '/usr/share/rpcd/ucode/lib/monkey-business/runtime/uci.uc';
 import { findSub } from '/usr/share/rpcd/ucode/lib/monkey-business/lib/subs.uc';
+import { loadPings, storePings } from '/usr/share/rpcd/ucode/lib/monkey-business/runtime/pings.uc';
 import { netRuntime } from '/usr/share/rpcd/ucode/lib/monkey-business/runtime/net.uc';
 import { applyRuntime } from '/usr/share/rpcd/ucode/lib/monkey-business/runtime/apply.uc';
 import { hysteriaRuntime } from '/usr/share/rpcd/ucode/lib/monkey-business/runtime/hysteria.uc';
@@ -61,7 +62,10 @@ function buildCtx() {
 			cursor.commit(CONFIG);
 		},
 		fetchSubscription: function(url) { return net.fetchSubscription(url); },
-		pingServer: function(s) { return net.tcpPing(s); },
+		pingServers: function(servers, limitMs) { return net.tcpPings(servers, limitMs); },
+		getPings: function() { return loadPings(); },
+		setPings: function(pings) { storePings(pings); },
+		now: function() { return time(); },
 		probeServer: function(s) {
 			return net.probeServer(loadSection(cursor, 'global'), loadSection(cursor, 'dns'), s);
 		},
@@ -149,10 +153,12 @@ const methods = {
 	status:               { call: function() { return hstatus.status(buildCtx()); } },
 	servers_list:         { call: function() { return hstatus.serversList(buildCtx()); } },
 	servers_ping:         { call: function() { return hping.serversPing(buildCtx()); } },
+	subscription_ping:    { args: { sub: '' }, call: function(req) { return hping.subscriptionPing(buildCtx(), req.args); } },
+	server_ping:          { args: { id: '' }, call: function(req) { return hping.serverPing(buildCtx(), req.args); } },
 	subscription_update:  { args: { url: '' }, call: function(req) { return hsub.subscriptionUpdate(buildCtx(), req.args); } },
 	subscription_select:  { args: { sub: '' }, call: function(req) { return h.subscriptionSelect(buildCtx(), req.args); } },
 	parse_uri:            { args: { uri: '', section: '' }, call: function(req) { return huri.parseServerUri(buildCtx(), req.args); } },
-	config_apply:         { call: function() { return h.configApply(buildCtx()); } },
+	config_apply:         { args: { deadline: 0 }, call: function(req) { return h.configApply(buildCtx(), req.args); } },
 	service_toggle:       { args: { enabled: false }, call: function(req) { return h.serviceToggle(buildCtx(), req.args); } },
 	geo_update:           { args: { geoip_url: '', geosite_url: '' }, call: function(req) { return h.geoUpdate(buildCtx(), req.args); } },
 	set_routing:          { args: { direct: '', proxy: '' }, call: function(req) { return h.setRouting(buildCtx(), req.args); } },

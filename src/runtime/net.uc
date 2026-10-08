@@ -6,6 +6,8 @@ import { generateProbe } from '../generator/xray.uc';
 import { isHysteria } from '../generator/hysteria.uc';
 import { GEO_DIR } from './paths.uc';
 
+const PING_BATCH = 16;
+
 function haveCurl(stat_) {
 	return stat_('/usr/bin/curl') != null || stat_('/bin/curl') != null;
 }
@@ -39,15 +41,31 @@ function netRuntime(sh, hysteria, stat_) {
 		return { body: body, userinfo: userinfo };
 	}
 
-	function tcpPing(server) {
-		// busybox nc на устройстве без флагов -z/-w -> curl: %{time_connect} = время TCP-connect (сек);
-		// awk даёт целые мс (0 если connect не состоялся). server.address — внешний вход -> shq.
-		let cmd = 'curl -s -o /dev/null --connect-timeout 2 --max-time 4 -w "%{time_connect}" ' +
-			'http://' + shq(server.address) + ':' + int(server.port) +
-			" 2>/dev/null | awk '{printf \"%d\", ($1+0)*1000}'";
-		let r = runCapture(cmd);
-		let ms = int(split(r.out, 'MB_EXIT')[0]);
-		return (ms > 0) ? ms : null;
+	function pingTarget(s) {
+		return (index(s.address, ':') >= 0) ? '[' + s.address + ']' : s.address;
+	}
+
+	function tcpPings(servers, limitMs) {
+		// busybox nc на устройстве без флагов -z/-w -> curl. server.address — внешний вход -> shq.
+		if (length(servers) == 0)
+			return [];
+		let t = int(limitMs / 1000) + 1;
+		let cmd = '';
+		for (let i = 0; i < length(servers); i++) {
+			cmd += '(curl -gs -o /dev/null --connect-timeout ' + t + ' --max-time ' + t +
+				' -w "%{time_namelookup} %{time_connect}" http://' + shq(pingTarget(servers[i])) + ':' +
+				int(servers[i].port) + " 2>/dev/null | awk '{ if ($2 + 0 > 0) { ms = int(($2 - $1) * 1000); " +
+				"printf \"" + i + " %d\\n\", (ms < 1) ? 1 : ms } }') & ";
+			if ((i + 1) % PING_BATCH == 0)
+				cmd += 'wait; ';
+		}
+		let out = map(servers, function() { return null; });
+		for (let line in split(runCapture(cmd + 'wait').out, "\n")) {
+			let m = match(line, /^([0-9]+) ([0-9]+)$/);
+			if (m != null && int(m[2]) > 0 && int(m[1]) < length(out))
+				out[int(m[1])] = int(m[2]);
+		}
+		return out;
 	}
 
 	// Эфемерная проба кандидата для failover: временный xray (socks 10809) -> реальный проход трафика
@@ -117,7 +135,7 @@ function netRuntime(sh, hysteria, stat_) {
 
 	return {
 		fetchSubscription: fetchSubscription,
-		tcpPing: tcpPing,
+		tcpPings: tcpPings,
 		probeServer: probeServer,
 		checkExit: checkExit,
 	};

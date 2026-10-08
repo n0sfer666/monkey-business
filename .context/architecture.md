@@ -44,7 +44,9 @@
    (`tr_*`, `pbk`/`sid`/`spx`, `obfs_*`) — маппинг в контракт держит `lib/servermap.uc`, чтение
    понимает и прежнюю JSON-схему. Ручные серверы обновление подписки не трогает.
    Решение: `.context/decisions/2026-08-07-server-form-link-import.md`.
-2. **Apply / connect:** UCI → `selectWorking` (пробует кандидатов по порядку, первый рабочий →
+2. **Apply / connect:** UCI → `selectWorking` (параллельный TCP-пинг кандидатов → результат в
+   tmpfs `/tmp/mb-ping.json`, ответившие дольше 1с или не ответившие авто-отключены; не прошёл ни
+   один — берутся все; затем пробы по порядку, первый рабочий →
    идентичность `<sub>/<tag>`, у ручного `<tag>`, в `/etc/monkey-business/active`) → `xray.uc` →
    Xray JSON → procd restart → nftables TPROXY. Кандидаты (`select.uc` `candidates`): серверы
    `global.active_sub` (пусто/нет секции → первая подписка) + ручные в drag-порядке, затем серверы
@@ -75,8 +77,8 @@
 5. **Отказоустойчивость:** watchdog (cron 1/мин) — liveness через socks + сверка exit-IP ≠ домашнего.
    3 провала → лестница восстановления (`recovery.sh`), по ступени на тик: soft bounce (`kill` xray,
    procd поднимает) → hard restart (SIGTERM → подтверждённая смерть → SIGKILL → `init.d start`,
-   `apply.sh` пересобирает nft/policy-routing) → failover (`ubus config_apply` → `selectWorking`
-   выберет другой сервер) → full stop/start (аналог ручного Off/On). На первых трёх kill-switch
+   `apply.sh` пересобирает nft/policy-routing) → failover (`ubus config_apply {deadline}` →
+   `selectWorking` выберет другой сервер, не начиная пробу, которая не успеет до дедлайна) → full stop/start (аналог ручного Off/On). На первых трёх kill-switch
    держится. Исчерпали → `init.d stop` (LAN на direct) + backoff-попытки восстановления с failover.
    Решение: `.context/decisions/2026-08-06-recovery-ladder.md`.
 6. **Железо (LAN):** `eth1` = USB-адаптер RTL8153B (r8152) и единственный член `br-lan`. Пакетная

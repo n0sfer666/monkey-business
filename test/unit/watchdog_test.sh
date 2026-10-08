@@ -96,7 +96,7 @@ no() { if grep -q "$3" "$2" 2>/dev/null; then FAIL=$((FAIL+1)); echo "FAIL $1: '
 #    Ключевой случай — probed:false: конфиг применён и сервис перезапущен (ровно как ручной Turn on),
 #    просто ни один кандидат не прошёл эфемерную пробу. Прежний код читал это как «переключиться не
 #    удалось», пропускал health-проверку и ронял watchdog в down по живому туннелю.
-ubus() { cat "$T/ubus_out" 2>/dev/null; return "$(cat "$T/ubus_rc" 2>/dev/null || echo 0)"; }
+ubus() { echo "$*" > "$T/ubus_args"; cat "$T/ubus_out" 2>/dev/null; return "$(cat "$T/ubus_rc" 2>/dev/null || echo 0)"; }
 fo_case() { printf '%s' "$1" > "$T/ubus_out"; printf '%s' "${2:-0}" > "$T/ubus_rc"; failover_switch; }
 
 fo_case '{ "ok": true, "server": "X", "probed": true }'; rc=$?
@@ -109,6 +109,13 @@ fo_case '{ "error": "no servers" }'; rc=$?
 eq "parse.error.rc" "$rc" 1
 fo_case '{ "ok": true, "probed": true }' 1; rc=$?
 eq "parse.ubusfail.rc" "$rc" 1
+MB_WD_NOW=1000
+fo_case '{ "ok": true, "probed": true }'
+eq "deadline.default" "$(cat "$T/ubus_args")" "-t $UBUS_TIMEOUT call $CONFIG config_apply {\"deadline\":$((1000 + UBUS_TIMEOUT - APPLY_MARGIN))}"
+printf '%s' '{ "ok": true }' > "$T/ubus_out"; failover_switch 111
+eq "deadline.clamped" "$(cat "$T/ubus_args")" "-t 111 call $CONFIG config_apply {\"deadline\":$((1000 + 111 - APPLY_MARGIN))}"
+failover_switch 5
+eq "deadline.floor" "$(cat "$T/ubus_args")" "-t 5 call $CONFIG config_apply {\"deadline\":1001}"
 
 # failover: при наличии $T/failover_ok «переключает» на рабочий сервер (включает live + exit EXIT2).
 # Тег меняется в ЛЮБОМ исходе — config_apply зовёт setSelected и на фолбэке servers[0] тоже.

@@ -4,6 +4,7 @@
 import { isTrue } from "../lib/val.uc";
 import { directBypass } from "../lib/bypass.uc";
 import { grouped } from "./select.uc";
+import { pingView } from "./latency.uc";
 import { serverSub, serverId, subId, findSub, activeSubId, subAlive } from "../lib/subs.uc";
 
 function maskUuid(u) {
@@ -66,14 +67,19 @@ function serversList(ctx) {
 	let i = 0;
 	let subs = ctx.getSubscriptions();
 	let active = activeSubId(subs, ctx.getGlobal().active_sub);
+	let pings = ctx.getPings();
 	for (let s in grouped(ctx.getServers(), subs, active)) {
 		let sub = serverSub(s);
+		let ping = pingView(pings, s);
 		push(out, {
 			id: serverId(s),
 			tag: s.tag,
 			sub: sub,
 			reserve: sub != null && sub != active,
 			disabled: isTrue(s.disabled),
+			auto_disabled: ping.auto_disabled,
+			latency_ms: ping.latency_ms,
+			ping_na: ping.na,
 			protocol: s.protocol || "vless",
 			address: s.address,
 			port: s.port,

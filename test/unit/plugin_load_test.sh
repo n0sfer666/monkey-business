@@ -12,7 +12,7 @@ set -u
 SELF_DIR=$(dirname "$0")
 ROOT="$SELF_DIR/../.."
 LIB=/usr/share/rpcd/ucode/lib/monkey-business
-EXPECT="check_exit,config_apply,geo_install,geo_status,geo_update,hysteria_install,hysteria_status,parse_uri,servers_list,servers_ping,service_toggle,set_mode,set_routing,status,subscription_select,subscription_update"
+EXPECT="check_exit,config_apply,geo_install,geo_status,geo_update,hysteria_install,hysteria_status,parse_uri,server_ping,servers_list,servers_ping,service_toggle,set_mode,set_routing,status,subscription_ping,subscription_select,subscription_update"
 
 T=$(mktemp -d)
 trap 'rm -rf "$T"' EXIT
@@ -58,7 +58,7 @@ cat > "$T/call.uc" <<EOF
 let plugin = loadfile("$ROOT/root/usr/share/rpcd/ucode/monkey-business.uc");
 let m = plugin()["monkey-business"];
 let r = m.servers_list.call({ args: {} });
-print(type(r.servers));
+print(type(r.servers), " ", sprintf("%J", m.config_apply.args));
 EOF
 got=$(ucode -L "$T/*.uc" "$T/call.uc" 2>"$T/err2")
 if [ -s "$T/err2" ]; then
@@ -66,7 +66,7 @@ if [ -s "$T/err2" ]; then
 	echo "FAIL plugin.dispatch:"
 	cat "$T/err2"
 fi
-eq "plugin.servers_list" "$got" "array"
+eq "plugin.dispatch" "$got" 'array { "deadline": 0 }'
 
 echo "plugin_load_test: $PASS passed, $FAIL failed"
 [ "$FAIL" -eq 0 ]

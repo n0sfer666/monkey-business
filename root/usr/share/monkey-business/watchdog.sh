@@ -4,9 +4,10 @@
 # Reconnect-first: сперва bounce xray (kill-switch держится), и лишь потом init.d stop → direct.
 # Env-override (дефолты боевые): FAIL_LIMIT(3) RECONNECT_LIMIT(4) POLL(60) BACKOFF(600)
 # EXIT_EVERY(5) REC_TRIES(3) RECOVERY_TRIES(2) RECONNECT_WAIT(5) KILL_WAIT(8) TIMEOUT(10)
-# REC_TIMEOUT(6) UBUS_TIMEOUT(90) DOWN_BUDGET(240) FAILOVER_RESERVE(150) DOWN_BACKOFF0(60) — с префиксом
-# MB_WD_. MB_WD_NOW(epoch), MB_WD_LIB(каталог probes.sh/phases.sh), MB_WD_ACTIVE(файл тега),
-# MB_WD_XRAY_MATCH(cmdline боевого xray), MB_WD_SOURCED=1(тест зовёт tick без main).
+# REC_TIMEOUT(6) UBUS_TIMEOUT(90) APPLY_MARGIN(15) DOWN_BUDGET(240) FAILOVER_RESERVE(150)
+# DOWN_BACKOFF0(60) — с префиксом MB_WD_. MB_WD_NOW(epoch), MB_WD_LIB(каталог probes.sh/phases.sh),
+# MB_WD_ACTIVE(файл тега), MB_WD_XRAY_MATCH(cmdline боевого xray), MB_WD_SOURCED=1(тест зовёт tick
+# без main).
 set -u
 
 CONFIG=monkey-business
@@ -36,6 +37,7 @@ TIMEOUT="${MB_WD_TIMEOUT:-10}"
 REC_TIMEOUT="${MB_WD_REC_TIMEOUT:-6}"
 # дефолтные 30с ubus рвали config_apply на середине перебора кандидатов
 UBUS_TIMEOUT="${MB_WD_UBUS_TIMEOUT:-90}"
+APPLY_MARGIN="${MB_WD_APPLY_MARGIN:-15}"
 # Потолок на весь tick_down: пока он идёт, kill-switch поднят и LAN заперт.
 DOWN_BUDGET="${MB_WD_DOWN_BUDGET:-240}"
 # Хвост бюджета, неприкосновенный для повторов сохранённого конфига: только failover. Без него

@@ -34,7 +34,10 @@ function mockCtx(state) {
 			state.subscription.expire = o.expire;
 		},
 		fetchSubscription: function(_url) { return state.fetchResult; },
-		pingServer: function(s) { return state.pings[s.tag]; },
+		pingServers: function(list) { return map(list, function(s) { return state.pings[s.tag]; }); },
+		getPings: function() { return state.pingStore || {}; },
+		setPings: function(p) { state.pingStore = p; },
+		now: function() { return 0; },
 		probeServer: function(s) { return (state.probeFail == null) || (state.probeFail[s.tag] !== true); },
 		failoverCap: function() { return state.failoverCap || 0; },
 		// enabledAtApply + applyIntent пинят ПОРЯДОК: туннель поднимается ДО commit'а тумблера, а

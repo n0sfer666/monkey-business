@@ -11,7 +11,9 @@
 //   getServers() -> [server, ...]      setServers(arr)
 //   getSelectedServer() -> server|null   getSelectedId() -> string   setSelected(id) — рантайм-состояние,
 //     НЕ uci-commit
-//   fetchSubscription(url) -> { body, userinfo }|null   pingServer(server) -> int(ms)|null
+//   fetchSubscription(url) -> { body, userinfo }|null
+//   pingServers([server], limitMs) -> [int(ms)|null] (параллельно, тот же порядок)   now() -> int (epoch, сек)
+//   getPings() -> { "<serverId>": { ms } } (tmpfs)   setPings(map)
 //   applyConfig(jsonStr, intentOn?) -> errString|null (валидирует + запускает; intentOn=true обходит
 //     гейт по enabled в init-скрипте — только для пути включения)   stopService()
 //   serviceRunning() -> bool   setEnabled(bool) -> bool (легло ли в UCI)   updateGeo(args) -> { status }
@@ -52,10 +54,13 @@ function noServers(ctx, hint) {
 	return "no servers — " + hint;
 }
 
-function configApply(ctx) {
+function configApply(ctx, args) {
 	if (!isTrue(ctx.getGlobal().enabled))
 		return { ok: true, skipped: "disabled" };
-	let sel = selectWorking(ctx);
+	let deadline = (args != null) ? int(args.deadline) : 0;
+	if (deadline > 0 && ctx.now() >= deadline)
+		return { error: "deadline passed before config_apply started" };
+	let sel = selectWorking(ctx, deadline);
 	if (sel == null)
 		return { error: noServers(ctx, "add a subscription or a manual server first") };
 	let hErr = prepareHysteria(ctx, sel.server);

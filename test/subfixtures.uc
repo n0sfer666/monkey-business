@@ -1,6 +1,7 @@
 import { serverId, findSub, findSelected } from "../src/lib/subs.uc";
 
 const NOW = 1800000000;
+const PING_COST = 2;
 
 function srv(tag, address, sub) {
 	return { tag: tag, protocol: "vless", address: address, port: 443, uuid: "u-" + address,
@@ -38,6 +39,7 @@ function mkState(servers, subs, active) {
 		dns: { mode: "split", direct_dns: "77.88.8.8", doh_url: "https://1.1.1.1/dns-query" },
 		anti_dpi: { default_fingerprint: "chrome", xhttp_padding: "0" },
 		subs: subs, servers: servers, selected: "", probeFail: {}, applyErr: null, applies: 0, writes: 0,
+		pingMs: {}, pingDown: {}, pingStore: {}, pinged: [], probed: [], clock: NOW,
 	};
 }
 
@@ -59,7 +61,24 @@ function mockCtx(st) {
 		getSelectedServer: function() { return findSelected(st.servers, st.selected); },
 		getSelectedId: function() { return st.selected; },
 		setSelected: function(id) { st.selected = id; },
-		probeServer: function(s) { return st.probeFail[serverId(s)] !== true; },
+		probeServer: function(s) {
+			push(st.probed, s.tag);
+			st.clock += 10;
+			return st.probeFail[serverId(s)] !== true;
+		},
+		pingServers: function(list, limitMs) {
+			push(st.pinged, map(list, function(s) { return s.tag; }));
+			st.pingLimit = limitMs;
+			st.clock += PING_COST;
+			return map(list, function(s) {
+				let id = serverId(s);
+				return (st.pingDown[id] === true) ? null : (st.pingMs[id] || 50);
+			});
+		},
+		getPings: function() { return st.pingStore; },
+		setPings: function(p) { st.pingStore = p; },
+		now: function() { return st.clock; },
+		failoverCap: function() { return st.cap || 0; },
 		applyConfig: function(j) {
 			st.applies++;
 			st.applied = j;
@@ -96,4 +115,4 @@ function mockCursor(sections) {
 	};
 }
 
-export { NOW, srv, manual, sub, tags, ids, mkState, mockCtx, mockCursor };
+export { NOW, PING_COST, srv, manual, sub, tags, ids, mkState, mockCtx, mockCursor };
