@@ -41,24 +41,24 @@ return baseclass.extend({
 			'click': ui.createHandlerFn(this, function() {
 				return callInstall().then(function(res) {
 					if (res && res.error) {
-						ui.addNotification(null, E('p', _('Install failed: ') + res.error), 'error');
+						ui.addNotification(null, E('p', {}, [ _('Install failed: ') + res.error ]), 'error');
 						return;
 					}
 					ui.showModal(_('Installing hysteria…'), [
-						E('p', { 'class': 'spinning' }, _('Downloading & checking the client (may take a minute)'))
+						E('p', { 'class': 'spinning' }, [ _('Downloading & checking the client (may take a minute)') ])
 					]);
 					return pollInstall().then(function(s) {
 						ui.hideModal();
 						statusEl.textContent = statusText(s);
 						var ok = s && s.installed && s.state !== 'updating';
-						ui.addNotification(null, E('p', ok
+						ui.addNotification(null, E('p', {}, [ ok
 							? _('hysteria client installed.')
-							: _('Install failed: ') + String((s && s.state) || '').replace(/^error:\s*/, '')),
+							: _('Install failed: ') + String((s && s.state) || '').replace(/^error:\s*/, '') ]),
 							ok ? 'info' : 'warning');
 					});
 				}).catch(function(e) {
 					ui.hideModal();
-					ui.addNotification(null, E('p', _('Install failed: ') + e), 'error');
+					ui.addNotification(null, E('p', {}, [ _('Install failed: ') + e ]), 'error');
 				});
 			})
 		}, [ _('Install / update hysteria') ]);

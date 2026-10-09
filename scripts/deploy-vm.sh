@@ -383,3 +383,4 @@ else
 	LUCI_URL="http://$LUCI_HOST"
 fi
 echo ">> готово. LuCI: $LUCI_URL (root/root) -> Services -> monkey-business VPN"
+echo ">> открыть LuCI с жёсткой перезагрузкой (Cmd+Shift+R / Ctrl+F5): URL скриптов не меняется, браузер показывает старый UI из кэша"

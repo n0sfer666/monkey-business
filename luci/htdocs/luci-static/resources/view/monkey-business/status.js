@@ -68,7 +68,7 @@ function handleToggle(on) {
 			ui.addNotification(null, E('p', {}, [ _('Turn off failed: ') + e ]), 'error');
 		});
 
-	ui.showModal(_('Connecting…'), [ E('p', { 'class': 'spinning' }, _('Selecting server and starting Xray')) ]);
+	ui.showModal(_('Connecting…'), [ E('p', { 'class': 'spinning' }, [ _('Selecting server and starting Xray') ]) ]);
 	return callToggle(true).then(function(res) {
 		if (res && res.error) {
 			ui.hideModal();

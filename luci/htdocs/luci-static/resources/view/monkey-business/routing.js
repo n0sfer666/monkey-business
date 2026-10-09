@@ -88,13 +88,13 @@ return baseclass.extend({
 			'click': ui.createHandlerFn(this, function() {
 				return callSetMode(modeEl.value, regionEl.value).then(function(res) {
 					if (res && res.error)
-						ui.addNotification(null, E('p', _('Apply failed: ') + res.error), 'warning');
+						ui.addNotification(null, E('p', {}, [ _('Apply failed: ') + res.error ]), 'warning');
 					else if (res && res.skipped == 'disabled')
-						ui.addNotification(null, E('p', _('Saved. The VPN is off — the split applies when you turn it on.')), 'info');
+						ui.addNotification(null, E('p', {}, [ _('Saved. The VPN is off — the split applies when you turn it on.') ]), 'info');
 					else
-						ui.addNotification(null, E('p', _('Routing mode applied.')), 'info');
+						ui.addNotification(null, E('p', {}, [ _('Routing mode applied.') ]), 'info');
 				}).catch(function(e) {
-					ui.addNotification(null, E('p', _('Apply failed: ') + e), 'error');
+					ui.addNotification(null, E('p', {}, [ _('Apply failed: ') + e ]), 'error');
 				});
 			})
 		}, [ _('Save & Apply') ]);

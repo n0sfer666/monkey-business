@@ -57,16 +57,16 @@ return baseclass.extend({
 		var updateBtn = E('button', { 'class': 'btn cbi-button cbi-button-apply',
 			'click': ui.createHandlerFn(this, function() {
 				return callGeo(urlGeoip.value || '', urlGeosite.value || '').then(function() {
-						ui.showModal(_('Updating geo databases…'), [ E('p', { 'class': 'spinning' }, _('Downloading & validating (may take a minute)')) ]);
+						ui.showModal(_('Updating geo databases…'), [ E('p', { 'class': 'spinning' }, [ _('Downloading & validating (may take a minute)') ]) ]);
 						return pollGeo().then(function(g) {
 							ui.hideModal();
 							statusEl.textContent = geoText(g);
 							var r = updateMessage(g);
-							ui.addNotification(null, E('p', r.msg), r.kind);
+							ui.addNotification(null, E('p', {}, [ r.msg ]), r.kind);
 						});
 					}).catch(function(e) {
 						ui.hideModal();
-						ui.addNotification(null, E('p', _('Geo update failed: ') + e), 'error');
+						ui.addNotification(null, E('p', {}, [ _('Geo update failed: ') + e ]), 'error');
 					});
 			})
 		}, [ _('Update geo databases') ]);
@@ -75,14 +75,14 @@ return baseclass.extend({
 			return E('button', { 'class': 'btn cbi-button',
 				'click': ui.createHandlerFn(self, function() {
 					return ui.uploadFile('/tmp/mb-upload-' + which + '.dat').then(function() {
-						ui.showModal(_('Validating…'), [ E('p', { 'class': 'spinning' }, _('Checking ') + which + '.dat') ]);
+						ui.showModal(_('Validating…'), [ E('p', { 'class': 'spinning' }, [ _('Checking ') + which + '.dat' ]) ]);
 						return callGeoInstall(which).then(function(res) {
 							ui.hideModal();
 							var ok = res && res.ok;
-							ui.addNotification(null, E('p', ok ? (which + _('.dat installed & validated.')) : (_('Rejected: ') + ((res && res.detail) || ''))), ok ? 'info' : 'warning');
+							ui.addNotification(null, E('p', {}, [ ok ? (which + _('.dat installed & validated.')) : (_('Rejected: ') + ((res && res.detail) || '')) ]), ok ? 'info' : 'warning');
 							return refresh();
 						});
-					}).catch(function(e) { ui.hideModal(); ui.addNotification(null, E('p', '' + e), 'error'); });
+					}).catch(function(e) { ui.hideModal(); ui.addNotification(null, E('p', {}, [ '' + e ]), 'error'); });
 				})
 			}, [ _('Upload ') + which + '.dat' ]);
 		}

@@ -9,11 +9,11 @@ var callSetRouting = rpc.declare({ object: 'monkey-business', method: 'set_routi
 
 function notifyApplied(res) {
 	if (res && res.error)
-		ui.addNotification(null, E('p', _('Apply failed: ') + res.error), 'warning');
+		ui.addNotification(null, E('p', {}, [ _('Apply failed: ') + res.error ]), 'warning');
 	else if (res && res.skipped == 'disabled')
-		ui.addNotification(null, E('p', _('Rules saved. The VPN is off — they will apply when you turn it on.')), 'info');
+		ui.addNotification(null, E('p', {}, [ _('Rules saved. The VPN is off — they will apply when you turn it on.') ]), 'info');
 	else
-		ui.addNotification(null, E('p', _('Routing rules applied.')), 'info');
+		ui.addNotification(null, E('p', {}, [ _('Routing rules applied.') ]), 'info');
 }
 
 return baseclass.extend({
