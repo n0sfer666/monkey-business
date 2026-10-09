@@ -469,7 +469,10 @@ working as is — no migration.
   subscription by hand is refused while an alive one exists — refresh it first (*Fetch*), then pick.
 - **The traffic bar** shows the subscription the tunnel goes through.
 - **Ping:** *Test latency* (all), *Ping* per subscription group and per server row on the Dashboard,
-  *Ping servers* per subscription block on Servers. A server slower than 1 s or unreachable is
+  *Ping servers* per subscription block on Servers. The Servers table has its own *Ping* column
+  (last results, refreshed by *Ping servers* and *Ping all* above the table); *Sort by ping* moves the
+  fastest rows to the top, unreachable and unmeasured ones to the bottom — the row order is the connect
+  priority, so it takes effect on *Save & Apply*. A server slower than 1 s or unreachable is
   marked *auto-off* and skipped when connecting until a later ping succeeds (the results live in
   RAM). hysteria2 (UDP) cannot be TCP-pinged and shows *n/a*. The **Off** column in the Servers
   table excludes a server for good; it is still listed and pinged.
@@ -546,4 +549,6 @@ id, `<B>` the other one (`uci show monkey-business | grep =subscription`). Turn 
    `subupdate.sh` again — now it switches to B. Restore A as in step 6.
 8. **Ping and Off.** Press the *Ping* buttons: cells show `N ms`, `auto-off` or `n/a`. Tick *Off* on a
    server in Servers, *Save & Apply*: its Dashboard row is dimmed and marked *off*, and it is never
-   the connected server.
+   the connected server. On Servers, *Ping servers* of a subscription and *Ping all* fill the table's
+   *Ping* column without a reload. *Sort by ping*, then *Save & Apply*: the rows go fastest-first
+   (`down`/`n/a` last), the Dashboard priorities follow, and the tunnel connects to the fastest server of the active subscription.
