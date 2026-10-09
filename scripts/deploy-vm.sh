@@ -169,6 +169,7 @@ $SSH $SSH_OPTS -p "$PORT" "$HOST" "MB_RESPAWN='$RESPAWN' MB_ALLOW_MISSING='$ALLO
 		/usr/share/monkey-business/nicwatch.sh /usr/share/monkey-business/nicfw.sh \
 		/usr/share/monkey-business/subupdate.sh
 	rm -f /tmp/mb-deploy.tgz /tmp/luci-indexcache* 2>/dev/null || true
+	touch -c /lib/apk/db/installed /usr/lib/opkg/status 2>/dev/null || true
 	# распакованное должно дойти до карты ДО рестартов ниже: если rpcd подвесит ubusd и роутер
 	# уедет в жёсткий сброс, недописанные файлы останутся обрезанными в журнале ext4.
 	sync
@@ -383,4 +384,3 @@ else
 	LUCI_URL="http://$LUCI_HOST"
 fi
 echo ">> готово. LuCI: $LUCI_URL (root/root) -> Services -> monkey-business VPN"
-echo ">> открыть LuCI с жёсткой перезагрузкой (Cmd+Shift+R / Ctrl+F5): URL скриптов не меняется, браузер показывает старый UI из кэша"

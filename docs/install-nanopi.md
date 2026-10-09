@@ -71,10 +71,6 @@ settings) is kept intact. Optional env overrides (prefix the command, e.g.
 `MB_PASS=secret make deploy HOST=…`): `MB_PORT` (SSH port), `MB_PASS` (root password if you don't
 use a key), `MB_SKIP_CHECKS=1` (skip the pre-flight checks when Docker isn't available).
 
-After an update, open LuCI with a **hard reload** (Cmd+Shift+R / Ctrl+F5). LuCI loads the app's
-scripts under a URL that does not change between deploys, so the browser may keep showing the
-previous UI from its cache.
-
 Under the hood it calls `scripts/deploy-vm.sh`, which you can also run directly for finer control
 (this is what `make deploy` ends up executing):
 
@@ -483,10 +479,11 @@ working as is — no migration.
 Run after deploying a change that touches subscriptions. `<A>` is the active subscription's section
 id, `<B>` the other one (`uci show monkey-business | grep =subscription`). Turn the VPN on first.
 
-0. **Fresh UI.** Hard-reload LuCI (Cmd+Shift+R / Ctrl+F5). Expect: Servers shows the
+0. **Fresh UI.** Open Servers with a plain reload, no cache clearing. Expect: Servers shows the
    *Subscriptions* section with *Ping servers* in each block and an *Add subscription* button under
    them, and the table has *Subscription* and *Off* columns. A single *Subscription* section with no
-   ping means the browser served the old scripts from its cache.
+   ping means the browser served the old scripts from its cache: the deploy must touch
+   `/lib/apk/db/installed`, whose mtime is part of the `?v=` of every LuCI script.
 
 1. **Two subscriptions.** Add B and *Fetch*. Expect: the Dashboard shows the *Subscription* selector,
    the server table is grouped into *Active: A* and *Reserve: B*.

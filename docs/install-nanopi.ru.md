@@ -70,10 +70,6 @@ make deploy HOST=root@<router-ip>
 `MB_PASS=secret make deploy HOST=…`): `MB_PORT` (SSH-порт), `MB_PASS` (root-пароль, если без
 ключа), `MB_SKIP_CHECKS=1` (пропустить проверки, если нет Docker).
 
-После обновления откройте LuCI с **жёсткой перезагрузкой** (Cmd+Shift+R / Ctrl+F5). LuCI грузит
-скрипты приложения по URL, который между деплоями не меняется, и браузер может показывать прежний
-UI из кэша.
-
 Под капотом вызывается `scripts/deploy-vm.sh` — его можно запустить и напрямую для тонкого
 контроля (именно его и выполняет `make deploy`):
 
@@ -481,10 +477,11 @@ transmit queue 0 timed out`, пакеты теряются, соединения
 Прогонять после деплоя изменений, затрагивающих подписки. `<A>` — id секции активной подписки,
 `<B>` — второй (`uci show monkey-business | grep =subscription`). Сначала включите VPN.
 
-0. **Свежий UI.** Жёстко перезагрузите LuCI (Cmd+Shift+R / Ctrl+F5). Ожидание: на Servers секция
+0. **Свежий UI.** Откройте Servers обычной перезагрузкой, без сброса кэша. Ожидание: на Servers секция
    *Subscriptions*, в каждом блоке *Ping servers*, под блоками кнопка *Add subscription*, в таблице
    колонки *Subscription* и *Off*. Одна секция *Subscription* без пинга — браузер взял старые скрипты
-   из кэша.
+   из кэша: деплой обязан делать touch `/lib/apk/db/installed`, его mtime входит в `?v=` всех
+   скриптов LuCI.
 
 1. **Две подписки.** Добавьте B и нажмите *Fetch*. Ожидание: на Dashboard появился селект
    *Subscription*, таблица серверов разбита на *Active: A* и *Reserve: B*.
