@@ -1,14 +1,10 @@
 'use strict';
 'require baseclass';
-'require rpc';
+'require view.monkey-business.api as api';
 'require ui';
 'require view.monkey-business.subs as subs';
 'require view.monkey-business.icons as icons';
 'require view.monkey-business.pingtext as pingtext';
-
-var callPing = rpc.declare({ object: 'monkey-business', method: 'servers_ping' });
-var callSubPing = rpc.declare({ object: 'monkey-business', method: 'subscription_ping', params: ['sub'] });
-var callServerPing = rpc.declare({ object: 'monkey-business', method: 'server_ping', params: ['id'] });
 
 var COLUMNS = 6;
 
@@ -59,9 +55,9 @@ return baseclass.extend({
 
 		function pingGroup(key) {
 			if (key !== '')
-				return ping(callSubPing(key));
-			return Promise.all([ ping(callSubPing(st.active_sub)) ].concat(manualIds.map(function(id) {
-				return ping(callServerPing(id));
+				return ping(api.subscriptionPing(key));
+			return Promise.all([ ping(api.subscriptionPing(st.active_sub)) ].concat(manualIds.map(function(id) {
+				return ping(api.serverPing(id));
 			})));
 		}
 
@@ -86,7 +82,7 @@ return baseclass.extend({
 				E('td', { 'class': 'td' }, [ (s.protocol || 'vless') + ' / ' + s.security +
 					(s.insecure ? _(' (insecure)') : '') ]),
 				pingTd,
-				E('td', { 'class': 'td' }, [ pingButton('', function() { return ping(callServerPing(s.id)); }, _('Ping')) ])
+				E('td', { 'class': 'td' }, [ pingButton('', function() { return ping(api.serverPing(s.id)); }, _('Ping')) ])
 			]);
 		}
 
@@ -113,7 +109,7 @@ return baseclass.extend({
 
 		return E('div', { 'class': 'cbi-section' }, [
 			E('h3', {}, [ _('Servers') ]),
-			pingButton(_('Test latency'), function() { return ping(callPing()); }),
+			pingButton(_('Test latency'), function() { return ping(api.serversPing()); }),
 			table
 		]);
 	}

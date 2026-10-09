@@ -1,7 +1,8 @@
 # Компактный UI (LuCI) — спецификация
 
-Статус: архитектура согласована 2026-10-10 (ADR `decisions/2026-10-10-own-dom-ui.md`),
-следующий шаг — итерация 1.
+Статус: архитектура согласована 2026-10-10 (ADR `decisions/2026-10-10-own-dom-ui.md`); итерация 1
+сделана 2026-10-10 (kit, `api.js`, `store.js`, Settings) — ждёт прогона runbook на R2S
+(`specs/2026-10-10-compact-ui-runbook.md`) и согласования светлой палитры (`kit/tokens.js`).
 Макет: https://claude.ai/artifact/Qi9eCMkVJJSUMzKcLT3TFF (версия 30). Источник правды по виду —
 борды макета; эта спека фиксирует поведение и архитектуру.
 
@@ -38,7 +39,7 @@
    перерисовка секции целиком по изменению (без виртуального DOM).
 2. **Модель изменений — staged UCI LuCI** для Servers и Settings: `uci.set/add/remove/move` →
    Save = `uci.save()` (индикатор изменений LuCI), Reset = `uci.unload` + перерисовка,
-   Save & Apply = `commit.apply()` (без rollback, см. память про `uci.apply`) → `subscription_update`
+   Save & Apply = `store.commit()` (без rollback, см. память про `uci.apply`) → `subscription_update`
    для подписок с изменённым URL → `config_apply`, если сервис запущен. Dashboard и модалки
    Routing/Geo, переключение подписки, Turn on/off — как сейчас, сразу через RPC.
 3. **Одна разметка, адаптив через CSS.** Брейкпоинт 720px. Строка сервера на десктопе — строка
@@ -63,7 +64,7 @@ view/monkey-business/
   api.js                                все rpc.declare
   store.js                              staged UCI: get/set/add/remove/move, dirty, save/reset/apply
   kit/  style.js sheet.js confirm.js switch.js seg.js menu.js inline.js tip.js field.js
-  model/ subs.js pingtext.js interval.js order.js servers.js confirmtext.js
+  model/ dirty.js datatype.js settings.js subs.js pingtext.js interval.js order.js servers.js confirmtext.js
   dash/ status.js traffic.js routing.js rules.js geo.js serverlist.js hysteria.js
   srv/  subrow.js subsheet.js serverrow.js serversheet.js pingbar.js
   set/  sections.js

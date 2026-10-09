@@ -1,16 +1,11 @@
 'use strict';
 'require baseclass';
 'require form';
-'require rpc';
+'require view.monkey-business.api as api';
 'require view.monkey-business.serveropt as so';
 
 // Поле «вставь ссылку» с живой проверкой. Разбор делает устройство (ubus parse_uri) — своего
 // парсера у формы нет намеренно: иначе она принимала бы ссылки, которые роутер поднять не может.
-
-// section — секция, которую правят: сервер не должен оказаться дублем самого себя.
-var callParseUri = rpc.declare({
-	object: 'monkey-business', method: 'parse_uri', params: [ 'uri', 'section' ]
-});
 
 var DEBOUNCE_MS = 400;
 
@@ -136,7 +131,8 @@ return baseclass.extend({
 				}
 				// Ответы приходят в произвольном порядке — устаревший не должен перебить свежий.
 				var mine = ++seq;
-				var p = callParseUri(value, section_id).then(function(res) {
+				// section — секция, которую правят: сервер не должен оказаться дублем самого себя.
+				var p = api.parseUri(value, section_id).then(function(res) {
 					if (mine != seq || gone())
 						return;
 					say(self.verdict(res));

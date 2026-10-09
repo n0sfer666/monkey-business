@@ -1,21 +1,14 @@
 'use strict';
 'require baseclass';
 'require form';
-'require rpc';
+'require view.monkey-business.api as api';
 'require ui';
-'require view.monkey-business.commit as commit';
+'require view.monkey-business.store as store';
 'require view.monkey-business.subs as subs';
 'require view.monkey-business.icons as icons';
 
 var CONFIG = 'monkey-business';
 var UNKNOWN_SUB = 'unknown subscription';
-
-var callSubUpdate = rpc.declare({
-	object: 'monkey-business', method: 'subscription_update', params: ['sub', 'url']
-});
-var callSubPing = rpc.declare({
-	object: 'monkey-business', method: 'subscription_ping', params: ['sub']
-});
 
 function notify(text, level) {
 	ui.addNotification(null, E('p', {}, [ text ]), level);
@@ -40,14 +33,14 @@ function notifyPing(res) {
 }
 
 function commitForm(map) {
-	return map.save().then(function() { return commit.apply(); });
+	return map.save().then(function() { return store.commit(); });
 }
 
 function fetchSub(map, sid, url) {
-	return callSubUpdate(sid, url).then(function(res) {
+	return api.subscriptionUpdate(sid, url).then(function(res) {
 		if (!(res && res.error === UNKNOWN_SUB))
 			return res;
-		return commitForm(map).then(function() { return callSubUpdate(sid, url); });
+		return commitForm(map).then(function() { return api.subscriptionUpdate(sid, url); });
 	});
 }
 
@@ -117,7 +110,7 @@ return baseclass.extend({
 			_('Servers slower than 1 s or unreachable are skipped when connecting, until a later ping succeeds.'));
 		ping.renderWidget = function(sid) {
 			return icons.button('ping', _('Ping servers'), ui.createHandlerFn(this, function() {
-				return callSubPing(sid).then(function(res) {
+				return api.subscriptionPing(sid).then(function(res) {
 					notifyPing(res);
 					if (!(res && res.error))
 						onPing(res);

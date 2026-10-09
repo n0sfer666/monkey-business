@@ -6,8 +6,8 @@
 | Что | Команда | Уровень |
 |-----|---------|---------|
 | Синтаксис ucode (types-эквивалент) | `make check` | T1 |
-| Линт (shellcheck + ucode + eslint) | `make lint` | T1 |
-| Unit/snapshot тесты | `make test-unit` | T2/T4 |
+| Линт (shellcheck + ucode + синтаксис JS) | `make lint` | T1 |
+| Unit/snapshot тесты (ucode, sh, node:test) | `make test-unit` | T2/T4 |
 | Интеграция (netns) | `make test-integ` | T3 |
 | Всё разом | `make test` | — |
 | Обновить образ проверок | `make test-build` | — (нужна сеть) |

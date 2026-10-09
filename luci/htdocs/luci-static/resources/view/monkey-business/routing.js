@@ -1,7 +1,7 @@
 'use strict';
 'require baseclass';
 'require dom';
-'require rpc';
+'require view.monkey-business.api as api';
 'require ui';
 'require uci';
 
@@ -9,7 +9,6 @@
 // конфиг xray, но и файрвол (ядерный обход в nft), а форма LuCI умеет лишь стейджить UCI —
 // «сохранил, и ничего не произошло» здесь стоило бы дороже всего. Поэтому свой ubus-вызов
 // (set_mode), который коммитит и применяет сразу.
-var callSetMode = rpc.declare({ object: 'monkey-business', method: 'set_mode', params: ['mode', 'region'] });
 
 var MODES = [
 	[ 'bypass-local', _('Bypass local — region and private direct, the rest via VPN') ],
@@ -86,7 +85,7 @@ return baseclass.extend({
 		var save = E('button', {
 			'class': 'btn cbi-button cbi-button-apply',
 			'click': ui.createHandlerFn(this, function() {
-				return callSetMode(modeEl.value, regionEl.value).then(function(res) {
+				return api.setMode(modeEl.value, regionEl.value).then(function(res) {
 					if (res && res.error)
 						ui.addNotification(null, E('p', {}, [ _('Apply failed: ') + res.error ]), 'warning');
 					else if (res && res.skipped == 'disabled')

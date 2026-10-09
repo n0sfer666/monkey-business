@@ -1,11 +1,10 @@
 'use strict';
 'require baseclass';
-'require rpc';
+'require view.monkey-business.api as api';
 'require ui';
 'require uci';
 
 // Пользовательские списки direct/proxy для сплит-режимов.
-var callSetRouting = rpc.declare({ object: 'monkey-business', method: 'set_routing', params: ['direct', 'proxy'] });
 
 function notifyApplied(res) {
 	if (res && res.error)
@@ -34,7 +33,7 @@ return baseclass.extend({
 			'class': 'btn cbi-button cbi-button-apply',
 			'click': ui.createHandlerFn(this, function() {
 				// серверный commit+apply (без LuCI-стейджинга, иначе остаётся в Unsaved Changes)
-				return callSetRouting(taDirect.value, taProxy.value).then(notifyApplied);
+				return api.setRouting(taDirect.value, taProxy.value).then(notifyApplied);
 			})
 		}, [ _('Save & Apply') ]);
 

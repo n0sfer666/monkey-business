@@ -10,6 +10,10 @@
 - **Интеграция** (T3): netns-харнесс `test/integ/*.sh` (ip netns + nft + xray + локальный upstream).
   Прогон: `make test-integ` (Linux/привилегированный контейнер).
 - **Snapshot:** golden JSON в `test/fixtures/xray_*.json`; при изменении генератора — обновить.
+- **LuCI JS** (T2): `test/js/*.test.js` под `node --test` (node в образе), гоняется в `make test-unit`.
+  Загрузчик `test/js/luci.js` подменяет `baseclass.extend` и `_()`, резолвит только
+  `view.monkey-business.*`; модуль, тянущий LuCI (`uci`, `ui`, `dom`), падает — так `model/` держится
+  без DOM. Вид и поведение экранов — ручной runbook на R2S (`specs/2026-10-10-compact-ui-runbook.md`).
 
 ## Правило переосмысления тестов
 Шаг, меняющий контракт предыдущего, ОБЯЗАН ревизовать его тесты:

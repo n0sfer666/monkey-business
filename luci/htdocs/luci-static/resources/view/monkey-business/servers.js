@@ -1,18 +1,15 @@
 'use strict';
 'require view';
 'require form';
-'require rpc';
+'require view.monkey-business.api as api';
 'require ui';
 'require uci';
 'require view.monkey-business.serverfields as fields';
 'require view.monkey-business.serverlink as link';
 'require view.monkey-business.subsection as subsection';
 'require view.monkey-business.subs as subs';
-'require view.monkey-business.commit as commit';
+'require view.monkey-business.store as store';
 'require view.monkey-business.pinggrid as pinggrid';
-
-var callStatus = rpc.declare({ object: 'monkey-business', method: 'status' });
-var callApply = rpc.declare({ object: 'monkey-business', method: 'config_apply' });
 
 return view.extend({
 	load: function() {
@@ -102,12 +99,12 @@ return view.extend({
 	// изменения в "Unsaved Changes".
 	handleSaveApply: function(ev, mode) {
 		return this.handleSave(ev).then(function() {
-			return commit.apply();
+			return store.commit();
 		}).then(function() {
-			return callStatus();
+			return api.status();
 		}).then(function(st) {
 			if (st && st.running)
-				return callApply().then(function(res) {
+				return api.configApply().then(function(res) {
 					if (res && res.error)
 						ui.addNotification(null, E('p', {}, [ _('Apply failed: ') + res.error ]), 'warning');
 					else if (res && res.skipped == 'disabled')

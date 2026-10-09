@@ -1,15 +1,12 @@
 'use strict';
 'require baseclass';
-'require rpc';
+'require view.monkey-business.api as api';
 'require ui';
 'require poll';
 'require view.monkey-business.util as mbutil';
 'require view.monkey-business.substatus as mbsub';
 
 // Секция «Status»: живая метка состояния, тумблер и проверка точки выхода.
-var callStatus = rpc.declare({ object: 'monkey-business', method: 'status' });
-var callCheckExit = rpc.declare({ object: 'monkey-business', method: 'check_exit', params: ['domain'] });
-var callToggle = rpc.declare({ object: 'monkey-business', method: 'service_toggle', params: ['enabled'] });
 
 // Раньше «выключено» и «watchdog снял туннель, LAN идёт напрямую» выглядели одинаково —
 // как «Starting…», то есть «сейчас поднимется». Фаза watchdog из status делает разницу видимой.
@@ -52,7 +49,7 @@ function routingText(st) {
 function pollUntilRunning() {
 	var tries = 0;
 	function step() {
-		return callStatus().then(function(st) {
+		return api.status().then(function(st) {
 			if (st.running) return true;
 			if (++tries >= 12) return false;
 			return mbutil.sleep(1500).then(step);
@@ -64,12 +61,12 @@ function pollUntilRunning() {
 // Turn on реально подключает: ждём running и показываем ошибку вместо бесконечного «Starting…».
 function handleToggle(on) {
 	if (!on)
-		return callToggle(false).then(function() { window.location.reload(); }).catch(function(e) {
+		return api.serviceToggle(false).then(function() { window.location.reload(); }).catch(function(e) {
 			ui.addNotification(null, E('p', {}, [ _('Turn off failed: ') + e ]), 'error');
 		});
 
 	ui.showModal(_('Connecting…'), [ E('p', { 'class': 'spinning' }, [ _('Selecting server and starting Xray') ]) ]);
-	return callToggle(true).then(function(res) {
+	return api.serviceToggle(true).then(function(res) {
 		if (res && res.error) {
 			ui.hideModal();
 			ui.addNotification(null, E('p', {}, [ _('Connect failed: ') + res.error ]), 'error');
@@ -96,7 +93,7 @@ function exitCheck(self) {
 		'class': 'btn cbi-button',
 		'click': ui.createHandlerFn(self, function() {
 			exitEl.textContent = _('checking…');
-			return callCheckExit('').then(function(r) {
+			return api.checkExit('').then(function(r) {
 				if (r && r.error) exitEl.textContent = r.error;
 				else exitEl.textContent = (r.ip || '?') + ' — ' + (r.country || '?') + ' (' + (r.code || '?') + ')';
 			}).catch(function(e) { exitEl.textContent = '' + e; });
@@ -109,9 +106,6 @@ function exitCheck(self) {
 }
 
 return baseclass.extend({
-	// Дашборд берёт стартовый снимок отсюда же, чтобы rpc.declare('status') жил в одном месте.
-	fetch: function() { return callStatus(); },
-
 	render: function(st) {
 		var on = !!st.enabled;
 		var toggleOn = on;
@@ -134,7 +128,7 @@ return baseclass.extend({
 		// Вьюшка не поллилась вовсе: страница показывала снимок момента загрузки, поэтому переход
 		// в down пользователь замечал только вручную перезагрузив LuCI.
 		poll.add(function() {
-			return callStatus().then(function(cur) {
+			return api.status().then(function(cur) {
 				var next = phaseInfo(cur);
 				labelEl.textContent = next.label;
 				labelEl.style.color = next.color;

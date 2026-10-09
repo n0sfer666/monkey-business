@@ -99,7 +99,7 @@ chmod 755 "$stage/etc/init.d/mb-boothealth"
 
 # LuCI views + menu + acl
 mkdir -p "$stage/www/luci-static/resources/view/monkey-business"
-cp luci/htdocs/luci-static/resources/view/monkey-business/*.js \
+cp -R luci/htdocs/luci-static/resources/view/monkey-business/. \
 	"$stage/www/luci-static/resources/view/monkey-business/"
 cpf luci/root/usr/share/luci/menu.d/luci-app-monkey-business.json \
 	"$stage/usr/share/luci/menu.d/luci-app-monkey-business.json"
@@ -136,6 +136,7 @@ $SSH $SSH_OPTS -p "$PORT" "$HOST" "MB_RESPAWN='$RESPAWN' MB_ALLOW_MISSING='$ALLO
 	set -e
 	# сохранить пользовательский UCI-конфиг (url/серверы/выбор) между деплоями — как conffile
 	[ -f /etc/config/monkey-business ] && cp /etc/config/monkey-business /tmp/mb-cfg.keep
+	rm -rf /www/luci-static/resources/view/monkey-business
 	tar -C / -xzf /tmp/mb-deploy.tgz
 	[ -f /tmp/mb-cfg.keep ] && mv /tmp/mb-cfg.keep /etc/config/monkey-business
 	# подчистить возможные macOS AppleDouble-остатки (BusyBox find без -delete, поэтому rm по glob)

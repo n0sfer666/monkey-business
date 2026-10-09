@@ -1,6 +1,6 @@
 'use strict';
 'require view';
-'require rpc';
+'require view.monkey-business.api as api';
 'require uci';
 'require view.monkey-business.routing as mbroute';
 'require view.monkey-business.hysteria as mbhy';
@@ -10,18 +10,15 @@
 'require view.monkey-business.geo as mbgeo';
 'require view.monkey-business.serverlist as mbservers';
 
-var callServers = rpc.declare({ object: 'monkey-business', method: 'servers_list' });
-var callHyStatus = rpc.declare({ object: 'monkey-business', method: 'hysteria_status' });
-
 return view.extend({
 	load: function() {
 		// каждый вызов с фолбэком: один упавший ubus-метод не должен ронять всю вьюшку
 		return Promise.all([
-			mbstatus.fetch().catch(function() { return {}; }),
-			callServers().catch(function() { return {}; }),
+			api.status().catch(function() { return {}; }),
+			api.serversList().catch(function() { return {}; }),
 			uci.load('monkey-business').catch(function() { return null; }),
-			mbgeo.fetch().catch(function() { return {}; }),
-			callHyStatus().catch(function() { return {}; })
+			api.geoStatus().catch(function() { return {}; }),
+			api.hysteriaStatus().catch(function() { return {}; })
 		]);
 	},
 

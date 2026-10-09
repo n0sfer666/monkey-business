@@ -1,12 +1,10 @@
 'use strict';
 'require baseclass';
-'require rpc';
+'require view.monkey-business.api as api';
 'require ui';
 
 // Клиент hysteria2 — отдельный бинарь: в feeds его нет, а 15МБ в ipk ради второго протокола дорого.
 // Ставится кнопкой отсюда, тем же приёмом, что и geo-базы (фоновая закачка + поллинг статуса).
-var callStatus = rpc.declare({ object: 'monkey-business', method: 'hysteria_status' });
-var callInstall = rpc.declare({ object: 'monkey-business', method: 'hysteria_install' });
 
 function sleep(ms) {
 	return new Promise(function(r) { window.setTimeout(r, ms); });
@@ -24,7 +22,7 @@ function statusText(s) {
 function pollInstall() {
 	var tries = 0;
 	function step() {
-		return callStatus().then(function(s) {
+		return api.hysteriaStatus().then(function(s) {
 			if (!s || s.state !== 'updating' || ++tries >= 60) return s;
 			return sleep(2000).then(step);
 		});
@@ -39,7 +37,7 @@ return baseclass.extend({
 		var installBtn = E('button', {
 			'class': 'btn cbi-button cbi-button-apply',
 			'click': ui.createHandlerFn(this, function() {
-				return callInstall().then(function(res) {
+				return api.hysteriaInstall().then(function(res) {
 					if (res && res.error) {
 						ui.addNotification(null, E('p', {}, [ _('Install failed: ') + res.error ]), 'error');
 						return;

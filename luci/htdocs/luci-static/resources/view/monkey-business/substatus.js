@@ -1,11 +1,9 @@
 'use strict';
 'require baseclass';
-'require rpc';
+'require view.monkey-business.api as api';
 'require ui';
 'require view.monkey-business.subs as subs';
 'require view.monkey-business.icons as icons';
-
-var callSelect = rpc.declare({ object: 'monkey-business', method: 'subscription_select', params: ['sub'] });
 
 function reasonText(reason) {
 	if (reason === 'exhausted')
@@ -32,7 +30,7 @@ function bannerText(st) {
 
 function switchTo(selectEl, revertTo) {
 	ui.showModal(_('Switching subscription…'), [ E('p', { 'class': 'spinning' }, [ _('Selecting a server and applying') ]) ]);
-	return callSelect(selectEl.value).then(function(res) {
+	return api.subscriptionSelect(selectEl.value).then(function(res) {
 		ui.hideModal();
 		if (!(res && res.error))
 			return window.location.reload();

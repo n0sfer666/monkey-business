@@ -1,7 +1,7 @@
 'use strict';
 'require baseclass';
 'require form';
-'require rpc';
+'require view.monkey-business.api as api';
 'require ui';
 'require uci';
 'require view.monkey-business.subs as subs';
@@ -9,9 +9,6 @@
 'require view.monkey-business.pingtext as pingtext';
 
 var CONFIG = 'monkey-business';
-
-var callList = rpc.declare({ object: 'monkey-business', method: 'servers_list' });
-var callPing = rpc.declare({ object: 'monkey-business', method: 'servers_ping' });
 
 function notify(text, level) {
 	ui.addNotification(null, E('p', {}, [ text ]), level);
@@ -33,7 +30,7 @@ function byRank(a, b) {
 
 return baseclass.extend({
 	load: function() {
-		return callList();
+		return api.serversList();
 	},
 
 	create: function(list) {
@@ -58,7 +55,7 @@ return baseclass.extend({
 		}
 
 		function pingAll() {
-			return callPing().then(function(res) {
+			return api.serversPing().then(function(res) {
 				if (res && res.error)
 					return notify(_('Latency test failed: ') + res.error, 'warning');
 				update(res);
