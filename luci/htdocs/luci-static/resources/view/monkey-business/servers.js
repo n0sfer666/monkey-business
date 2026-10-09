@@ -9,16 +9,22 @@
 'require view.monkey-business.subsection as subsection';
 'require view.monkey-business.subs as subs';
 'require view.monkey-business.commit as commit';
+'require view.monkey-business.pinggrid as pinggrid';
 
 var callStatus = rpc.declare({ object: 'monkey-business', method: 'status' });
 var callApply = rpc.declare({ object: 'monkey-business', method: 'config_apply' });
 
 return view.extend({
-	render: function() {
+	load: function() {
+		return pinggrid.load();
+	},
+
+	render: function(list) {
+		var pings = pinggrid.create(list);
 		var m = new form.Map('monkey-business', _('Servers'),
 			_('Subscriptions (VPNON) and manual servers.'));
 
-		subsection.create(m);
+		subsection.create(m, pings.update);
 
 		var srv = m.section(form.GridSection, 'server', _('Manual servers'),
 			_('Add servers by hand, or reorder fetched ones. Lower priority connects first; if unreachable, the next is used.'));
@@ -48,6 +54,8 @@ return view.extend({
 			var id = subs.serverSub(uci.get('monkey-business', sid));
 			return id ? (uci.get('monkey-business', id, 'name') || id) : _('manual');
 		};
+
+		pings.attach(srv);
 
 		var off = srv.option(form.Flag, 'disabled', _('Off'),
 			_('Never used for connecting. Still listed and pinged.'));

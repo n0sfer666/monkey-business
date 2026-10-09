@@ -56,7 +56,7 @@ function newId() {
 }
 
 return baseclass.extend({
-	create: function(m) {
+	create: function(m, onPing) {
 		var s = m.section(form.TypedSection, 'subscription', _('Subscriptions'),
 			_('The selected subscription is used first; the others are a reserve. Switch it on the Dashboard.'));
 		s.anonymous = true;
@@ -117,7 +117,11 @@ return baseclass.extend({
 			_('Servers slower than 1 s or unreachable are skipped when connecting, until a later ping succeeds.'));
 		ping.renderWidget = function(sid) {
 			return icons.button('ping', _('Ping servers'), ui.createHandlerFn(this, function() {
-				return callSubPing(sid).then(notifyPing).catch(function(e) {
+				return callSubPing(sid).then(function(res) {
+					notifyPing(res);
+					if (!(res && res.error))
+						onPing(res);
+				}).catch(function(e) {
 					notify(_('Ping failed: ') + e, 'error');
 				});
 			}));

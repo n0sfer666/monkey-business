@@ -4,20 +4,13 @@
 'require ui';
 'require view.monkey-business.subs as subs';
 'require view.monkey-business.icons as icons';
+'require view.monkey-business.pingtext as pingtext';
 
 var callPing = rpc.declare({ object: 'monkey-business', method: 'servers_ping' });
 var callSubPing = rpc.declare({ object: 'monkey-business', method: 'subscription_ping', params: ['sub'] });
 var callServerPing = rpc.declare({ object: 'monkey-business', method: 'server_ping', params: ['id'] });
 
 var COLUMNS = 6;
-
-function pingText(ms, na, autoOff) {
-	if (na)
-		return _('n/a');
-	if (ms != null)
-		return ms + ' ms' + (autoOff ? ' · ' + _('auto-off') : '');
-	return autoOff ? _('down · auto-off') : '—';
-}
 
 function nameText(s, multi) {
 	var marks = [];
@@ -38,12 +31,6 @@ function groupTitle(key, st) {
 	return _('Reserve: ') + subs.name(st.subscriptions, key);
 }
 
-function resultsOf(res) {
-	if (res && res.results)
-		return res.results;
-	return (res && res.id != null) ? [ res ] : [];
-}
-
 return baseclass.extend({
 	render: function(servers, st) {
 		var multi = (st.subscriptions || []).length > 1;
@@ -53,10 +40,10 @@ return baseclass.extend({
 			return call.then(function(res) {
 				if (res && res.error)
 					return ui.addNotification(null, E('p', {}, [ _('Latency test failed: ') + res.error ]), 'warning');
-				resultsOf(res).forEach(function(r) {
+				pingtext.results(res).forEach(function(r) {
 					var cell = cells[r.id];
 					if (cell)
-						cell.textContent = pingText(r.latency_ms, r.na, r.auto_disabled);
+						cell.textContent = pingtext.text(r.latency_ms, r.na, r.auto_disabled);
 				});
 			}).catch(function(e) {
 				ui.addNotification(null, E('p', {}, [ _('Latency test failed: ') + e ]), 'error');
@@ -88,7 +75,7 @@ return baseclass.extend({
 		}
 
 		function serverRow(s) {
-			var pingTd = E('td', { 'class': 'td' }, [ pingText(s.latency_ms, s.ping_na, s.auto_disabled) ]);
+			var pingTd = E('td', { 'class': 'td' }, [ pingtext.text(s.latency_ms, s.ping_na, s.auto_disabled) ]);
 			cells[s.id] = pingTd;
 			return E('tr', { 'class': 'tr', 'style': s.disabled ? 'opacity:.55' : '' }, [
 				E('td', { 'class': 'td' }, [ '' + (s.priority != null ? s.priority : '-') ]),
