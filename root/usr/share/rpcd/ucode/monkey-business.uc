@@ -185,6 +185,7 @@ const methods = {
 	subscription_autoswitch: { args: { check: false, deadline: 0 }, call: function(req) { return hswitch.subscriptionAutoswitch(buildCtx(), req.args); } },
 	subscription_select:  { args: { sub: '' }, call: function(req) { return h.subscriptionSelect(buildCtx(), req.args); } },
 	parse_uri:            { args: { uri: '', section: '' }, call: function(req) { return huri.parseServerUri(buildCtx(), req.args); } },
+	server_link:          { args: { section: '' }, call: function(req) { return huri.serverLink(buildCtx(), req.args); } },
 	config_apply:         { args: { deadline: 0 }, call: function(req) { return h.configApply(buildCtx(), req.args); } },
 	service_toggle:       { args: { enabled: false }, call: function(req) { return h.serviceToggle(buildCtx(), req.args); } },
 	geo_update:           { args: { geoip_url: '', geosite_url: '' }, call: function(req) { return h.geoUpdate(buildCtx(), req.args); } },

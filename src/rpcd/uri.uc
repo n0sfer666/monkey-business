@@ -7,6 +7,8 @@ import { normalizeUri } from "../parser/subscription.uc";
 import { validateServer } from "../parser/validate.uc";
 import { flattenServer } from "../lib/servermap.uc";
 import { connectionKey } from "./subscription.uc";
+import { serverToUri } from "../lib/serveruri.uc";
+import { isManual } from "../lib/subs.uc";
 
 function nonEmptyLines(text) {
 	let out = [];
@@ -67,4 +69,12 @@ function parseServerUri(ctx, args) {
 	};
 }
 
-export { parseServerUri };
+function serverLink(ctx, args) {
+	let section = (args != null && args.section != null) ? "" + args.section : "";
+	for (let s in ctx.getServers())
+		if (section != "" && s[".name"] == section)
+			return isManual(s) ? { ok: true, link: serverToUri(s) } : { error: "not_manual" };
+	return { error: "not_found" };
+}
+
+export { parseServerUri, serverLink };

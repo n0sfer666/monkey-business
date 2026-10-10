@@ -25,6 +25,7 @@
 					"subscription_add",
 					"subscription_select",
 					"parse_uri",
+					"server_link",
 					"config_apply",
 					"service_toggle",
 					"geo_update",
