@@ -58,8 +58,11 @@ return baseclass.extend({
 		var release;
 
 		function outside(ev) {
-			if (!menu.contains(ev.target) && !anchor.contains(ev.target))
-				close(false);
+			if (menu.contains(ev.target) || anchor.contains(ev.target))
+				return;
+			if (ev.type === 'touchstart')
+				ev.preventDefault();
+			close(false);
 		}
 
 		function gone() {
@@ -106,7 +109,7 @@ return baseclass.extend({
 		var top = anchor.getBoundingClientRect().top;
 		anchor.setAttribute('aria-expanded', 'true');
 		document.addEventListener('mousedown', outside, true);
-		document.addEventListener('touchstart', outside, true);
+		document.addEventListener('touchstart', outside, { capture: true, passive: false });
 		window.addEventListener('resize', gone);
 		window.addEventListener('scroll', moved, true);
 		current = { anchor: anchor, close: close };
