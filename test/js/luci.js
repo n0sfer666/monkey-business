@@ -7,6 +7,12 @@ const OWN = 'view.monkey-business.';
 const REQUIRE = /^\s*'require\s+([\w.-]+)(?:\s+as\s+(\w+))?';/gm;
 const baseclass = { extend: (proto) => proto };
 
+if (!String.prototype.format)
+	String.prototype.format = function(...args) {
+		let i = 0;
+		return this.replace(/%[ds]/g, () => String(args[i++]));
+	};
+
 function dependency(name, cache) {
 	if (name === 'baseclass')
 		return baseclass;

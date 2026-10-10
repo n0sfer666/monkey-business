@@ -28,11 +28,11 @@ return baseclass.extend({
 			'aria-label': o.label,
 			'spellcheck': 'false',
 			'autocomplete': 'off',
-			'size': Math.max(4, Math.min(o.size || 24, saved.length + 1))
+			'size': Math.max(4, Math.min(o.size || 24, Math.max(saved.length, shown(o, saved).length, (o.placeholder || '').length) + 1))
 		});
 
 		function commit() {
-			var next = input.value.trim();
+			var next = o.normalize ? o.normalize(input.value.trim()) : input.value.trim();
 			var bad = o.validate ? o.validate(next) : null;
 			input.classList.toggle('mb-bad', !!bad);
 			input.title = bad || '';

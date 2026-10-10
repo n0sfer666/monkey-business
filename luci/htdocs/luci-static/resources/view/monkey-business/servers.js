@@ -6,7 +6,8 @@
 'require uci';
 'require view.monkey-business.serverfields as fields';
 'require view.monkey-business.serverlink as link';
-'require view.monkey-business.subsection as subsection';
+'require view.monkey-business.srv.subpanel as subpanel';
+'require view.monkey-business.model.subs as submodel';
 'require view.monkey-business.subs as subs';
 'require view.monkey-business.store as store';
 'require view.monkey-business.pinggrid as pinggrid';
@@ -18,10 +19,7 @@ return view.extend({
 
 	render: function(list) {
 		var pings = pinggrid.create(list);
-		var m = new form.Map('monkey-business', _('Servers'),
-			_('Subscriptions (VPNON) and manual servers.'));
-
-		subsection.create(m, pings.update);
+		var m = new form.Map('monkey-business');
 
 		var srv = m.section(form.GridSection, 'server', _('Manual servers'),
 			_('Add servers by hand, or reorder fetched ones. Lower priority connects first; if unreachable, the next is used.'));
@@ -70,6 +68,7 @@ return view.extend({
 			return wait ? wait.then(save, save) : save();
 		};
 
+		var self = this;
 		return m.render().then(function(node) {
 			node.appendChild(E('style', { 'type': 'text/css' },
 				'#cbi-monkey-business-server .cbi-section-table-titles > * {' +
@@ -90,16 +89,29 @@ return view.extend({
 			var sec = node.querySelector('#cbi-monkey-business-server');
 			if (sec)
 				new MutationObserver(wrapTable).observe(sec, { childList: true });
-			return node;
+			self.panel = subpanel.create({ map: m, onPing: pings.update });
+			return E('div', {}, [ self.panel.node, node ]);
 		});
+	},
+
+	handleReset: function() {
+		return this.panel.refresh();
 	},
 
 	// Save & Apply: commit формы (порядок/серверы/URL), и если VPN включён — переприменить конфиг,
 	// чтобы переключиться на новый первый-по-приоритету сервер. handleSave без apply раньше оставлял
 	// изменения в "Unsaved Changes".
 	handleSaveApply: function(ev, mode) {
+		var self = this, ids = [];
 		return this.handleSave(ev).then(function() {
+			return store.changes();
+		}).then(function(changes) {
+			ids = submodel.refetch(changes, store.sections('subscription').map(function(s) { return s['.name']; }));
 			return store.commit();
+		}).then(function() {
+			return self.panel.refetch(ids);
+		}).then(function() {
+			return ids.length ? self.panel.refresh() : null;
 		}).then(function() {
 			return api.status();
 		}).then(function(st) {

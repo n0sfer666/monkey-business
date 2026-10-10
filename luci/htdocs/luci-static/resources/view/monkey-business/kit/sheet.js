@@ -75,6 +75,11 @@ return baseclass.extend({
 				o.onClose();
 		}
 
+		function dismiss() {
+			if (!(o.locked && o.locked()))
+				close();
+		}
+
 		dialog = E('div', {
 			'class': 'mb-sheet',
 			'role': o.role || 'dialog',
@@ -91,7 +96,7 @@ return baseclass.extend({
 					E('h2', { 'id': id }, [ o.title ]),
 					o.hint ? E('div', { 'class': 'mb-muted mb-small' }, [ o.hint ]) : ''
 				]),
-				o.closable === false ? '' : closer(close)
+				o.closable === false ? '' : closer(dismiss)
 			]),
 			E('div', { 'class': 'mb-sheet-body', 'id': id + '-d' }, o.body ? [ o.body ] : []),
 			E('div', { 'class': 'mb-sheet-foot' }, o.actions || [])
@@ -100,7 +105,7 @@ return baseclass.extend({
 		ovl = E('div', { 'class': 'mb mb-ovl' }, [ dialog ]);
 		ovl.addEventListener('mousedown', function(ev) {
 			if (ev.target === ovl)
-				close();
+				dismiss();
 		});
 		ovl.addEventListener('keydown', function(ev) {
 			if (ev.key === 'Tab')
@@ -108,7 +113,7 @@ return baseclass.extend({
 			if (ev.key !== 'Escape')
 				return;
 			ev.stopPropagation();
-			close();
+			dismiss();
 		});
 		document.body.appendChild(ovl);
 		muted = silence(ovl);

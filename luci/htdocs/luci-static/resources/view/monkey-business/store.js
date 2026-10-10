@@ -19,6 +19,9 @@ return baseclass.extend({
 	sections: function(type, cb) { return uci.sections(CONF, type, cb); },
 
 	dirty: function() { return dirty.pending(uci.state, CONF); },
+	changes: function() {
+		return uci.changes().then(function(c) { return (c && c[CONF]) || []; });
+	},
 	save: function() { return uci.save(); },
 
 	reset: function() {

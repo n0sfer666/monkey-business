@@ -2,6 +2,7 @@
 'require baseclass';
 'require form';
 'require view.monkey-business.api as api';
+'require view.monkey-business.kit.notify as notice';
 'require ui';
 'require uci';
 'require view.monkey-business.subs as subs';
@@ -9,10 +10,6 @@
 'require view.monkey-business.pingtext as pingtext';
 
 var CONFIG = 'monkey-business';
-
-function notify(text, level) {
-	ui.addNotification(null, E('p', {}, [ text ]), level);
-}
 
 function idOf(sid) {
 	return subs.serverId(uci.get(CONFIG, sid));
@@ -57,10 +54,10 @@ return baseclass.extend({
 		function pingAll() {
 			return api.serversPing().then(function(res) {
 				if (res && res.error)
-					return notify(_('Latency test failed: ') + res.error, 'warning');
+					return notice.show(_('Latency test failed: ') + res.error, 'warning');
 				update(res);
 			}).catch(function(e) {
-				notify(_('Latency test failed: ') + e, 'error');
+				notice.show(_('Latency test failed: ') + e, 'error');
 			});
 		}
 
@@ -79,7 +76,7 @@ return baseclass.extend({
 					uci.move(CONFIG, sid, prev, true);
 				prev = sid;
 			});
-			notify(_('Sorted by ping. Press "Save & Apply" to connect in this order.'), 'info');
+			notice.show(_('Sorted by ping. Press "Save & Apply" to connect in this order.'), 'info');
 		}
 
 		((list && list.servers) || []).forEach(function(s) {

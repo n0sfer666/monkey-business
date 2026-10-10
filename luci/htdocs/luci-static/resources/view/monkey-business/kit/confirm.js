@@ -2,6 +2,7 @@
 'require baseclass';
 'require view.monkey-business.kit.style as style';
 'require view.monkey-business.kit.sheet as sheet';
+'require view.monkey-business.kit.icons as icons';
 
 style.add('confirm', [
 	'.mb .mb-confirm-ico{display:flex;align-items:center;justify-content:center;flex-shrink:0;width:36px;height:36px;',
@@ -9,14 +10,11 @@ style.add('confirm', [
 	'.mb .mb-confirm-body{color:var(--mb-text-2)}'
 ].join(''));
 
-var TRASH = '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">' +
-	'<path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"></path></svg>';
-
 var KIND = { 'cancel': 'mb-btn', 'second': 'mb-btn', 'danger': 'mb-btn mb-btn-danger', 'primary': 'mb-btn mb-btn-primary' };
 
 function icon() {
 	var el = E('div', { 'class': 'mb-confirm-ico' });
-	el.innerHTML = TRASH;
+	el.innerHTML = icons.TRASH;
 	return el;
 }
 

@@ -58,7 +58,7 @@ var BASE = [
 	MOBILE + '{',
 	'.mb{font-size:14px}',
 	'.mb .mb-btn{border-radius:8px;padding:10px 14px}',
-	'.mb .mb-icon{width:36px;height:36px}',
+	'.mb .mb-icon{width:36px;height:36px;padding:0}',
 	'.mb .mb-input{border-radius:8px;padding:8px 10px}',
 	'.mb select.mb-input{padding-right:34px}',
 	'.mb .mb-check{width:22px;height:22px}',

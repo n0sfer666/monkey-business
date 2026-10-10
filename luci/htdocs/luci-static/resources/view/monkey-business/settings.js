@@ -5,6 +5,7 @@
 'require view.monkey-business.api as api';
 'require view.monkey-business.store as store';
 'require view.monkey-business.kit.style as style';
+'require view.monkey-business.kit.notify as notice';
 'require view.monkey-business.set.sections as sections';
 
 style.add('set-view', [
@@ -21,16 +22,12 @@ style.add('set-view', [
 	'}'
 ].join(''));
 
-function notify(text, level) {
-	ui.addNotification(null, E('p', {}, [ text ]), level);
-}
-
 function report(res) {
 	if (res && res.error)
-		return notify(_('Apply failed: ') + res.error, 'warning');
+		return notice.show(_('Apply failed: ') + res.error, 'warning');
 	if (res && res.skipped == 'disabled')
-		return notify(_('Saved. The VPN is off — settings will apply when you turn it on.'), 'info');
-	notify(_('Configuration applied.'), 'info');
+		return notice.show(_('Saved. The VPN is off — settings will apply when you turn it on.'), 'info');
+	notice.show(_('Configuration applied.'), 'info');
 }
 
 return view.extend({
@@ -91,7 +88,7 @@ return view.extend({
 
 	doSave: function() {
 		return store.save().catch(function(e) {
-			notify(_('Save failed: ') + e, 'error');
+			notice.show(_('Save failed: ') + e, 'error');
 		}).then(this.draw.bind(this));
 	},
 
@@ -99,7 +96,7 @@ return view.extend({
 		return store.apply().then(function() {
 			return api.configApply();
 		}).then(report).catch(function(e) {
-			notify(_('Apply failed: ') + e, 'error');
+			notice.show(_('Apply failed: ') + e, 'error');
 		}).then(this.draw.bind(this));
 	}
 });
