@@ -3,6 +3,8 @@
 Статус: архитектура согласована 2026-10-10 (ADR `decisions/2026-10-10-own-dom-ui.md`); итерации 1–3
 сделаны 2026-10-10 (kit, `api.js`, `store.js`, Settings, Servers) и прогнаны в dev-VM — ждут прогона
 runbook на R2S (`specs/2026-10-10-compact-ui-runbook.md`). Дальше — итерация 4 (Dashboard).
+Критерии готовности — `2026-10-10-compact-ui-acceptance.md`; аудит итераций 1–3 по ним (fail, список
+расхождений под спеки исправлений) — `2026-10-10-compact-ui-audit.md`.
 Макет: https://claude.ai/artifact/Qi9eCMkVJJSUMzKcLT3TFF (версия 30). Источник правды по виду —
 борды макета; эта спека фиксирует поведение и архитектуру.
 

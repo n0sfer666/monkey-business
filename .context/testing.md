@@ -14,6 +14,11 @@
   Загрузчик `test/js/luci.js` подменяет `baseclass.extend` и `_()`, резолвит только
   `view.monkey-business.*`; модуль, тянущий LuCI (`uci`, `ui`, `dom`), падает — так `model/` держится
   без DOM. Вид и поведение экранов — ручной runbook на R2S (`specs/2026-10-10-compact-ui-runbook.md`).
+- **Приёмка UI** (T3): критерии `specs/2026-10-10-compact-ui-acceptance.md`, последний аудит
+  `specs/2026-10-10-compact-ui-audit.md`. Playwright Chromium + WebKit против dev-VM; борды макета
+  рендерятся локально (`support.js` = dc-runtime, состояния через `window.__dcSetProps`). WebKit
+  обязателен: Safari не фокусирует кнопки по Tab и клику — ловушки фокуса и возврат на триггер
+  ломаются только там.
 
 ## Правило переосмысления тестов
 Шаг, меняющий контракт предыдущего, ОБЯЗАН ревизовать его тесты:

@@ -1,0 +1,191 @@
+# Компактный UI — аудит по критериям готовности
+
+Дата: 2026-10-10. Критерии — `2026-10-10-compact-ui-acceptance.md`. Реализация — ветка `dev` @ 2fff764,
+QEMU dev-VM (LuCI localhost:8090). Макет — артефакт Qi9eCMkVJJSUMzKcLT3TFF v30, борды отрендерены
+локально. Браузеры — Playwright Chromium и WebKit (десктоп и телефон 390 с touch).
+Скриншоты и логи лежат локально в `.context/investigations/2026-10-10-compact-ui-audit/` (gitignored):
+`sbs/` — пары «макет | реализация», `impl/`, `mock/`, `ovl/`, `nav/`, `widths/`, `func/`, `*.log`.
+
+**Вердикт: ни один экран не готов.** По порогу «ноль расхождений» все три вкладки — fail. Поведение
+по runbook в основном проходит. Вид расходится с макетом везде, кроме мобильных подтверждений и
+подложки.
+
+## Сводка по экранам
+
+| Экран / борд | Поведение | Макет | Конфликт спеки и макета |
+|---|---|---|---|
+| Dashboard / `Main`, `MobileDashboard` | fail — итерация 4 не сделана | fail — старый LuCI-вид | — |
+| Servers / `Servers` | pass (staged-шаги) | fail | h1 + подзаголовок |
+| Servers / `MobileServers` | pass (staged-шаги) | fail — строки вместо плиток | — |
+| Settings / `Settings`, `MobileSettings` | pass (staged-шаги) | fail | h1 + подзаголовок |
+| Routing / Geo (`*RoutingModal`, `*GeoModal`) | fail — модалок нет | fail — нечего сверять | — |
+| Add subscription / `SubModal`, `MobileSubModal` | fail — фокус после клика по подложке в busy | fail | — |
+| Add / edit server / `ServerModal`, `MobileServerModal` | fail в WebKit (Tab, фокус) | fail | — |
+| Delete / `ConfirmModal`, `MobileConfirmModal` | fail в WebKit (Tab, Esc) | 1280 близко (замер не полный), 390 pass | — |
+| ⋮-меню | fail — Tab выводит наружу | pass по снимку | — |
+
+## Поведение — что прошло
+
+Без Save / Save & Apply: состояние VM не меняли, каждый шаг откатывали через Reset. Прогон в
+Chromium 1280 и 390 и в WebKit 390. Лог — `func-mobile.log`, десктоп — вывод `func.js`.
+
+- Settings:
+  - clean-состояние: Reset и Save неактивны;
+  - Kill-switch toggle и обратно;
+  - Log level → Reset;
+  - порт 0 / 70000 / abc / пусто → «Enter a number from 1 to 65535», Save и Save & Apply
+    неактивны → 12345.
+- Servers:
+  - фильтр Manual (5→1 строка);
+  - Ping all: «Pinging N servers…», Sort by ping неактивна;
+  - Sort by ping: порядок меняется, плашка «Sorted by ping…» → Reset;
+  - Off (клик и Space) → бейдж off;
+  - перестановка grip + ArrowDown, фокус остаётся на grip → Reset;
+  - Add server: `vmess://abc` → «Protocol vmess is not supported»; валидная vless → «Valid link» и
+    чипы → Add → +1 строка → Reset;
+  - удаление ручного сервера (текст с «removed for good») → Reset;
+  - пустое имя подписки → красная рамка и title «Name must not be empty»;
+  - интервал 5 → «Minimum is 10 min, will be saved as 10» (warn);
+  - Add subscription:
+    - ftp:// → кнопка неактивна;
+    - https://192.0.2.1 → «Fetching…», Esc и подложка не закрывают;
+    - затем плашка «Couldn't fetch the subscription».
+- Мобилка:
+  - шестерёнка → плитки по 3 в ряд → «Moving “…”» → тап-тап → Reset;
+  - ⋮ → Ping / Turn off / Delete → Turn off → бейдж off, фокус на ⋮;
+  - переключатель Auto-update → ползунок 10 min / 1 h / 2 h.
+- Навигация на 390 (Д.4):
+  - переходы с каждой вкладки на каждую, по 6 в Chromium и WebKit, плюс 4 повтора по 6 переходов:
+    0 зависаний из 48;
+  - прямая ссылка, перезагрузка и «назад» — ok.
+  - **Жалоба «на мобилке грузится только Settings» в VM не воспроизведена.** Её нужно проверить на
+    живом телефоне.
+- Ширины (Д.2), Servers и Settings:
+  - 1440 / 1280 / 1100 / 800 / 722 / 720 / 390 / 360, оба движка;
+  - нет горизонтального скролла, обрезаний и переноса кнопок;
+  - контраст ≥ 4.5.
+- Ошибки (Г): ни одного console/network-сбоя от приложения. Всё пойманное — сбросы slirp
+  (`ERR_CONNECTION_RESET`, `L is not defined`); после повтора страница работает, по Г.4 это допустимо.
+- Оверлеи в Chromium 1280: открытие с клавиатуры, фокус внутри, ловушка Tab, Esc, ×, Cancel,
+  подложка и возврат фокуса на триггер — pass для всех 6.
+
+## Расхождения
+
+Severity: B — blocker, M — major, m — minor. Тема «обе» — одинаково в тёмной и светлой.
+Браузер «оба» — Chromium и WebKit.
+
+### Группа 1. Dashboard — итерация 4
+
+| # | Борд | Ширина | Тема | Браузер | Ожидалось | Есть | Sev | Скриншот |
+|---|---|---|---|---|---|---|---|---|
+| D1 | Main / MobileDashboard | 1280, 390 | обе | оба | Карта статуса (Connected / Turn off), выбор подписки, Exit IP + Check, трафик Hide/Show, список серверов с фильтром и Connect, карточка Routing (Mode / Region, чипы, Custom rules Edit), Components (geo Update…, hysteria2 Update), блок «geo data is missing» | Старый LuCI-вид: Subscription traffic, Status, Split, Custom routing, Geo databases, hysteria2, Servers. Ни одного блока бордов | B | `sbs/*-dashboard.png` |
+| D2 | RoutingModal / GeoModal (+Mobile) | 1280, 390 | обе | оба | Модалки Custom rules и Geo databases | Нет | B | `mock/RoutingModal--default.png`, `mock/GeoModal--default.png` |
+| D3 | — | 1280 | тёмная | оба | Контраст ≥ 4.5 | 4.49 (#888 на #222) | m | `widths/` |
+| D4 | — | 1280 | светлая | оба | Контраст ≥ 4.5 | 3.54 и 3.38 (#33a02c на белом) | m | `widths/` |
+| D5 | — | 390, 360 | тёмная | WebKit | Нет горизонтального скролла | scrollWidth 427 | M | `widths/webkit-390-*dashboard*` |
+
+D3–D5 относятся к старому виду и уйдут вместе с D1.
+
+### Группа 2. Хром — вкладки
+
+| # | Борд | Ширина | Тема | Браузер | Ожидалось | Есть | Sev | Скриншот |
+|---|---|---|---|---|---|---|---|---|
+| H1 | Servers / Settings | 1280 | обе | оба | Подчёркивание активной вкладки, fs 13, fw 600/500, активная #e7e9ec | LuCI cbi-tabmenu в рамках, fs 14, fw 400, активная #4da1c0 | M | `sbs/chromium-1280-dark-servers.png` |
+| H2 | Mobile* | 390 | обе | оба | Сегменты на всю ширину, активная подсвечена | Те же LuCI-вкладки в рамках | M | `sbs/chromium-390-dark-servers.png` |
+
+### Группа 3. Servers — подписки
+
+| # | Борд | Ширина | Тема | Браузер | Ожидалось | Есть | Sev | Скриншот |
+|---|---|---|---|---|---|---|---|---|
+| P1 | Servers | 1280 | обе | оба | Заголовки колонок над ячейками | URL, Auto-update и Traffic смещены относительно ячеек | M | `sbs/chromium-1280-dark-servers.png` |
+| P2 | Servers | 1280, 722 | обе | оба | Трафик в одну строку | Переносится: на 1280 в 2 строки, на 722 в 5 | M | `widths/chromium-722-*servers*` |
+| P3 | Servers | 1280 | обе | оба | Поле Name ~232px | ~114px | m | там же |
+| P4 | MobileServers | 390 | обе | оба | Бейдж и имя рядом, строка «Updated [DATE]» | Имя справа, «Updated» нет | M | `sbs/chromium-390-dark-servers.png` |
+| P5 | MobileServers | 390 | обе | оба | Auto-update — строка на всю ширину с переключателем | Компактная плашка; ползунок появляется только при включении | M | `func/chromium-390-autoupdate.png` |
+| P6 | MobileServers | 390 | обе | оба | «+ Add»: fs 13, h 32, rad 6 | fs 14, h 40, rad 8 | m | `sbs/chromium-390-dark-servers.png` |
+
+### Группа 4. Servers — список, плитки, панель
+
+| # | Борд | Ширина | Тема | Браузер | Ожидалось | Есть | Sev | Скриншот |
+|---|---|---|---|---|---|---|---|---|
+| S1 | MobileServers | 390 | обе | оба | Плитки по 3 в ряд с ⋮ (и спека: «серверы — плитки с ⋮») | Список строк с ⋮; плитки только в режиме перестановки | M | `sbs/chromium-390-dark-servers.png` |
+| S2 | MobileServers | 390 | обе | оба | Шапка «Servers ⚙» + иконки [ping][sort][+] | Кнопка «+ Add server», ⚙ и отдельный ряд Ping all / Sort by ping | M | там же |
+| S3 | MobileServers | 390 | обе | оба | Фильтр — чипы (rad 14, h 28) | Сегменты на всю ширину (h 36) | M | там же |
+| S4 | Servers | 1280 | обе | оба | Ping all и Sort by ping с иконками (w 86 и 116) | Без иконок (w 70 и 100) | m | `sbs/chromium-1280-dark-servers.png` |
+| S5 | Servers | 1280 | обе | оба | Кнопки h 28 | h 31 | m | там же |
+| S6 | Servers | 1280 | обе | оба | Фильтр All/Manual: fw 400, rad 4, h 24 | fw 600/500, rad 6, h 27 | m | там же |
+| S7 | Servers | 1280 | тёмная | оба | Бейдж active: rad 0, h 15; Fetch/Ping rad 5; «vless / reality» #9ba1a8 | rad 4, h 19; rad 6; #e7e9ec | m | там же |
+| S8 | Servers | 1280 | обе | оба | Сноски под таблицей нет | «The first server that answers is used…» | M | там же |
+
+### Группа 5. Settings
+
+| # | Борд | Ширина | Тема | Браузер | Ожидалось | Есть | Sev | Скриншот |
+|---|---|---|---|---|---|---|---|---|
+| T1 | Settings | 1280 | обе | оба | Три панели на всю ширину | Панели ~285px и не растягиваются (на 1100 растягиваются) | M | `sbs/chromium-1280-dark-settings.png` |
+| T2 | Settings | 1280 | обе | оба | «DNS mode» в одну строку | Перенос в 2 строки | M | там же |
+| T3 | Settings | 1280 | обе | оба | Шапка панели h 17, описание — span 15px | h 36, описание — div 35px | m | там же |
+| T4 | Settings | 1280 | обе | оба | Direct DNS, DoH URL, порт — mono, h 27 | sans, h 30 | m | там же |
+| T5 | Settings | 1280 | тёмная | оба | Чекбокс XHTTP padding (unchecked) — светлый | тёмный | m | там же |
+| T6 | Settings | 1280 | обе | оба | Метка «Log level» по центру строки | Выровнена по верху | m | там же |
+| T7 | MobileSettings | 390 | обе | оба | Поля fs 14, h 32–35, rad 6; метки fs 14; заголовки панелей 15 | 16 / 40 / 8; 13; 14 | m | `sbs/chromium-390-dark-settings.png` |
+
+### Группа 6. Оверлеи — фокус, скролл, вид
+
+| # | Борд | Ширина | Тема | Браузер | Ожидалось | Есть | Sev | Скриншот |
+|---|---|---|---|---|---|---|---|---|
+| O1 | все шторки и подтверждения, ⋮-меню | 390 (и 1280 по коду) | обе | оба | Страница под оверлеем не скроллится (Б.4) | Скроллится: в `kit/sheet.js` нет блокировки скролла. На 1280 не проявилось — страница короче вьюпорта | M | `ovl/chromium-390-*` |
+| O2 | шторки (×5), подтверждения (×14) | 1280, 390 | обе | WebKit | Tab не выходит из оверлея | Выходит: Safari не фокусирует кнопки по Tab, а trap срабатывает только на краевом элементе | M | `ovl/webkit-*` |
+| O3 | подтверждения | 1280, 390 | обе | WebKit | Esc закрывает | После утечки фокуса (O2) Esc не закрывает: слушатель висит на `.mb-ovl` | M | там же |
+| O4 | все | 1280, 390 | обе | WebKit | После закрытия фокус на триггере | Фокус уходит на `lang_en`: Safari не фокусирует кнопку по клику, а sheet.js берёт `document.activeElement` | M | там же |
+| O5 | SubModal (busy) | 1280, 390 | обе | оба | Клик по подложке в busy игнорируется, фокус остаётся внутри | Шторка не закрывается, но фокус уходит на body (mousedown без preventDefault). После этого Esc и ловушка Tab не работают, даже когда busy закончился | M | `func/*-addsub-failed.png` |
+| O6 | ⋮-меню | 390 | обе | оба | Tab не уходит наружу (Б.3) | Tab закрывает меню, фокус уходит в шапку LuCI. Это ARIA-практика для menu — нужно решение, см. «Конфликты» | M? | `ovl/*menu*` |
+| O7 | SubModal / ServerModal | 1280 | обе | оба | Ширина 542 / 560 | 480 / 520 (Confirm 440 = 440) | m | `sbs/ovl-*-1280.png` |
+| O8 | SubModal--failed (+Mobile) | 1280, 390 | обе | оба | Плашка ошибки с иконкой ⓘ вверху, над Name | Плашка без иконки внизу, после подсказки URL | M | `sbs/sub-failed-1280.png`, `sbs/m-sub-failed-390.png` |
+| O9 | MobileSubModal / MobileServerModal | 390 | обе | оба | Высокая шторка (Sub 748px от top 96, Server 604px); кнопки в ряд: Cancel 78 | primary 271 | Шторка по контенту (386 / 422); кнопки стопкой на всю ширину, primary сверху | M | `sbs/m-add-sub-390.png`, `sbs/m-add-server-390.png` |
+
+### Группа 7. Тексты
+
+| # | Борд | Ширина | Ожидалось | Есть | Sev |
+|---|---|---|---|---|---|
+| X1 | ServerModal (+Mobile) | 1280, 390 | Метка «Server link», кнопка «Add server» | «Link», «Add» | m |
+| X2 | Servers | 1280 | В трафике «… · [DATE]» | «… · until [DATE]» | m |
+| X3 | MobileSettings | 390 | Сокращённые подсказки: «Drop LAN traffic instead of leaking it direct», «Nothing leaks around the IPv4 tunnel», «Split: local domains direct, foreign over DoH», «Everything via the VPN resolves here» | Полные десктопные тексты | m |
+| X4 | MobileServers | 390 | Подсказка внизу как в борде | Другая | m |
+| X5 | Servers / Settings | 1280, 390 | Подзаголовки «Row order is the connect priority» / «Defaults are safe» | «Changes stay local until Save & Apply.» / «Each option has a hint. Defaults are safe.» (связано с конфликтом K1) | m |
+
+## Конфликты спеки и макета — на решение
+
+- **K1.** В бордах Servers и Settings есть h1 с подзаголовком, а в спеке компактного UI «h1 нет».
+  По критерию А.7 правда за макетом, но пока решения нет, это не дефект.
+- **K2.** ⋮-меню и Tab. По ARIA-практике для `role=menu` Tab закрывает меню, а критерий Б.3 требует
+  не выпускать фокус наружу. Нужно выбрать: оставить ARIA-поведение и сузить Б.3 для меню, или
+  держать фокус.
+
+## Не проверено
+
+- Save / Save & Apply и всё, что идёт после применения: шаги runbook с перезапуском xray, удаление
+  подписки с сохранением, connect. Причина — аудит не меняет состояние VM.
+- Состояния бордов, которые нельзя воспроизвести:
+  - `Main` geo missing / traffic unlimited, `MobileDashboard` missing — нет экрана (D1);
+  - `ConfirmModal` delete-sub — в VM одна подписка, вторую без успешного fetch не добавить;
+  - `RoutingModal` с ошибками строк — нет модалки (D2).
+- Визуальная сверка `Servers--checking`, `ServerModal--edit`, мобильного ⋮-меню в режиме перестановки:
+  поведение проверено, полный замер стилей не делал.
+- Светлая тема оверлеев — снимки только тёмные.
+- Меню Services → Monkey Business в WebKit: tap не держит выпадающее меню LuCI (click работает).
+  Это тема LuCI, наблюдение, не дефект приложения.
+- Живой телефон: жалоба «грузится только Settings» в VM не воспроизвелась (см. выше).
+
+## Попутно
+
+- `make help` не показывает цель `dev-down`, хотя она есть в Makefile.
+
+## Предлагаемые спеки исправлений
+
+1. Dashboard — итерация 4 (группа 1) — самая большая.
+2. Хром вкладок (группа 2) — общий для всех экранов, делать до сверки остальных.
+3. Оверлеи (группа 6, O1–O5, O7–O9): скролл-лок, ловушка Tab на всех элементах, Esc на document,
+   запоминание триггера, preventDefault на подложке, вид Sub/Server-шторок. Затрагивает все модалки.
+4. Servers (группы 3 и 4): мобильные плитки и шапка — отдельно от правок таблицы подписок на десктопе.
+5. Settings (группа 5).
+6. Тексты (группа 7) — после решения по K1.
