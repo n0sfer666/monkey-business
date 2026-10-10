@@ -1,6 +1,7 @@
 'use strict';
 'require baseclass';
 'require view.monkey-business.kit.style as style';
+'require view.monkey-business.kit.scrolllock as scrolllock';
 
 style.add('menu', [
 	'.mb.mb-menu{position:fixed;z-index:1001;width:220px;max-width:calc(100vw - 16px);padding:4px;background:var(--mb-pop);',
@@ -54,6 +55,7 @@ return baseclass.extend({
 			return;
 
 		var menu = E('div', { 'class': 'mb mb-menu', 'role': 'menu' });
+		var release;
 
 		function outside(ev) {
 			if (!menu.contains(ev.target) && !anchor.contains(ev.target))
@@ -76,6 +78,7 @@ return baseclass.extend({
 			document.removeEventListener('touchstart', outside, true);
 			window.removeEventListener('resize', gone);
 			window.removeEventListener('scroll', moved, true);
+			release();
 			menu.parentNode.removeChild(menu);
 			anchor.setAttribute('aria-expanded', 'false');
 			current = null;
@@ -97,6 +100,7 @@ return baseclass.extend({
 			}
 		});
 
+		release = scrolllock.lock();
 		document.body.appendChild(menu);
 		place(menu, anchor);
 		var top = anchor.getBoundingClientRect().top;

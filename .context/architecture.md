@@ -105,3 +105,8 @@
 
 ## Ключевые решения
 Полная спецификация и обоснования: `.context/specs/2026-06-05-monkey-business-vpn-client.md`.
+- LuCI-оверлеи (`luci/…/monkey-business/kit/`): `layers.js` — стек слоёв (Esc / Tab на document, inert
+  страницы и нижних слоёв за верхним, IME и `defaultPrevented` пропускает), `scrolllock.js` — лок
+  скролла со счётчиком и компенсацией скроллбара, `trigger.js` — триггер по клику (Safari кнопки не
+  фокусирует), `focusable.js` — Tab по кругу. Новый оверлей — через `layers.push` + `scrolllock.lock`,
+  без своих keydown / inert. Runbook — раздел «Оверлеи» в `specs/2026-10-10-compact-ui-runbook.md`.

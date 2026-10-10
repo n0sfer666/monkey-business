@@ -1,6 +1,10 @@
 'use strict';
 'require baseclass';
 'require view.monkey-business.kit.style as style';
+'require view.monkey-business.kit.focusable as focusable';
+'require view.monkey-business.kit.scrolllock as scrolllock';
+'require view.monkey-business.kit.layers as layers';
+'require view.monkey-business.kit.trigger as trigger';
 
 style.add('sheet', [
 	'.mb.mb-ovl{position:fixed;inset:0;z-index:1000;display:flex;align-items:center;justify-content:center;padding:16px;',
@@ -27,8 +31,6 @@ var CROSS = '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke=
 	'<path d="M6 6l12 12M18 6L6 18"></path></svg>';
 
 var seq = 0;
-var FOCUSABLE = 'button:not([disabled]),input:not([disabled]),select:not([disabled]),textarea:not([disabled]),' +
-	'a[href],[tabindex]:not([tabindex="-1"])';
 
 function closer(onClose) {
 	var btn = E('button', { 'type': 'button', 'class': 'mb-btn mb-icon', 'aria-label': _('Close'), 'click': onClose });
@@ -36,41 +38,20 @@ function closer(onClose) {
 	return btn;
 }
 
-function silence(ovl) {
-	return Array.prototype.filter.call(document.body.children, function(el) {
-		return el !== ovl && !el.inert;
-	}).map(function(el) {
-		el.inert = true;
-		return el;
-	});
-}
-
-function trap(dialog, ev) {
-	var items = dialog.querySelectorAll(FOCUSABLE);
-	if (!items.length)
-		return ev.preventDefault();
-	var at = document.activeElement;
-	var edge = ev.shiftKey ? items[0] : items[items.length - 1];
-	if (at !== edge && at !== dialog && dialog.contains(at))
-		return;
-	ev.preventDefault();
-	(ev.shiftKey ? items[items.length - 1] : items[0]).focus();
-}
-
 return baseclass.extend({
 	open: function(o) {
 		var id = 'mb-sheet-' + (++seq);
-		var back = document.activeElement;
-		var muted = [];
-		var ovl, dialog;
+		var back = trigger.back();
+		var ovl, dialog, release, pop, pressed;
 
 		function close() {
 			if (!ovl.parentNode)
 				return;
-			muted.forEach(function(el) { el.inert = false; });
 			ovl.parentNode.removeChild(ovl);
+			var top = pop();
+			release();
 			var to = back && back.isConnected ? back : o.back && o.back();
-			if (to && to.focus)
+			if (top && to && to.focus)
 				to.focus();
 			if (o.onClose)
 				o.onClose();
@@ -104,20 +85,34 @@ return baseclass.extend({
 		]);
 
 		ovl = E('div', { 'class': 'mb mb-ovl' }, [ dialog ]);
+		ovl.addEventListener('pointerdown', function(ev) {
+			pressed = ev.target === ovl;
+			if (pressed)
+				ev.preventDefault();
+		});
 		ovl.addEventListener('mousedown', function(ev) {
 			if (ev.target === ovl)
+				ev.preventDefault();
+		});
+		ovl.addEventListener('pointerup', function(ev) {
+			pressed = pressed && ev.target === ovl;
+		});
+		ovl.addEventListener('click', function(ev) {
+			var hit = ev.target === ovl && pressed;
+			pressed = false;
+			if (hit)
 				dismiss();
 		});
-		ovl.addEventListener('keydown', function(ev) {
-			if (ev.key === 'Tab')
-				return trap(dialog, ev);
-			if (ev.key !== 'Escape')
-				return;
-			ev.stopPropagation();
-			dismiss();
-		});
+		release = scrolllock.lock();
 		document.body.appendChild(ovl);
-		muted = silence(ovl);
+		pop = layers.push({
+			node: ovl,
+			dismiss: dismiss,
+			tab: function(ev) {
+				ev.preventDefault();
+				focusable.cycle(dialog, ev.shiftKey);
+			}
+		});
 		(dialog.querySelector('[data-autofocus]') || dialog).focus();
 
 		return { node: dialog, close: close };
