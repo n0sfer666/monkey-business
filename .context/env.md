@@ -8,6 +8,11 @@
   образа — `.dev-vm/cache/<имя файла>`, `make dev-down` его не трогает.
 - `MB_VM_SSH_PORT` / `MB_VM_HTTP_PORT` — проброшенные SSH- и LuCI-порты dev-VM (дефолты в скриптах).
 - `MB_VM_SUB_FILE` — файл с URL подписки для `make dev` (дефолт `.context/notes/vpnon-sub.local`).
+- `MB_GEO_CACHE` — кэш geo-баз на хосте (дефолт `.dev-vm/cache/geo`, `make dev-down` не трогает);
+  `MB_GEO_R2S` — откуда наполнять пустой кэш (дефолт `root@192.168.1.1`, scp по ключу);
+  `MB_GEO_MIRRORS` — зеркала (дефолт — `DEFAULT_MIRRORS` из `geo.sh`).
+- `MB_FIXTURE` (= `make dev FIXTURE=1`) — засев вариантов UI; `MB_FIXTURE_PORT` — порт HTTP-раздачи
+  фикстуры на хосте (дефолт 18099, VM ходит на `10.0.2.2:<порт>`).
 
 ## Рантайм на роутере (этап 3+)
 - Секреты (токен подписки VPNON, ключи Reality) хранятся в UCI с правами 0600,

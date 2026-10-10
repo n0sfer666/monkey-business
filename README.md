@@ -147,8 +147,9 @@ See the app on a real ImmortalWrt aarch64 system in QEMU before flashing hardwar
 
 ```sh
 make dev            # boot the VM, provision it, deploy the app, add the subscription
+make dev FIXTURE=1  # same, plus seeded UI variants (second subscription, off / manual / unreachable / hysteria2 server)
 make dev-test-split # check split routing: exit IP/country via the SOCKS test inbound
-make dev-down       # stop the VM and reset it (the downloaded image stays cached)
+make dev-down       # stop the VM and reset it (the downloaded image and geo databases stay cached)
 ```
 
 Then open **http://localhost:8090** (login `root` / `root`) → **Services → monkey-business VPN**.
@@ -159,16 +160,28 @@ Override the port with `MB_VM_HTTP_PORT=NNNN make dev` if 8090 is taken
 
 - **VM** boots unless already running. The first run downloads the image to `.dev-vm/cache/`.
 - **Provision** (static IP 10.0.2.15, root password, LuCI) runs unless SSH `root`/`root` works and `uhttpd` exists.
+- **Geo** databases come from the host cache `.dev-vm/cache/geo/` (`scripts/dev-geo.sh`), so the VM
+  does not download them while the cache is complete (otherwise deploy downloads the missing ones in
+  the VM). An empty cache is filled from the router (`root@192.168.1.1`, override:
+  `MB_GEO_R2S`). On every run the cache is checked against the `.sha256sum` files on the mirrors of
+  `geo.sh` and re-downloaded only on mismatch; without network the cache is used as is. A file is
+  copied into the VM only when its sha256 differs.
 - **Deploy** runs when the hash of `luci/`, `root/`, `src/`, `scripts/` differs from the one stored in
   the VM (`/etc/mb-dev-deployed`), so re-running `make dev` after a code change redeploys. The hash is
   stored only after the `monkey-business` ubus object shows up.
 - **Subscription** is added from `.context/notes/vpnon-sub.local` (override: `MB_VM_SUB_FILE`) if the
   file exists and the VM has none. The URL goes over stdin, never into
   a command line, and is never printed.
+- **Fixture** (`FIXTURE=1`) serves `scripts/fixture/sub.txt` from the host over HTTP (with
+  `subscription-userinfo`) and adds it as the *Fixture* subscription (auto-update off), turns one
+  server off and adds a manual server (`scripts/fixture/seed.uc`). The unreachable server points at
+  `127.0.0.1:9` inside the VM, so it fails regardless of the host network. Re-running re-fetches the
+  fixture and adds nothing twice.
 
 | Command | Purpose |
 |---------|---------|
-| `make dev` | bring the test stand up in one command (VM, provision, deploy, subscription) |
+| `make dev` | bring the test stand up in one command (VM, provision, geo, deploy, subscription) |
+| `make dev FIXTURE=1` | the same plus seeded UI variants for mockup checks |
 | `make dev-ssh` | SSH into the VM (`root` / `root`) |
 | `make dev-console` | attach to the VM serial console |
 | `make dev-status` | VM status |

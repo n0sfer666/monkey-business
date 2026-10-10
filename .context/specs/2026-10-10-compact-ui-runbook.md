@@ -276,7 +276,7 @@ delete-server-sub), progress (*Fetch* подписки), ⋮-меню (моби�
     subscription» + причина) сразу после её появления; повторный *Add & fetch* озвучивает снова.
 18. Dashboard на iPhone / Safari 360 и 390: страница не сдвигается пальцем вбок; длинный пункт
     *Routing mode* в закрытом select обрезан многоточием, в раскрытом списке виден целиком.
-19. Свежий стенд (`make dev-down`, затем `make dev`): в панели *Subscriptions* одна строка — VPNON с
+19. Свежий стенд (`make dev-down`, затем `make dev` без `FIXTURE=1`): в панели *Subscriptions* одна строка — VPNON с
     бейджем *active*; пустой строки *reserve* без URL нет (`uci show monkey-business | grep
     =subscription` — одна секция `sub_…`).
 

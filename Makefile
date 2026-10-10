@@ -15,8 +15,9 @@ help:
 	@echo "  make test-build  пересобрать образ проверок (обновить alpine:edge; нужна сеть)"
 	@echo "  make package     сборка ipk (нужен OpenWrt SDK)"
 	@echo "  make deploy HOST=root@<ip>  залить/обновить на устройство (lint+check+test перед заливкой)"
-	@echo "  make dev           поднять стенд одной командой: VM + provision + deploy + подписка (что уже сделано — пропускает)"
-	@echo "  make dev-down      остановить VM и сбросить её (кроме кэша образа); следующий make dev — с чистого диска"
+	@echo "  make dev           поднять стенд одной командой: VM + provision + geo из кэша + deploy + подписка (что уже сделано — пропускает)"
+	@echo "  make dev FIXTURE=1 то же + засев вариантов: вторая подписка, off, ручной, недоступный, hysteria2"
+	@echo "  make dev-down      остановить VM и сбросить её (кроме кэша образа и geo); следующий make dev — с чистого диска"
 	@echo "  make dev-ssh       ssh в dev-VM (root@localhost:2222, пароль root)"
 	@echo "  make dev-console   подключиться к консоли VM (выход Ctrl-C)"
 	@echo "  make dev-status    статус VM"
@@ -51,8 +52,10 @@ package:
 deploy:
 	@MB_HOST=$(HOST) sh scripts/deploy.sh
 
+FIXTURE ?= 0
+
 dev:
-	@sh scripts/dev-env.sh
+	@MB_FIXTURE=$(FIXTURE) sh scripts/dev-env.sh
 
 dev-ssh:
 	@sh scripts/dev-vm.sh ssh
