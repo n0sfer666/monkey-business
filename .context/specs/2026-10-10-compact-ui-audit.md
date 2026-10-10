@@ -6,6 +6,14 @@ QEMU dev-VM (LuCI localhost:8090). Макет — артефакт Qi9eCMkVJJSUM
 Скриншоты и логи лежат локально в `.context/investigations/2026-10-10-compact-ui-audit/` (gitignored):
 `sbs/` — пары «макет | реализация», `impl/`, `mock/`, `ovl/`, `nav/`, `widths/`, `func/`, `*.log`.
 
+**Статус на 2026-10-10 (после `6b41d2e`):** закрыты группы 2 и 6 и X1. Открыта 31 строка:
+- Dashboard — D1–D5, старый вид;
+- Servers — P1–P6, S1–S9, X2, X4;
+- Settings — T1–T7, X3;
+- Servers и Settings — X5.
+
+Колонка «Статус» в таблицах обновляется в коммите, который закрывает строку.
+
 **Вердикт: ни один экран не готов.** По порогу «ноль расхождений» все три вкладки — fail. Поведение
 по runbook в основном проходит. Вид расходится с макетом везде, кроме мобильных подтверждений и
 подложки.
@@ -76,82 +84,83 @@ Severity: B — blocker, M — major, m — minor. Тема «обе» — од�
 
 ### Группа 1. Dashboard — итерация 4
 
-| # | Борд | Ширина | Тема | Браузер | Ожидалось | Есть | Sev | Скриншот |
-|---|---|---|---|---|---|---|---|---|
-| D1 | Main / MobileDashboard | 1280, 390 | обе | оба | Карта статуса (Connected / Turn off), выбор подписки, Exit IP + Check, трафик Hide/Show, список серверов с фильтром и Connect, карточка Routing (Mode / Region, чипы, Custom rules Edit), Components (geo Update…, hysteria2 Update), блок «geo data is missing» | Старый LuCI-вид: Subscription traffic, Status, Split, Custom routing, Geo databases, hysteria2, Servers. Ни одного блока бордов | B | `sbs/*-dashboard.png` |
-| D2 | RoutingModal / GeoModal (+Mobile) | 1280, 390 | обе | оба | Модалки Custom rules и Geo databases | Нет | B | `mock/RoutingModal--default.png`, `mock/GeoModal--default.png` |
-| D3 | — | 1280 | тёмная | оба | Контраст ≥ 4.5 | 4.49 (#888 на #222) | m | `widths/` |
-| D4 | — | 1280 | светлая | оба | Контраст ≥ 4.5 | 3.54 и 3.38 (#33a02c на белом) | m | `widths/` |
-| D5 | — | 390, 360 | тёмная | WebKit | Нет горизонтального скролла | scrollWidth 427 | M | `widths/webkit-390-*dashboard*` |
+| # | Борд | Ширина | Тема | Браузер | Ожидалось | Есть | Sev | Скриншот | Статус |
+|---|---|---|---|---|---|---|---|---|---|
+| D1 | Main / MobileDashboard | 1280, 390 | обе | оба | Карта статуса (Connected / Turn off), выбор подписки, Exit IP + Check, трафик Hide/Show, список серверов с фильтром и Connect, карточка Routing (Mode / Region, чипы, Custom rules Edit), Components (geo Update…, hysteria2 Update), блок «geo data is missing» | Старый LuCI-вид: Subscription traffic, Status, Split, Custom routing, Geo databases, hysteria2, Servers. Ни одного блока бордов | B | `sbs/*-dashboard.png` | открыто |
+| D2 | RoutingModal / GeoModal (+Mobile) | 1280, 390 | обе | оба | Модалки Custom rules и Geo databases | Нет | B | `mock/RoutingModal--default.png`, `mock/GeoModal--default.png` | открыто |
+| D3 | — | 1280 | тёмная | оба | Контраст ≥ 4.5 | 4.49 (#888 на #222) | m | `widths/` | открыто |
+| D4 | — | 1280 | светлая | оба | Контраст ≥ 4.5 | 3.54 и 3.38 (#33a02c на белом) | m | `widths/` | открыто |
+| D5 | — | 390, 360 | тёмная | WebKit | Нет горизонтального скролла | scrollWidth 427 | M | `widths/webkit-390-*dashboard*` | открыто |
 
 D3–D5 относятся к старому виду и уйдут вместе с D1.
 
 ### Группа 2. Хром — вкладки
 
-| # | Борд | Ширина | Тема | Браузер | Ожидалось | Есть | Sev | Скриншот |
-|---|---|---|---|---|---|---|---|---|
-| H1 | Servers / Settings | 1280 | обе | оба | Подчёркивание активной вкладки, fs 13, fw 600/500, активная #e7e9ec | LuCI cbi-tabmenu в рамках, fs 14, fw 400, активная #4da1c0 | M | `sbs/chromium-1280-dark-servers.png` |
-| H2 | Mobile* | 390 | обе | оба | Сегменты на всю ширину, активная подсвечена | Те же LuCI-вкладки в рамках | M | `sbs/chromium-390-dark-servers.png` |
+| # | Борд | Ширина | Тема | Браузер | Ожидалось | Есть | Sev | Скриншот | Статус |
+|---|---|---|---|---|---|---|---|---|---|
+| H1 | Servers / Settings | 1280 | обе | оба | Подчёркивание активной вкладки, fs 13, fw 600/500, активная #e7e9ec | LuCI cbi-tabmenu в рамках, fs 14, fw 400, активная #4da1c0 | M | `sbs/chromium-1280-dark-servers.png` | закрыто b1e73c7 |
+| H2 | Mobile* | 390 | обе | оба | Сегменты на всю ширину, активная подсвечена | Те же LuCI-вкладки в рамках | M | `sbs/chromium-390-dark-servers.png` | закрыто b1e73c7 |
 
 ### Группа 3. Servers — подписки
 
-| # | Борд | Ширина | Тема | Браузер | Ожидалось | Есть | Sev | Скриншот |
-|---|---|---|---|---|---|---|---|---|
-| P1 | Servers | 1280 | обе | оба | Заголовки колонок над ячейками | URL, Auto-update и Traffic смещены относительно ячеек | M | `sbs/chromium-1280-dark-servers.png` |
-| P2 | Servers | 1280, 722 | обе | оба | Трафик в одну строку | Переносится: на 1280 в 2 строки, на 722 в 5 | M | `widths/chromium-722-*servers*` |
-| P3 | Servers | 1280 | обе | оба | Поле Name ~232px | ~114px | m | там же |
-| P4 | MobileServers | 390 | обе | оба | Бейдж и имя рядом, строка «Updated [DATE]» | Имя справа, «Updated» нет | M | `sbs/chromium-390-dark-servers.png` |
-| P5 | MobileServers | 390 | обе | оба | Auto-update — строка на всю ширину с переключателем | Компактная плашка; ползунок появляется только при включении | M | `func/chromium-390-autoupdate.png` |
-| P6 | MobileServers | 390 | обе | оба | «+ Add»: fs 13, h 32, rad 6 | fs 14, h 40, rad 8 | m | `sbs/chromium-390-dark-servers.png` |
+| # | Борд | Ширина | Тема | Браузер | Ожидалось | Есть | Sev | Скриншот | Статус |
+|---|---|---|---|---|---|---|---|---|---|
+| P1 | Servers | 1280 | обе | оба | Заголовки колонок над ячейками | URL, Auto-update и Traffic смещены относительно ячеек | M | `sbs/chromium-1280-dark-servers.png` | открыто |
+| P2 | Servers | 1280, 722 | обе | оба | Трафик в одну строку | Переносится: на 1280 в 2 строки, на 722 в 5 | M | `widths/chromium-722-*servers*` | открыто |
+| P3 | Servers | 1280 | обе | оба | Поле Name ~232px | ~114px | m | там же | открыто |
+| P4 | MobileServers | 390 | обе | оба | Бейдж и имя рядом, строка «Updated [DATE]» | Имя справа, «Updated» нет | M | `sbs/chromium-390-dark-servers.png` | открыто |
+| P5 | MobileServers | 390 | обе | оба | Auto-update — строка на всю ширину с переключателем | Компактная плашка; ползунок появляется только при включении | M | `func/chromium-390-autoupdate.png` | открыто |
+| P6 | MobileServers | 390 | обе | оба | «+ Add»: fs 13, h 32, rad 6 | fs 14, h 40, rad 8 | m | `sbs/chromium-390-dark-servers.png` | открыто |
 
 ### Группа 4. Servers — список, плитки, панель
 
-| # | Борд | Ширина | Тема | Браузер | Ожидалось | Есть | Sev | Скриншот |
-|---|---|---|---|---|---|---|---|---|
-| S1 | MobileServers | 390 | обе | оба | Плитки по 3 в ряд с ⋮ (и спека: «серверы — плитки с ⋮») | Список строк с ⋮; плитки только в режиме перестановки | M | `sbs/chromium-390-dark-servers.png` |
-| S2 | MobileServers | 390 | обе | оба | Шапка «Servers ⚙» + иконки [ping][sort][+] | Кнопка «+ Add server», ⚙ и отдельный ряд Ping all / Sort by ping | M | там же |
-| S3 | MobileServers | 390 | обе | оба | Фильтр — чипы (rad 14, h 28) | Сегменты на всю ширину (h 36) | M | там же |
-| S4 | Servers | 1280 | обе | оба | Ping all и Sort by ping с иконками (w 86 и 116) | Без иконок (w 70 и 100) | m | `sbs/chromium-1280-dark-servers.png` |
-| S5 | Servers | 1280 | обе | оба | Кнопки h 28 | h 31 | m | там же |
-| S6 | Servers | 1280 | обе | оба | Фильтр All/Manual: fw 400, rad 4, h 24 | fw 600/500, rad 6, h 27 | m | там же |
-| S7 | Servers | 1280 | тёмная | оба | Бейдж active: rad 0, h 15; Fetch/Ping rad 5; «vless / reality» #9ba1a8 | rad 4, h 19; rad 6; #e7e9ec | m | там же |
-| S8 | Servers | 1280 | обе | оба | Сноски под таблицей нет | «The first server that answers is used…» | M | там же |
+| # | Борд | Ширина | Тема | Браузер | Ожидалось | Есть | Sev | Скриншот | Статус |
+|---|---|---|---|---|---|---|---|---|---|
+| S1 | MobileServers | 390 | обе | оба | Плитки по 3 в ряд с ⋮ (и спека: «серверы — плитки с ⋮») | Список строк с ⋮; плитки только в режиме перестановки | M | `sbs/chromium-390-dark-servers.png` | открыто |
+| S2 | MobileServers | 390 | обе | оба | Шапка «Servers ⚙» + иконки [ping][sort][+] | Кнопка «+ Add server», ⚙ и отдельный ряд Ping all / Sort by ping | M | там же | открыто |
+| S3 | MobileServers | 390 | обе | оба | Фильтр — чипы (rad 14, h 28) | Сегменты на всю ширину (h 36) | M | там же | открыто |
+| S4 | Servers | 1280 | обе | оба | Ping all и Sort by ping с иконками (w 86 и 116) | Без иконок (w 70 и 100) | m | `sbs/chromium-1280-dark-servers.png` | открыто |
+| S5 | Servers | 1280 | обе | оба | Кнопки h 28 | h 31 | m | там же | открыто |
+| S6 | Servers | 1280 | обе | оба | Фильтр All/Manual: заливка активного, fw 400, rad 4, h 24 | Подчёркивание активного, fw 600/500, rad 6, h 27 | m | там же | открыто |
+| S7 | Servers | 1280 | тёмная | оба | Бейдж active: rad 0, h 15; Fetch/Ping rad 5; «vless / reality» #9ba1a8 | rad 4, h 19; rad 6; #e7e9ec | m | там же | открыто |
+| S8 | Servers | 1280 | обе | оба | Сноски под таблицей нет | «The first server that answers is used…» | M | там же | открыто |
+| S9 | Servers | 1280 | тёмная | оба | Off отмечен: заливка warn с ×; не отмечен: тёмный квадрат с рамкой | Нативный чекбокс, `accent-color` accent: синий с галкой. Найдено пользователем 2026-10-10, аудит пропустил (`…-check-gaps.md`) | m | — | открыто |
 
 ### Группа 5. Settings
 
-| # | Борд | Ширина | Тема | Браузер | Ожидалось | Есть | Sev | Скриншот |
-|---|---|---|---|---|---|---|---|---|
-| T1 | Settings | 1280 | обе | оба | Три панели на всю ширину | Панели ~285px и не растягиваются (на 1100 растягиваются) | M | `sbs/chromium-1280-dark-settings.png` |
-| T2 | Settings | 1280 | обе | оба | «DNS mode» в одну строку | Перенос в 2 строки | M | там же |
-| T3 | Settings | 1280 | обе | оба | Шапка панели h 17, описание — span 15px | h 36, описание — div 35px | m | там же |
-| T4 | Settings | 1280 | обе | оба | Direct DNS, DoH URL, порт — mono, h 27 | sans, h 30 | m | там же |
-| T5 | Settings | 1280 | тёмная | оба | Чекбокс XHTTP padding (unchecked) — светлый | тёмный | m | там же |
-| T6 | Settings | 1280 | обе | оба | Метка «Log level» по центру строки | Выровнена по верху | m | там же |
-| T7 | MobileSettings | 390 | обе | оба | Поля fs 14, h 32–35, rad 6; метки fs 14; заголовки панелей 15 | 16 / 40 / 8; 13; 14 | m | `sbs/chromium-390-dark-settings.png` |
+| # | Борд | Ширина | Тема | Браузер | Ожидалось | Есть | Sev | Скриншот | Статус |
+|---|---|---|---|---|---|---|---|---|---|
+| T1 | Settings | 1280 | обе | оба | Три панели на всю ширину | Панели ~285px и не растягиваются (на 1100 растягиваются) | M | `sbs/chromium-1280-dark-settings.png` | открыто |
+| T2 | Settings | 1280 | обе | оба | «DNS mode» в одну строку | Перенос в 2 строки | M | там же | открыто |
+| T3 | Settings | 1280 | обе | оба | Шапка панели h 17, описание — span 15px | h 36, описание — div 35px | m | там же | открыто |
+| T4 | Settings | 1280 | обе | оба | Direct DNS, DoH URL, порт — mono, h 27 | sans, h 30 | m | там же | открыто |
+| T5 | Settings | 1280 | тёмная | оба | Чекбокс XHTTP padding (unchecked) — светлый | тёмный | m | там же | открыто |
+| T6 | Settings | 1280 | обе | оба | Метка «Log level» по центру строки | Выровнена по верху | m | там же | открыто |
+| T7 | MobileSettings | 390 | обе | оба | Поля fs 14, h 32–35, rad 6; метки fs 14; заголовки панелей 15 | 16 / 40 / 8; 13; 14 | m | `sbs/chromium-390-dark-settings.png` | открыто |
 
 ### Группа 6. Оверлеи — фокус, скролл, вид
 
-| # | Борд | Ширина | Тема | Браузер | Ожидалось | Есть | Sev | Скриншот |
-|---|---|---|---|---|---|---|---|---|
-| O1 | все шторки и подтверждения, ⋮-меню | 390 (и 1280 по коду) | обе | оба | Страница под оверлеем не скроллится (Б.4) | Скроллится: в `kit/sheet.js` нет блокировки скролла. На 1280 не проявилось — страница короче вьюпорта | M | `ovl/chromium-390-*` |
-| O2 | шторки (×5), подтверждения (×14) | 1280, 390 | обе | WebKit | Tab не выходит из оверлея | Выходит: Safari не фокусирует кнопки по Tab, а trap срабатывает только на краевом элементе | M | `ovl/webkit-*` |
-| O3 | подтверждения | 1280, 390 | обе | WebKit | Esc закрывает | После утечки фокуса (O2) Esc не закрывает: слушатель висит на `.mb-ovl` | M | там же |
-| O4 | все | 1280, 390 | обе | WebKit | После закрытия фокус на триггере | Фокус уходит на `lang_en`: Safari не фокусирует кнопку по клику, а sheet.js берёт `document.activeElement` | M | там же |
-| O5 | SubModal (busy) | 1280, 390 | обе | оба | Клик по подложке в busy игнорируется, фокус остаётся внутри | Шторка не закрывается, но фокус уходит на body (mousedown без preventDefault). После этого Esc и ловушка Tab не работают, даже когда busy закончился | M | `func/*-addsub-failed.png` |
-| O6 | ⋮-меню | 390 | обе | оба | Tab закрывает меню, фокус возвращается на ⋮ (решение K2) | Меню закрывается, но фокус уходит в шапку LuCI | M | `ovl/*menu*` |
-| O7 | SubModal / ServerModal | 1280 | обе | оба | Ширина 542 / 560 | 480 / 520 (Confirm 440 = 440) | m | `sbs/ovl-*-1280.png` |
-| O8 | SubModal--failed (+Mobile) | 1280, 390 | обе | оба | Плашка ошибки с иконкой ⓘ вверху, над Name | Плашка без иконки внизу, после подсказки URL | M | `sbs/sub-failed-1280.png`, `sbs/m-sub-failed-390.png` |
-| O9 | MobileSubModal / MobileServerModal | 390 | обе | оба | Высокая шторка (Sub 748px от top 96, Server 604px); кнопки в ряд: Cancel 78 | primary 271 | Шторка по контенту (386 / 422); кнопки стопкой на всю ширину, primary сверху | M | `sbs/m-add-sub-390.png`, `sbs/m-add-server-390.png` |
+| # | Борд | Ширина | Тема | Браузер | Ожидалось | Есть | Sev | Скриншот | Статус |
+|---|---|---|---|---|---|---|---|---|---|
+| O1 | все шторки и подтверждения, ⋮-меню | 390 (и 1280 по коду) | обе | оба | Страница под оверлеем не скроллится (Б.4) | Скроллится: в `kit/sheet.js` нет блокировки скролла. На 1280 не проявилось — страница короче вьюпорта | M | `ovl/chromium-390-*` | закрыто 3f27f34 |
+| O2 | шторки (×5), подтверждения (×14) | 1280, 390 | обе | WebKit | Tab не выходит из оверлея | Выходит: Safari не фокусирует кнопки по Tab, а trap срабатывает только на краевом элементе | M | `ovl/webkit-*` | закрыто 3f27f34 |
+| O3 | подтверждения | 1280, 390 | обе | WebKit | Esc закрывает | После утечки фокуса (O2) Esc не закрывает: слушатель висит на `.mb-ovl` | M | там же | закрыто 3f27f34 |
+| O4 | все | 1280, 390 | обе | WebKit | После закрытия фокус на триггере | Фокус уходит на `lang_en`: Safari не фокусирует кнопку по клику, а sheet.js берёт `document.activeElement` | M | там же | закрыто 3f27f34 |
+| O5 | SubModal (busy) | 1280, 390 | обе | оба | Клик по подложке в busy игнорируется, фокус остаётся внутри | Шторка не закрывается, но фокус уходит на body (mousedown без preventDefault). После этого Esc и ловушка Tab не работают, даже когда busy закончился | M | `func/*-addsub-failed.png` | закрыто 3f27f34 |
+| O6 | ⋮-меню | 390 | обе | оба | Tab закрывает меню, фокус возвращается на ⋮ (решение K2) | Меню закрывается, но фокус уходит в шапку LuCI | M | `ovl/*menu*` | закрыто 3f27f34 |
+| O7 | SubModal / ServerModal | 1280 | обе | оба | Ширина 542 / 560 | 480 / 520 (Confirm 440 = 440) | m | `sbs/ovl-*-1280.png` | закрыто b1e73c7 |
+| O8 | SubModal--failed (+Mobile) | 1280, 390 | обе | оба | Плашка ошибки с иконкой ⓘ вверху, над Name | Плашка без иконки внизу, после подсказки URL | M | `sbs/sub-failed-1280.png`, `sbs/m-sub-failed-390.png` | закрыто b1e73c7 |
+| O9 | MobileSubModal / MobileServerModal | 390 | обе | оба | Высокая шторка (Sub 748px от top 96, Server 604px); кнопки в ряд: Cancel 78 | primary 271 | Шторка по контенту (386 / 422); кнопки стопкой на всю ширину, primary сверху | M | `sbs/m-add-sub-390.png`, `sbs/m-add-server-390.png` | закрыто b1e73c7 |
 
 ### Группа 7. Тексты
 
-| # | Борд | Ширина | Ожидалось | Есть | Sev |
-|---|---|---|---|---|---|
-| X1 | ServerModal (+Mobile) | 1280, 390 | Метка «Server link», кнопка «Add server» | «Link», «Add» | m |
-| X2 | Servers | 1280 | В трафике «… · [DATE]» | «… · until [DATE]» | m |
-| X3 | MobileSettings | 390 | Сокращённые подсказки: «Drop LAN traffic instead of leaking it direct», «Nothing leaks around the IPv4 tunnel», «Split: local domains direct, foreign over DoH», «Everything via the VPN resolves here» | Полные десктопные тексты | m |
-| X4 | MobileServers | 390 | Подсказка внизу как в борде | Другая | m |
-| X5 | Servers / Settings | 1280, 390 | Подзаголовки «Row order is the connect priority» / «Defaults are safe» | «Changes stay local until Save & Apply.» / «Each option has a hint. Defaults are safe.» (по решению K1 правда — макет) | m |
+| # | Борд | Ширина | Ожидалось | Есть | Sev | Статус |
+|---|---|---|---|---|---|---|
+| X1 | ServerModal (+Mobile) | 1280, 390 | Метка «Server link», кнопка «Add server» | «Link», «Add» | m | закрыто b1e73c7 |
+| X2 | Servers | 1280 | В трафике «… · [DATE]» | «… · until [DATE]» | m | открыто |
+| X3 | MobileSettings | 390 | Сокращённые подсказки: «Drop LAN traffic instead of leaking it direct», «Nothing leaks around the IPv4 tunnel», «Split: local domains direct, foreign over DoH», «Everything via the VPN resolves here» | Полные десктопные тексты | m | открыто |
+| X4 | MobileServers | 390 | Подсказка внизу как в борде | Другая | m | открыто |
+| X5 | Servers / Settings | 1280, 390 | Подзаголовки «Row order is the connect priority» / «Defaults are safe» | «Changes stay local until Save & Apply.» / «Each option has a hint. Defaults are safe.» (по решению K1 правда — макет) | m | открыто |
 
 ## Конфликты спеки и макета — решены (интервью 2026-10-10)
 
