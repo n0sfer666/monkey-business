@@ -5,6 +5,7 @@
 'require view.monkey-business.api as api';
 'require view.monkey-business.store as store';
 'require view.monkey-business.kit.style as style';
+'require view.monkey-business.kit.tabs as tabs';
 'require view.monkey-business.kit.notify as notice';
 'require view.monkey-business.set.sections as sections';
 
@@ -71,6 +72,7 @@ return view.extend({
 		}
 
 		dom.content(this.root, [
+			tabs.render('settings'),
 			E('div', { 'class': 'mb-set-bar' }, [
 				E('div', { 'class': 'mb-set-hint mb-muted mb-small' }, [ _('Each option has a hint. Defaults are safe.') ]),
 				E('div', { 'class': 'mb-set-acts' }, [ reset, save, apply ])

@@ -9,6 +9,7 @@
 'require view.monkey-business.splitlists as mbsplit';
 'require view.monkey-business.geo as mbgeo';
 'require view.monkey-business.serverlist as mbservers';
+'require view.monkey-business.kit.tabs as tabs';
 
 return view.extend({
 	load: function() {
@@ -27,6 +28,7 @@ return view.extend({
 		var servers = (data[1] || {}).servers || [];
 		var geo = data[3] || {};
 		return E('div', {}, [
+			tabs.render('dashboard'),
 			mbtraffic.render(st),
 			mbstatus.render(st),
 			mbroute.render(),

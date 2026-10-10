@@ -36,6 +36,10 @@ return baseclass.extend({
 		'err-text': '#ff8b84',
 		'err-tint': 'rgba(248,81,73,.16)',
 		'err-edge': 'rgba(248,81,73,.45)',
+		'err-edge-strong': 'rgba(248,81,73,.55)',
+		'err-disc': 'rgba(248,81,73,.14)',
+		'err-soft': 'rgba(248,81,73,.07)',
+		'err-soft-edge': 'rgba(248,81,73,.35)',
 		'overlay': 'rgba(8,9,11,.45)',
 		'shadow': 'rgba(0,0,0,.5)'
 	},
@@ -53,7 +57,7 @@ return baseclass.extend({
 		'text': '#1c2025',
 		'text-2': '#3d434a',
 		'muted': '#5d646d',
-		'faint': '#8a9199',
+		'faint': '#666d75',
 		'accent': '#2563c9',
 		'accent-text': '#1d4fa3',
 		'accent-tint': 'rgba(37,99,201,.10)',
@@ -74,6 +78,10 @@ return baseclass.extend({
 		'err-text': '#b42a25',
 		'err-tint': 'rgba(196,48,43,.10)',
 		'err-edge': 'rgba(196,48,43,.45)',
+		'err-edge-strong': 'rgba(196,48,43,.55)',
+		'err-disc': 'rgba(196,48,43,.09)',
+		'err-soft': 'rgba(196,48,43,.05)',
+		'err-soft-edge': 'rgba(196,48,43,.3)',
 		'overlay': 'rgba(20,24,30,.35)',
 		'shadow': 'rgba(15,20,30,.18)'
 	}

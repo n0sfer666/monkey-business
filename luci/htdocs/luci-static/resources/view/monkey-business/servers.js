@@ -3,6 +3,7 @@
 'require view.monkey-business.api as api';
 'require view.monkey-business.store as store';
 'require view.monkey-business.kit.style as style';
+'require view.monkey-business.kit.tabs as tabs';
 'require view.monkey-business.kit.notify as notice';
 'require view.monkey-business.kit.gesture as gesture';
 'require view.monkey-business.model.subs as submodel';
@@ -99,6 +100,7 @@ return view.extend({
 			onPing: this.servers.onPing
 		});
 		this.root = E('div', { 'class': 'mb mb-srv-view' }, [
+			tabs.render('servers'),
 			E('div', { 'class': 'mb-srv-bar' }, [
 				E('div', { 'class': 'mb-srv-hint mb-muted mb-small' }, [ _('Changes stay local until Save & Apply.') ]),
 				E('div', { 'class': 'mb-srv-acts' }, [ this.reset, this.save, this.apply ])

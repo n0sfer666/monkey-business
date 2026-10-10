@@ -110,3 +110,7 @@
   скролла со счётчиком и компенсацией скроллбара, `trigger.js` — триггер по клику (Safari кнопки не
   фокусирует), `focusable.js` — Tab по кругу. Новый оверлей — через `layers.push` + `scrolllock.lock`,
   без своих keydown / inert. Runbook — раздел «Оверлеи» в `specs/2026-10-10-compact-ui-runbook.md`.
+- Вид шторки — `kit/sheet.js` (варианты `open`: `top`, `mtop`, `foot: 'row' | 'stack'`, `compact`),
+  CSS — `kit/sheetcss.js`. Вкладки приложения — `kit/tabs.js` `render(active)` первым в корне `.mb`
+  каждой вьюхи; `#tabmenu` LuCI скрыт. Тема bootstrap на ≤ 720px ставит инпутам 16px, кнопкам 14px
+  через `!important`: инпуты оставлены 16px (iOS зумит при меньшем кегле).

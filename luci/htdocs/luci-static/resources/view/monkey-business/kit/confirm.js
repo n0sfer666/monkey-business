@@ -6,8 +6,8 @@
 
 style.add('confirm', [
 	'.mb .mb-confirm-ico{display:flex;align-items:center;justify-content:center;flex-shrink:0;width:36px;height:36px;',
-	'border-radius:50%;background:var(--mb-err-tint);color:var(--mb-err-text)}',
-	'.mb .mb-confirm-body{color:var(--mb-text-2)}'
+	'border-radius:50%;background:var(--mb-err-disc);color:var(--mb-err-text)}',
+	style.MOBILE + '{.mb .mb-confirm-ico{width:40px;height:40px}}'
 ].join(''));
 
 var KIND = { 'cancel': 'mb-btn', 'second': 'mb-btn', 'danger': 'mb-btn mb-btn-danger', 'primary': 'mb-btn mb-btn-primary' };
@@ -44,11 +44,13 @@ return baseclass.extend({
 			s = sheet.open({
 				role: 'alertdialog',
 				width: '440px',
+				top: '250px',
+				compact: true,
 				icon: o.danger === false ? '' : icon(),
 				title: o.title,
+				hint: o.body,
 				closable: false,
 				back: o.back,
-				body: o.body ? E('div', { 'class': 'mb-confirm-body' }, [ o.body ]) : null,
 				actions: actions,
 				onClose: function() { finish(null); }
 			});
