@@ -191,10 +191,11 @@ From the shell instead:
 
 In **LuCI → … → Servers**:
 
-- **Subscription:** paste your provider URL and press *Fetch*. Servers are imported (format
-  auto-detected: base64 list or URI list). The list order is your priority — drag to
+- **Subscription:** *+ Add subscription*, paste your provider URL, *Add & fetch*. Servers are
+  imported (format auto-detected: base64 list or URI list); if the fetch fails, nothing is saved. On a fresh
+  install the new subscription replaces the empty default one as the active one. The list order is your priority — drag to
   reorder; the first server is the active one. Re-fetch preserves your manual order.
-  More than one provider: *Add subscription* — see [§10](#10-multiple-subscriptions).
+  More than one provider: add another — see [§10](#10-multiple-subscriptions).
 - **Manual:** add a `vless://…` (Reality/VLESS/XHTTP) or `hysteria2://…` (`hy2://` alias) server.
 
 Both protocols share one list — the protocol is a property of the server, so priority is the list
@@ -450,9 +451,14 @@ you're trying to fix it by hand.
 
 ## 10. Multiple subscriptions
 
-**Servers → Subscriptions → Add subscription** adds a second (third, …) provider. Each block has its
-own *Name*, *URL*, *Auto-update*, *Interval*, *Fetch subscription* and *Ping servers*. *Fetch* on a
-block that is not saved yet saves the form first. An existing single-subscription config keeps
+**Servers → Subscriptions → + Add subscription** adds a second (third, …) provider: a sheet asks for
+a name and the URL and fetches at once; a failed fetch leaves nothing behind. Each row edits *Name*,
+*URL* (masked until focused) and *Auto-update* in place — the interval is in minutes, 10–120, `0`
+turns it off (on a phone: a switch and a slider). *Fetch* and *Ping* act on that subscription; the
+trash button deletes it together with its servers after a confirmation (manual servers stay; deleting
+the active one makes the next one active). Edits are staged until *Save & Apply*; a changed URL is
+re-fetched then. *Fetch* and *+ Add subscription* commit pending edits first (*Reset* no longer undoes
+them) and block the page until the download ends. An existing single-subscription config keeps
 working as is — no migration.
 
 - **One subscription is active, the others are a reserve.** Candidates go in this order: servers of
@@ -469,8 +475,8 @@ working as is — no migration.
   subscription by hand is refused while an alive one exists — refresh it first (*Fetch*), then pick.
 - **The traffic bar** shows the subscription the tunnel goes through.
 - **Ping:** *Test latency* (all), *Ping* per subscription group and per server row on the Dashboard,
-  *Ping servers* per subscription block on Servers. The Servers table has its own *Ping* column
-  (last results, refreshed by *Ping servers* and *Ping all* above the table); *Sort by ping* moves the
+  *Ping* per subscription row on Servers. The Servers table has its own *Ping* column
+  (last results, refreshed by a subscription's *Ping* and *Ping all* above the table); *Sort by ping* moves the
   fastest rows to the top, unreachable and unmeasured ones to the bottom — the row order is the connect
   priority, so it takes effect on *Save & Apply*. A server slower than 1 s or unreachable is
   marked *auto-off* and skipped when connecting until a later ping succeeds (the results live in
@@ -483,9 +489,9 @@ Run after deploying a change that touches subscriptions. `<A>` is the active sub
 id, `<B>` the other one (`uci show monkey-business | grep =subscription`). Turn the VPN on first.
 
 0. **Fresh UI.** Open Servers with a plain reload, no cache clearing. Expect: Servers shows the
-   *Subscriptions* section with *Ping servers* in each block and an *Add subscription* button under
-   them, and the table has *Subscription* and *Off* columns. A single *Subscription* section with no
-   ping means the browser served the old scripts from its cache: the deploy must touch
+   *Subscriptions* panel — one row per subscription with *Fetch*, *Ping* and a trash button, and
+   *+ Add subscription* in its header — and the table has *Subscription* and *Off* columns. A form
+   with *Fetch subscription* buttons means the browser served the old scripts from its cache: the deploy must touch
    `/lib/apk/db/installed`, whose mtime is part of the `?v=` of every LuCI script.
 
 1. **Two subscriptions.** Add B and *Fetch*. Expect: the Dashboard shows the *Subscription* selector,
@@ -549,6 +555,6 @@ id, `<B>` the other one (`uci show monkey-business | grep =subscription`). Turn 
    `subupdate.sh` again — now it switches to B. Restore A as in step 6.
 8. **Ping and Off.** Press the *Ping* buttons: cells show `N ms`, `auto-off` or `n/a`. Tick *Off* on a
    server in Servers, *Save & Apply*: its Dashboard row is dimmed and marked *off*, and it is never
-   the connected server. On Servers, *Ping servers* of a subscription and *Ping all* fill the table's
+   the connected server. On Servers, a subscription's *Ping* and *Ping all* fill the table's
    *Ping* column without a reload. *Sort by ping*, then *Save & Apply*: the rows go fastest-first
    (`down`/`n/a` last), the Dashboard priorities follow, and the tunnel connects to the fastest server of the active subscription.

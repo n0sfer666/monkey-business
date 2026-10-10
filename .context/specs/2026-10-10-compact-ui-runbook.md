@@ -1,13 +1,13 @@
-# Компактный UI — runbook ручной проверки на R2S
+# Компактный UI — runbook ручной проверки
 
-Проверяет пользователь на живом R2S после каждой итерации. Устаревший шаг править в том же
-коммите, где меняется поведение.
+Прогоняется после каждой итерации в dev-VM (`make dev-up`, `make dev-deploy`, LuCI на
+`http://localhost:8090`, ssh `root@localhost -p 2222`); на R2S — только готовая фича. Устаревший шаг
+править в том же коммите, где меняется поведение.
 
 ## Подготовка
-1. Деплой: `make deploy HOST=root@192.168.1.1` (или nushell
-   `with-env { MB_VM_SSH_HOST: "root@192.168.1.1", MB_VM_SSH_PORT: "22" } { sh scripts/deploy-vm.sh }`).
-2. На роутере: `ls /www/luci-static/resources/view/monkey-business/kit /www/luci-static/resources/view/monkey-business/model /www/luci-static/resources/view/monkey-business/set`
-   — 9 / 3 / 1 файлов; `ls /www/luci-static/resources/view/monkey-business/commit.js` — «No such file».
+1. Деплой: `make dev-deploy` (VM) или `make deploy HOST=root@192.168.1.1` (R2S).
+2. На роутере: `cd /www/luci-static/resources/view/monkey-business && ls kit model srv set`
+   — 9 / 6 / 3 / 1 файлов; `ls commit.js subsection.js` — оба «No such file».
 3. В браузере жёсткая перезагрузка (Cmd+Shift+R) на каждой странице приложения.
 4. Открыть DevTools → Console: на всех шагах ниже — без красных ошибок.
 
@@ -52,10 +52,71 @@
    Geo (статус размеров), Hysteria (статус), список серверов с Ping — всё работает.
 2. Turn off → Turn on: подключается, статус Running.
 3. Check exit — показывает IP.
-4. Servers: Ping all, переключение подписки, Fetch subscription, Save & Apply формы серверов —
+4. Servers: Ping all, переключение подписки, Fetch у подписки, Save & Apply формы серверов —
    индикатор «Unsaved Changes» гаснет, конфиг применяется.
 5. Добавить ручной сервер по ссылке — поля заполнились (parse_uri).
 
+## Итерация 2 — Servers: подписки
+
+URL подписки в логи, скриншоты и отчёты не попадает. `<S>` — id новой подписки
+(`uci show monkey-business | grep =subscription`).
+
+### Панель
+1. Servers ≥ 1100px: над таблицей панель *Subscriptions* — шапка с подписью «the active one is used
+   first…» и кнопкой *+ Add subscription*, строка заголовков Role / Name / URL / Auto-update /
+   Traffic, по строке на подписку (бейдж *active* у активной, *reserve* у остальных). Старой
+   CBI-секции *Subscriptions* с *Fetch subscription* нет.
+2. 722 / 800px: колонки сжимаются, Fetch / Ping не переносятся, горизонтального скролла нет.
+3. ≤ 720px: строка — плитка (бейдж, имя, корзина; URL на всю ширину; полоса трафика; Fetch / Ping;
+   *Auto-update* с переключателем и ползунком 10 min…2 h); заголовков колонок нет, кнопка — *+ Add*;
+   корзина 36px с видимой иконкой.
+4. Тёмная и светлая тема: панель и строки в палитре Settings.
+
+### Add
+1. *+ Add subscription* → шторка, имя по умолчанию «Subscription N+1». Пустой URL или `ftp://x` →
+   подсказка под полем, *Add & fetch* неактивна.
+2. URL недоступного хоста (`https://192.0.2.1/nope`) → ~25 с *Fetching…*, затем плашка «Couldn't
+   fetch the subscription — fetch failed — nothing was saved»; `uci show monkey-business | grep
+   =subscription` — новой секции нет (и через минуту тоже нет).
+   Пока идёт *Fetching…*, Esc и клик по подложке шторку не закрывают.
+3. Реальный URL → шторка закрылась без перезагрузки страницы, серверы в таблице, уведомление
+   «Servers fetched for “…”: N»; `uci show monkey-business | grep -c ".sub='<S>'"` = N.
+4. Свежая установка (пустая дефолтная `subscription`): подсказка шторки «Becomes the active
+   subscription», новая строка *active*, `uci get monkey-business.global.active_sub` = `<S>`. Если
+   активная уже с серверами — подсказка «A reserve until…», новая строка *reserve*.
+
+### Инлайн-правки
+1. URL в строке показан как `https://••••••/••••••`; фокус — реальный URL, Esc/blur — снова маска.
+2. Name пустой → красная рамка, не сохраняется; Enter на новом имени — индикатор Unsaved Changes.
+3. Интервал (десктоп): `5` → подсказка «Minimum is 10 min…», после Enter — «every 10 min»; `500` →
+   «every 2 h»; `0` → «off». Легаси 86400 показан как «every 2 h».
+4. *Save & Apply* → `uci get monkey-business.<S>.name / .auto_update / .update_interval` — новые
+   значения (7200 для 2 h, `auto_update=0` при off, интервал при этом сохранён); уведомлений
+   «Servers fetched» нет (URL не менялся).
+5. Мобилка: ползунок на 30 → *Save & Apply* → `update_interval=1800`; переключатель off →
+   `auto_update=0`, `update_interval` остался 1800.
+6. Правка имени → *Reset* → прежнее имя.
+7. Сменить URL подписки → *Save & Apply* → «Servers fetched for “…”», серверы перечитаны без
+   перезагрузки страницы.
+
+### Fetch / Ping / Delete
+1. *Fetch* у подписки без URL → «Enter a subscription URL first.»; с URL → страницу закрывает
+   шторка «Fetching “…”…» (Esc не закрывает), затем «Servers fetched for “…”: N».
+2. Переименовать другую подписку (Enter, без Save) → *Fetch* → `uci get
+   monkey-business.<sid>.name` уже новое, `uci changes monkey-business` пусто, имя в строке осталось.
+3. *Ping* → «Ping: N ok, N auto-off, N n/a», колонка *Ping* таблицы заполнилась.
+4. Корзина у активной → шторка «Delete “…”?» с числом серверов и тем, какая станет активной;
+   *Cancel* — ничего не изменилось. *Delete* → строка и её серверы пропали из таблицы, ручные на
+   месте, следующая подписка *active*; *Save & Apply* → секции нет, `global.active_sub` = следующая,
+   серверов с `.sub='<удалённая>'` нет.
+5. Корзина у подписки → *Delete* → сразу *Fetch* у другой (без Save & Apply) → секции удалённой нет,
+   серверов с `.sub='<удалённая>'` нет (раньше воскресали сиротами).
+
+### Подписка в фоне
+`subupdate.sh` раз в минуту по cron: интервал < 600 c поднимается до 600, > 7200 опускается до 7200
+(тесты `subupdate_test.sh` 6/6a/6b).
+
 ## Результат
-Скриншоты Settings: тёмная десктоп, светлая десктоп, мобилка — приложить к согласованию светлой
-палитры (открытый вопрос спеки).
+Итерация 1 — 30/30, итерация 2 — 52/52 (Playwright в VM: 1280 / 800 / 722 / мобилка, тёмная и
+светлая). Console: ошибок приложения нет; `ERR_CONNECTION_RESET` / `L is not defined` при загрузке
+страницы — сбросы slirp-проброса QEMU (`luci.js` не догрузился), на R2S не воспроизводятся.

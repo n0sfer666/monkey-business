@@ -66,7 +66,7 @@ view/monkey-business/
   kit/  style.js sheet.js confirm.js switch.js seg.js menu.js inline.js tip.js field.js
   model/ dirty.js datatype.js settings.js subs.js pingtext.js interval.js order.js servers.js confirmtext.js
   dash/ status.js traffic.js routing.js rules.js geo.js serverlist.js hysteria.js
-  srv/  subrow.js subsheet.js serverrow.js serversheet.js pingbar.js
+  srv/  subpanel.js subrow.js subsheet.js serverrow.js serversheet.js pingbar.js
   set/  sections.js
 ```
 `kit/` не знает домена; `model/` не знает DOM; `dash/ srv/ set/` склеивают одно с другим.
@@ -81,8 +81,10 @@ view/monkey-business/
   Сериализатор `src/lib/serveruri.uc` `serverToUri`; тест — round-trip `parse(serverToUri(s)) == s`
   по фикстурам vless/reality/xhttp/grpc/hy2(obfs, mport, pin).
 - **`subscription_add {name, url}`** (новый, write): создать секцию → скачать → при провале удалить
-  секцию и вернуть ошибку («nothing was saved»). Сейчас фронт делает `map.save` + apply + update
-  и при провале оставляет пустую подписку.
+  секцию и вернуть ошибку («nothing was saved»). Если активная подписка пустая (без URL и серверов —
+  дефолтная `subscription` свежей установки), новая становится активной. Скачивание до ~25 с (`curl -m 25`) — дольше
+  дефолтного RPC-таймаута LuCI (20 с), поэтому `api.js` поднимает его до 60 с для
+  `subscription_add` / `subscription_update`.
 - **Интервал**: `update_interval` — секунды, допустимо 600–7200; clamp в `subupdate.sh`
   (`MB_SUB_MIN` 300 → 600, новый `MB_SUB_MAX` 7200), дефолт в `root/etc/config` 86400 → 3600.
   Старое 86400 при чтении показывается как 120 мин и пишется так при следующем Save.
@@ -97,11 +99,12 @@ view/monkey-business/
 
 ## Итерации
 Каждая: десктоп + мобилка одного экрана в одной сессии; lint/check/test-unit; code-reviewer;
-runbook ручной проверки; следующая — после прогона пользователя на R2S.
+runbook ручной проверки — прогон в dev-VM (QEMU); на R2S — только готовая фича.
 1. **Kit + токены + Settings.** `kit/*`, `style.js`, `api.js`, `store.js`, JS-тест-харнесс; Settings
    на новом DOM. Проверяет тему (тёмная/светлая), брейкпоинт и staged-модель на самом простом экране.
 2. **Servers: подписки.** Инлайн Name/URL/интервал, Add-шторка, удаление с подтверждением, Fetch/Ping.
-   Бэкенд: `subscription_add`, интервал 600–7200.
+   Бэкенд: `subscription_add`, интервал 600–7200. Готово: панель `srv/subpanel.js` над старым
+   CBI-гридом серверов, `subsection.js` удалён.
 3. **Servers: серверы.** Грид/плитки, Ping all, Sort by ping, Off, перестановка, ⋮-меню,
    шторка сервера (только ссылка), удаление с подтверждением. Бэкенд: `server_link`.
 4. **Dashboard.** Статус, трафик, Routing-модалка (`routing_check` + отказ `set_routing`),
@@ -112,5 +115,10 @@ runbook ручной проверки; следующая — после про�
 - Удаление `serveropt.js` снимает миграцию JSON-блоба → плоские поля при сохранении. Запись
   ссылки ручного сервера обязана писать плоские поля и снимать блоб (тест в итерации 3).
 
-## Открытые вопросы
-- Светлая палитра — в макете её нет; предложить в итерации 1 и согласовать по скриншоту с R2S.
+## Решённые вопросы
+- Светлая палитра «холодный серый» (`kit/tokens.js`) принята как есть (2026-10-10).
+- Fetch / Add при несохранённых правках: сначала `map.save` + коммит (как Save & Apply, без
+  `config_apply`), потом запрос (2026-10-10). Только staged-дельты теряются: бэкенд пересоздаёт
+  анонимные секции server, и дельты на старые имена libuci отбрасывает (удалённые серверы
+  воскресали сиротами). На время запроса страница закрыта шторкой `kit/progress.js`, иначе
+  `store.reset` после ответа стёр бы правки, сделанные за время ожидания.
