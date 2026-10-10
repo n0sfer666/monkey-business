@@ -2,7 +2,7 @@
 
 import { parse } from "../parser/subscription.uc";
 import { selectBest } from "./select.uc";
-import { LEGACY_SUB, isManual, serverSub } from "../lib/subs.uc";
+import { LEGACY_SUB, isManual, serverSub, activeSubId } from "../lib/subs.uc";
 
 // "upload=0; download=123; total=456; expire=789" -> объект (значения строками)
 function parseUserinfo(s) {
@@ -98,6 +98,12 @@ function mergeKeepingOrder(existing, fresh, id) {
 	return ordered;
 }
 
+const NAME_MAX = 64;
+
+function validUrl(url) {
+	return match(url, /^https?:\/\/[^ \t\r\n]+$/i) != null;
+}
+
 function subscriptionUpdate(ctx, args) {
 	let id = (args != null && args.sub != null && args.sub != "") ? args.sub : LEGACY_SUB;
 	let sub = ctx.getSubscription(id);
@@ -106,6 +112,8 @@ function subscriptionUpdate(ctx, args) {
 	let url = (args != null && args.url != null && args.url != "") ? args.url : sub.url;
 	if (url == null || url == "")
 		return { error: "no subscription url" };
+	if (!validUrl(url))
+		return { error: "invalid subscription url" };
 
 	let resp = ctx.fetchSubscription(url);
 	if (resp == null || resp.body == null)
@@ -129,4 +137,54 @@ function subscriptionUpdate(ctx, args) {
 	return { format: res.format, added: length(res.servers), errors: res.errors };
 }
 
-export { subscriptionUpdate, parseUserinfo, serverKey, connectionKey, mergeKeepingOrder };
+function newSubId(ctx) {
+	for (let i = 0; i < 8; i++) {
+		let id = "sub_" + ctx.randomHex();
+		if (ctx.getSubscription(id) == null)
+			return id;
+	}
+	return null;
+}
+
+function textArg(args, key) {
+	return (args != null && type(args[key]) == "string") ? trim(args[key]) : "";
+}
+
+function cleanName(name) {
+	return trim(substr(replace(name, /[[:cntrl:]]/g, ""), 0, NAME_MAX));
+}
+
+function emptyActive(ctx) {
+	let id = activeSubId(ctx.getSubscriptions(), ctx.getGlobal().active_sub);
+	let sub = (id != null) ? ctx.getSubscription(id) : null;
+	if (sub == null || (sub.url != null && sub.url != ""))
+		return null;
+	for (let sv in ctx.getServers())
+		if (serverSub(sv) == id)
+			return null;
+	return id;
+}
+
+function subscriptionAdd(ctx, args) {
+	let url = textArg(args, "url");
+	if (url == "")
+		return { error: "no subscription url" };
+	if (!validUrl(url))
+		return { error: "invalid subscription url" };
+	let id = newSubId(ctx);
+	if (id == null)
+		return { error: "no free subscription id" };
+	let empty = emptyActive(ctx);
+	ctx.addSubscription(id, cleanName(textArg(args, "name")) || "Subscription", url);
+	let res = subscriptionUpdate(ctx, { sub: id, url: url });
+	if (res.error != null) {
+		ctx.removeSubscription(id);
+		return { error: res.error };
+	}
+	res.sub = id;
+	if (empty != null && ctx.setActiveSub(id))
+		res.active_sub = id;
+	return res;
+}
+
+export { subscriptionUpdate, subscriptionAdd, parseUserinfo, serverKey, connectionKey, mergeKeepingOrder };

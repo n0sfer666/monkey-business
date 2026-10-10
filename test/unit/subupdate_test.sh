@@ -103,14 +103,32 @@ run 4600
 eq "due.calls" "$(calls)" "2"
 eq "due.state" "$(cat "$T/state/subscription")" "4600 ok"
 
-# 6. интервал ниже MIN подтягивается до 300: через минуту ещё рано, через 300с — пора
+# 6. интервал ниже MIN подтягивается до 600: через 300с ещё рано, через 600с — пора
 reset
 set_cfg subscription update_interval 10
 run 1000
-run 1060
-eq "clamp.early" "$(calls)" "1"
 run 1300
+eq "clamp.early" "$(calls)" "1"
+run 1600
 eq "clamp.due" "$(calls)" "2"
+
+# 6a. интервал выше MAX (старые сутки) срезается до 7200
+reset
+set_cfg subscription update_interval 86400
+run 1000
+run 8100
+eq "clamp.max.early" "$(calls)" "1"
+run 8200
+eq "clamp.max.due" "$(calls)" "2"
+
+# 6b. пустой или битый интервал -> час
+reset
+set_cfg subscription update_interval ''
+run 1000
+run 4500
+eq "default.early" "$(calls)" "1"
+run 4600
+eq "default.due" "$(calls)" "2"
 
 # 7. ошибка от rpcd -> штамп fail и пауза RETRY(900), а не interval(3600)
 reset

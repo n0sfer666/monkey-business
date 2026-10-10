@@ -57,6 +57,25 @@ function buildCtx() {
 			cursor.set(CONFIG, id, 'url', url);
 			cursor.commit(CONFIG);
 		},
+		addSubscription: function(id, name, url) {
+			cursor.set(CONFIG, id, 'subscription');
+			cursor.set(CONFIG, id, 'name', name);
+			cursor.set(CONFIG, id, 'url', url);
+			cursor.set(CONFIG, id, 'auto_update', '1');
+			cursor.set(CONFIG, id, 'update_interval', '3600');
+			cursor.commit(CONFIG);
+		},
+		removeSubscription: function(id) {
+			cursor.delete(CONFIG, id);
+			cursor.commit(CONFIG);
+		},
+		randomHex: function() {
+			let raw = readfile('/dev/urandom', 4) || '';
+			let out = '';
+			for (let i = 0; i < length(raw); i++)
+				out += sprintf('%02x', ord(raw, i));
+			return out;
+		},
 		setUserinfo: function(id, o) {
 			cursor.set(CONFIG, id, 'used_upload', o.used_upload || '');
 			cursor.set(CONFIG, id, 'used_download', o.used_download || '');
@@ -162,6 +181,7 @@ const methods = {
 	subscription_ping:    { args: { sub: '' }, call: function(req) { return hping.subscriptionPing(buildCtx(), req.args); } },
 	server_ping:          { args: { id: '' }, call: function(req) { return hping.serverPing(buildCtx(), req.args); } },
 	subscription_update:  { args: { url: '', sub: '' }, call: function(req) { return hsub.subscriptionUpdate(buildCtx(), req.args); } },
+	subscription_add:     { args: { name: '', url: '' }, call: function(req) { return hsub.subscriptionAdd(buildCtx(), req.args); } },
 	subscription_autoswitch: { args: { check: false, deadline: 0 }, call: function(req) { return hswitch.subscriptionAutoswitch(buildCtx(), req.args); } },
 	subscription_select:  { args: { sub: '' }, call: function(req) { return h.subscriptionSelect(buildCtx(), req.args); } },
 	parse_uri:            { args: { uri: '', section: '' }, call: function(req) { return huri.parseServerUri(buildCtx(), req.args); } },

@@ -9,7 +9,7 @@
 # раз в сутки в одни и те же LBA (ровно за это выпилили boothealth beat).
 #
 # Env-override (дефолты боевые): MB_SUB_STATE_DIR(/tmp/mb-subupdate) MB_SUB_RETRY(900)
-# MB_SUB_MIN(300) MB_SUB_UBUS_TIMEOUT(60) MB_SUB_NOW(epoch) MB_SUB_WD_LOCK(/tmp/mb-watchdog/lock)
+# MB_SUB_MIN(600) MB_SUB_MAX(7200) MB_SUB_UBUS_TIMEOUT(60) MB_SUB_NOW(epoch) MB_SUB_WD_LOCK(/tmp/mb-watchdog/lock)
 # MB_SUB_LOCK_WAIT(30) MB_SUB_SWITCH_TIMEOUT(90) MB_SUB_APPLY_MARGIN(15) MB_SUB_LIB(каталог wdlock.sh).
 set -u
 
@@ -18,9 +18,10 @@ STATE_DIR="${MB_SUB_STATE_DIR:-/tmp/mb-subupdate}"
 # Пауза после неудачи: панель недоступна (нет сети, VPN лежит) — это норма, но долбиться к ней
 # каждую минуту нельзя.
 RETRY="${MB_SUB_RETRY:-900}"
-# Нижняя граница интервала: опечатка в поле формы (10 вместо 86400) не должна превращаться
-# в обстрел панели.
-MIN="${MB_SUB_MIN:-300}"
+# Границы интервала (10 мин – 2 ч, как в форме): опечатка в UCI не должна превращаться ни в
+# обстрел панели, ни в список серверов, который не обновляется сутками.
+MIN="${MB_SUB_MIN:-600}"
+MAX="${MB_SUB_MAX:-7200}"
 UBUS_TIMEOUT="${MB_SUB_UBUS_TIMEOUT:-60}"
 NOW="${MB_SUB_NOW:-$(date +%s)}"
 WD_LOCK="${MB_SUB_WD_LOCK:-/tmp/mb-watchdog/lock}"
@@ -52,8 +53,9 @@ update_one() {
 	[ "$(cfg "$id" auto_update)" = 1 ] || return 0
 	[ -n "$(cfg "$id" url)" ] || return 0
 
-	interval=$(num "$(cfg "$id" update_interval)" 86400)
+	interval=$(num "$(cfg "$id" update_interval)" 3600)
 	[ "$interval" -ge "$MIN" ] || interval="$MIN"
+	[ "$interval" -le "$MAX" ] || interval="$MAX"
 
 	last=0
 	result=""
