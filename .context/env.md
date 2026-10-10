@@ -3,9 +3,11 @@
 ## Сборка/разработка (хост)
 - `DOCKER_HOST` — если используется удалённый Docker (обычно не нужно).
 
-## Dev-VM (scripts/dev-vm.sh)
-- `MB_IMMORTALWRT_URL` — URL образа ImmortalWrt aarch64 для QEMU (переопределение дефолта).
-- `MB_VM_SSH_PORT` — проброшенный SSH-порт dev-VM (дефолт в скрипте).
+## Dev-VM (scripts/dev-vm.sh, scripts/dev-env.sh = make dev)
+- `MB_IMMORTALWRT_URL` — URL образа ImmortalWrt aarch64 для QEMU (переопределение дефолта); кэш
+  образа — `.dev-vm/cache/<имя файла>`, `make dev-down` его не трогает.
+- `MB_VM_SSH_PORT` / `MB_VM_HTTP_PORT` — проброшенные SSH- и LuCI-порты dev-VM (дефолты в скриптах).
+- `MB_VM_SUB_FILE` — файл с URL подписки для `make dev` (дефолт `.context/notes/vpnon-sub.local`).
 
 ## Рантайм на роутере (этап 3+)
 - Секреты (токен подписки VPNON, ключи Reality) хранятся в UCI с правами 0600,

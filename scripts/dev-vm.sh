@@ -3,7 +3,7 @@
 # Архитектура совпадает с NanoPi R2S (aarch64); финал — на железе.
 #
 # Запускается ФОНОВО (headless), консоль — на unix-сокете, весь вывод пишется в лог.
-# Подкоманды: up | provision | console | ssh | down | clean | status
+# Подкоманды: up | provision | console | ssh | down | status
 #
 # Окружение: MB_VM_SSH_PORT(2222) MB_VM_HTTP_PORT(8090) MB_VM_MEM(512) MB_IMMORTALWRT_URL
 set -u
@@ -19,9 +19,19 @@ FW="$VMDIR/edk2-aarch64-code.fd"
 SOCK="$VMDIR/console.sock"
 LOG="$VMDIR/console.log"
 PID="$VMDIR/qemu.pid"
+CACHE="$VMDIR/cache"
+IMG_GZ="$CACHE/$(basename "$IMG_URL")"
 
 die() { echo "error: $*" >&2; exit 1; }
 need() { command -v "$1" >/dev/null 2>&1 || die "не найдено '$1'. Установи: $2"; }
+
+qemu_gone() {
+	i=0
+	while pgrep -f "qemu-system-aarch64.*$DISK" >/dev/null 2>&1; do
+		[ "$i" -lt 10 ] || return 1
+		sleep 1; i=$((i + 1))
+	done
+}
 
 is_running() {
 	[ -f "$PID" ] && kill -0 "$(cat "$PID" 2>/dev/null)" 2>/dev/null
@@ -30,13 +40,16 @@ is_running() {
 ensure_assets() {
 	mkdir -p "$VMDIR"
 	if [ ! -f "$DISK" ]; then
-		echo ">> скачиваю образ ImmortalWrt aarch64..."
-		need curl "brew install curl"
-		curl -fL "$IMG_URL" -o "$VMDIR/disk.img.gz" || die "не удалось скачать образ"
+		if [ ! -s "$IMG_GZ" ]; then
+			echo ">> скачиваю образ ImmortalWrt aarch64 в $CACHE..."
+			need curl "brew install curl"
+			mkdir -p "$CACHE"
+			curl -fL "$IMG_URL" -o "$IMG_GZ.part" || die "не удалось скачать образ"
+			mv "$IMG_GZ.part" "$IMG_GZ"
+		fi
 		# gzip -dc терпит "trailing garbage" (бывает у release-образов); проверяем по непустому output
-		gzip -dc "$VMDIR/disk.img.gz" > "$DISK" 2>/dev/null
-		[ -s "$DISK" ] || die "не удалось распаковать образ"
-		rm -f "$VMDIR/disk.img.gz"
+		gzip -dc "$IMG_GZ" > "$DISK" 2>/dev/null
+		[ -s "$DISK" ] || { rm -f "$DISK" "$IMG_GZ"; die "не удалось распаковать образ (кэш сброшен, повтори make dev)"; }
 		qemu-img resize "$DISK" 512M >/dev/null 2>&1 || true
 	fi
 	if [ ! -f "$FW" ]; then
@@ -56,7 +69,7 @@ cmd_up() {
 	fi
 	for p in "$SSH_PORT" "$HTTP_PORT"; do
 		if command -v nc >/dev/null 2>&1 && nc -z 127.0.0.1 "$p" 2>/dev/null; then
-			die "порт $p уже занят другим процессом. Освободи его или задай MB_VM_SSH_PORT / MB_VM_HTTP_PORT (напр. MB_VM_HTTP_PORT=8091 make dev-up)"
+			die "порт $p уже занят другим процессом. Освободи его или задай MB_VM_SSH_PORT / MB_VM_HTTP_PORT (напр. MB_VM_HTTP_PORT=8091 make dev)"
 		fi
 	done
 	ensure_assets
@@ -96,23 +109,18 @@ cmd_up() {
 		kill -0 "$qpid" 2>/dev/null || die "QEMU упал, см. $VMDIR/qemu.log"
 		sleep 1; i=$((i + 1))
 	done
-	if [ "$booted" = 1 ]; then
-		echo ">> VM загружена. Дальше: make dev-provision (один раз), затем make dev-deploy / http://localhost:$HTTP_PORT"
-	else
-		echo ">> WARN: не дождался приглашения консоли за ${i}s."
-		echo "   Если зависла на 'procd: - ubus -' (гонка ubusd в QEMU на не-первой загрузке) —"
-		echo "   восстанови одной командой: make dev-rebuild"
-	fi
+	[ "$booted" = 1 ] || die "не дождался приглашения консоли за ${i}s. Если зависла на 'procd: - ubus -' (гонка ubusd в QEMU на не-первой загрузке) — make dev-down, затем make dev"
+	echo ">> VM загружена"
 }
 
 cmd_provision() {
-	is_running || die "VM не запущена (make dev-up)"
+	is_running || die "VM не запущена (make dev)"
 	need python3 "входит в macOS"
 	python3 scripts/vm-provision.py "$SOCK"
 }
 
 cmd_console() {
-	is_running || die "VM не запущена (make dev-up)"
+	is_running || die "VM не запущена (make dev)"
 	echo ">> консоль VM (выход: Ctrl-C — VM продолжит работать). Enter для приглашения."
 	if command -v nc >/dev/null 2>&1; then
 		nc -U "$SOCK"
@@ -128,7 +136,7 @@ PY
 
 cmd_ssh() {
 	need ssh "ssh из системы"
-	echo ">> пароль: root (задаётся make dev-provision)"
+	echo ">> пароль: root (задаётся make dev)"
 	exec ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
 		-o PreferredAuthentications=password -o PubkeyAuthentication=no \
 		-p "$SSH_PORT" "root@localhost"
@@ -142,7 +150,10 @@ cmd_down() {
 		echo ">> VM не запущена (по pidfile)"
 	fi
 	pkill -f "qemu-system-aarch64.*$DISK" 2>/dev/null || true
-	rm -f "$PID" "$SOCK"
+	qemu_gone || { pkill -9 -f "qemu-system-aarch64.*$DISK" 2>/dev/null || true; qemu_gone; } ||
+		die "qemu не завершился, .dev-vm не тронут — убей процесс и повтори make dev-down"
+	[ -d "$VMDIR" ] && find "$VMDIR" -mindepth 1 -maxdepth 1 ! -name cache -exec rm -rf {} +
+	echo ">> $VMDIR сброшен (образ в $CACHE сохранён)"
 }
 
 cmd_status() {
@@ -153,12 +164,6 @@ cmd_status() {
 	fi
 }
 
-cmd_clean() {
-	cmd_down
-	rm -rf "$VMDIR"
-	echo ">> $VMDIR удалён"
-}
-
 case "${1:-}" in
 	up)        cmd_up ;;
 	provision) cmd_provision ;;
@@ -166,6 +171,5 @@ case "${1:-}" in
 	ssh)       cmd_ssh ;;
 	down)      cmd_down ;;
 	status)    cmd_status ;;
-	clean)     cmd_clean ;;
-	*)         echo "usage: $0 {up|provision|console|ssh|down|status|clean}" >&2; exit 2 ;;
+	*)         echo "usage: $0 {up|provision|console|ssh|down|status}" >&2; exit 2 ;;
 esac

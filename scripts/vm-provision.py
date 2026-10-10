@@ -112,7 +112,7 @@ def main():
             break
         print(f"   uhttpd не встал (попытка {attempt}), повтор...")
     if not ok:
-        print("!! LuCI/uhttpd установить не удалось — проверь интернет в VM и повтори make dev-provision")
+        print("!! LuCI/uhttpd установить не удалось — проверь интернет в VM и повтори make dev")
 
     run("/etc/init.d/rpcd enable; /etc/init.d/rpcd restart; "
         "/etc/init.d/uhttpd enable; /etc/init.d/uhttpd restart; "

@@ -139,7 +139,7 @@ What this does:
 > non-zero, so there is no `.ipk` to build yet (the "Alternative" below is a placeholder for when
 > there is).
 
-> **Do not set `MB_UBUS_RESPAWN=1` for real hardware.** That flag (used only by `make dev-deploy`
+> **Do not set `MB_UBUS_RESPAWN=1` for real hardware.** That flag (used only by `make dev`
 > for the QEMU dev VM) force-respawns `ubusd`/`rpcd` to work around an emulator bug. The R2S doesn't
 > need it and you don't want to kill `ubusd` on a live router.
 
