@@ -1,8 +1,8 @@
 # Компактный UI (LuCI) — спецификация
 
-Статус: архитектура согласована 2026-10-10 (ADR `decisions/2026-10-10-own-dom-ui.md`); итерация 1
-сделана 2026-10-10 (kit, `api.js`, `store.js`, Settings) — ждёт прогона runbook на R2S
-(`specs/2026-10-10-compact-ui-runbook.md`) и согласования светлой палитры (`kit/tokens.js`).
+Статус: архитектура согласована 2026-10-10 (ADR `decisions/2026-10-10-own-dom-ui.md`); итерации 1–3
+сделаны 2026-10-10 (kit, `api.js`, `store.js`, Settings, Servers) и прогнаны в dev-VM — ждут прогона
+runbook на R2S (`specs/2026-10-10-compact-ui-runbook.md`). Дальше — итерация 4 (Dashboard).
 Макет: https://claude.ai/artifact/Qi9eCMkVJJSUMzKcLT3TFF (версия 30). Источник правды по виду —
 борды макета; эта спека фиксирует поведение и архитектуру.
 
@@ -63,10 +63,12 @@ view/monkey-business/
   dashboard.js servers.js settings.js   view: load → state → render; Save/Reset/Apply-хуки
   api.js                                все rpc.declare
   store.js                              staged UCI: get/set/add/remove/move, dirty, save/reset/apply
-  kit/  style.js sheet.js confirm.js switch.js seg.js menu.js inline.js tip.js field.js
+  kit/  style.js sheet.js confirm.js switch.js seg.js menu.js inline.js tip.js field.js drag.js
   model/ dirty.js datatype.js settings.js subs.js pingtext.js interval.js order.js servers.js confirmtext.js
+         linktext.js serverwrite.js
   dash/ status.js traffic.js routing.js rules.js geo.js serverlist.js hysteria.js
-  srv/  subpanel.js subrow.js subsheet.js serverrow.js serversheet.js pingbar.js
+  srv/  subpanel.js subrow.js subsheet.js serverpanel.js serverhead.js serverrow.js servertiles.js
+        serversheet.js serveredit.js pingbar.js
   set/  sections.js
 ```
 `kit/` не знает домена; `model/` не знает DOM; `dash/ srv/ set/` склеивают одно с другим.
@@ -77,7 +79,8 @@ view/monkey-business/
 - **`routing_check {direct, proxy}`** (новый, read): `[{list, line, code}]`. Логика —
   `src/lib/rules.uc` `validateRules`; `classifyList` (`src/generator/routing.uc`) переходит на неё.
 - **`set_routing`**: отклоняет невалидное `{error:'invalid_rules', items:[…]}` до записи в UCI.
-- **`server_link {id}`** (новый, write — отдаёт секреты): ссылка ручного сервера для Edit.
+- **`server_link {section}`** (новый, write — отдаёт секреты): ссылка ручного сервера для Edit;
+  `{ok, link}` / `{error: not_manual | not_found}` (`src/rpcd/uri.uc` `serverLink`).
   Сериализатор `src/lib/serveruri.uc` `serverToUri`; тест — round-trip `parse(serverToUri(s)) == s`
   по фикстурам vless/reality/xhttp/grpc/hy2(obfs, mport, pin).
 - **`subscription_add {name, url}`** (новый, write): создать секцию → скачать → при провале удалить
@@ -106,7 +109,9 @@ runbook ручной проверки — прогон в dev-VM (QEMU); на R2
    Бэкенд: `subscription_add`, интервал 600–7200. Готово: панель `srv/subpanel.js` над старым
    CBI-гридом серверов, `subsection.js` удалён.
 3. **Servers: серверы.** Грид/плитки, Ping all, Sort by ping, Off, перестановка, ⋮-меню,
-   шторка сервера (только ссылка), удаление с подтверждением. Бэкенд: `server_link`.
+   шторка сервера (только ссылка), удаление с подтверждением. Бэкенд: `server_link`. Готово:
+   `servers.js` целиком на своём DOM (`srv/serverpanel.js`), `pinggrid`, `serverfields`,
+   `serverlink`, `serveropt` удалены.
 4. **Dashboard.** Статус, трафик, Routing-модалка (`routing_check` + отказ `set_routing`),
    Geo-модалка, список серверов, hysteria.
 5. **Зачистка.** Удаление остатков CBI, доки (README/runbook EN+RU), `.context/architecture.md`.
@@ -121,4 +126,21 @@ runbook ручной проверки — прогон в dev-VM (QEMU); на R2
   `config_apply`), потом запрос (2026-10-10). Только staged-дельты теряются: бэкенд пересоздаёт
   анонимные секции server, и дельты на старые имена libuci отбрасывает (удалённые серверы
   воскресали сиротами). На время запроса страница закрыта шторкой `kit/progress.js`, иначе
-  `store.reset` после ответа стёр бы правки, сделанные за время ожидания.
+  `store.reset` после ответа стёр бы правки, сделанные за время ожидания. Если сохранение прошло,
+  страница перечитывается при любом исходе запроса: имена новых секций после него уже другие.
+- Ссылка сервера, добавленного или изменённого в этой сессии, берётся из памяти страницы, а не из
+  `server_link`: staged-правки LuCI бэкенду не видны. Reset чистит только несохранённое; ссылки,
+  сохранённые через Save, переживают Reset под реальным именем секции (`store.save()` отдаёт
+  карту `newXXXX → cfgXXXX`); Save & Apply и обновление подписок чистят всё (2026-10-10).
+- `store.save()` сам переставляет секции и сам сопоставляет новые: LuCI `uci.save()` сдвигает
+  `.name` созданных секций на число удалений в том же Save, а `reorderSections` пропускает конфиг,
+  в котором есть удаления, — порядок молча терялся. Поэтому флаг reorder снимается до `uci.save()`,
+  новые секции находятся по содержимому (`model/sidmap.js`), порядок — `uci.callOrder`; если он
+  упал, порядок возвращается в staged через `uci.move` и *Save* снова активна; имена новых секций
+  отдаются колбэком `store.save(named)` до перестановки, поэтому ссылки новых серверов не теряются
+  (2026-10-10).
+- Пользователь только с правом чтения видит страницу без изменяющих контролов: нет добавления,
+  Fetch, удаления, перестановки, Sort и Off, поля подписки не редактируются, бар неактивен. Фильтр
+  и пинг работают — они из read-ACL (2026-10-10).
+- Снять Off пишет `disabled='0'`, а не удаляет опцию: `uci.sections()` LuCI подмешивает изменения,
+  но не вычитает удалённые опции, и строка оставалась *off* до Save (2026-10-10).
