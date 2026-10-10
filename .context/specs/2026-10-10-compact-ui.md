@@ -15,7 +15,8 @@ runbook на R2S (`specs/2026-10-10-compact-ui-runbook.md`). Дальше — и
 
 ## Решения дизайна (зафиксированы в макете)
 - Вкладки Dashboard / Servers / Settings видны на каждом экране — это меню LuCI (`menu.d`,
-  firstchild), не наш компонент. Заголовков h1 «Servers»/«Settings» под ними нет.
+  firstchild), не наш компонент. Под ними — h1 экрана с подзаголовком, как в бордах (решение
+  2026-10-10, K1 в `2026-10-10-compact-ui-audit.md`).
 - Кнопки создания («+ Add subscription», «+ Add server») — акцентный тинт; сплошной primary только
   у Save & Apply.
 - Подписка правится в строке: Name и URL — инлайн-поля (пунктирная рамка, как у Auto-update), URL

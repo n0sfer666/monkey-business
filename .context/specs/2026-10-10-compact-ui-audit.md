@@ -15,14 +15,14 @@ QEMU dev-VM (LuCI localhost:8090). Макет — артефакт Qi9eCMkVJJSUM
 | Экран / борд | Поведение | Макет | Конфликт спеки и макета |
 |---|---|---|---|
 | Dashboard / `Main`, `MobileDashboard` | fail — итерация 4 не сделана | fail — старый LuCI-вид | — |
-| Servers / `Servers` | pass (staged-шаги) | fail | h1 + подзаголовок |
+| Servers / `Servers` | pass (staged-шаги) | fail | h1 + подзаголовок — решён: макет |
 | Servers / `MobileServers` | pass (staged-шаги) | fail — строки вместо плиток | — |
-| Settings / `Settings`, `MobileSettings` | pass (staged-шаги) | fail | h1 + подзаголовок |
+| Settings / `Settings`, `MobileSettings` | pass (staged-шаги) | fail | h1 + подзаголовок — решён: макет |
 | Routing / Geo (`*RoutingModal`, `*GeoModal`) | fail — модалок нет | fail — нечего сверять | — |
 | Add subscription / `SubModal`, `MobileSubModal` | fail — фокус после клика по подложке в busy | fail | — |
 | Add / edit server / `ServerModal`, `MobileServerModal` | fail в WebKit (Tab, фокус) | fail | — |
 | Delete / `ConfirmModal`, `MobileConfirmModal` | fail в WebKit (Tab, Esc) | 1280 близко (замер не полный), 390 pass | — |
-| ⋮-меню | fail — Tab выводит наружу | pass по снимку | — |
+| ⋮-меню | fail — после Tab фокус не на ⋮ | pass по снимку | Tab по ARIA — решён |
 
 ## Поведение — что прошло
 
@@ -138,7 +138,7 @@ D3–D5 относятся к старому виду и уйдут вместе
 | O3 | подтверждения | 1280, 390 | обе | WebKit | Esc закрывает | После утечки фокуса (O2) Esc не закрывает: слушатель висит на `.mb-ovl` | M | там же |
 | O4 | все | 1280, 390 | обе | WebKit | После закрытия фокус на триггере | Фокус уходит на `lang_en`: Safari не фокусирует кнопку по клику, а sheet.js берёт `document.activeElement` | M | там же |
 | O5 | SubModal (busy) | 1280, 390 | обе | оба | Клик по подложке в busy игнорируется, фокус остаётся внутри | Шторка не закрывается, но фокус уходит на body (mousedown без preventDefault). После этого Esc и ловушка Tab не работают, даже когда busy закончился | M | `func/*-addsub-failed.png` |
-| O6 | ⋮-меню | 390 | обе | оба | Tab не уходит наружу (Б.3) | Tab закрывает меню, фокус уходит в шапку LuCI. Это ARIA-практика для menu — нужно решение, см. «Конфликты» | M? | `ovl/*menu*` |
+| O6 | ⋮-меню | 390 | обе | оба | Tab закрывает меню, фокус возвращается на ⋮ (решение K2) | Меню закрывается, но фокус уходит в шапку LuCI | M | `ovl/*menu*` |
 | O7 | SubModal / ServerModal | 1280 | обе | оба | Ширина 542 / 560 | 480 / 520 (Confirm 440 = 440) | m | `sbs/ovl-*-1280.png` |
 | O8 | SubModal--failed (+Mobile) | 1280, 390 | обе | оба | Плашка ошибки с иконкой ⓘ вверху, над Name | Плашка без иконки внизу, после подсказки URL | M | `sbs/sub-failed-1280.png`, `sbs/m-sub-failed-390.png` |
 | O9 | MobileSubModal / MobileServerModal | 390 | обе | оба | Высокая шторка (Sub 748px от top 96, Server 604px); кнопки в ряд: Cancel 78 | primary 271 | Шторка по контенту (386 / 422); кнопки стопкой на всю ширину, primary сверху | M | `sbs/m-add-sub-390.png`, `sbs/m-add-server-390.png` |
@@ -151,15 +151,16 @@ D3–D5 относятся к старому виду и уйдут вместе
 | X2 | Servers | 1280 | В трафике «… · [DATE]» | «… · until [DATE]» | m |
 | X3 | MobileSettings | 390 | Сокращённые подсказки: «Drop LAN traffic instead of leaking it direct», «Nothing leaks around the IPv4 tunnel», «Split: local domains direct, foreign over DoH», «Everything via the VPN resolves here» | Полные десктопные тексты | m |
 | X4 | MobileServers | 390 | Подсказка внизу как в борде | Другая | m |
-| X5 | Servers / Settings | 1280, 390 | Подзаголовки «Row order is the connect priority» / «Defaults are safe» | «Changes stay local until Save & Apply.» / «Each option has a hint. Defaults are safe.» (связано с конфликтом K1) | m |
+| X5 | Servers / Settings | 1280, 390 | Подзаголовки «Row order is the connect priority» / «Defaults are safe» | «Changes stay local until Save & Apply.» / «Each option has a hint. Defaults are safe.» (по решению K1 правда — макет) | m |
 
-## Конфликты спеки и макета — на решение
+## Конфликты спеки и макета — решены (интервью 2026-10-10)
 
-- **K1.** В бордах Servers и Settings есть h1 с подзаголовком, а в спеке компактного UI «h1 нет».
-  По критерию А.7 правда за макетом, но пока решения нет, это не дефект.
-- **K2.** ⋮-меню и Tab. По ARIA-практике для `role=menu` Tab закрывает меню, а критерий Б.3 требует
-  не выпускать фокус наружу. Нужно выбрать: оставить ARIA-поведение и сузить Б.3 для меню, или
-  держать фокус.
+- **K1.** В бордах Servers и Settings есть h1 с подзаголовком, а в спеке компактного UI было «h1 нет».
+  **Решение: правда — макет.** Спека поправлена; нет h1 и подзаголовка из борда — расхождение
+  (группа 7, X5).
+- **K2.** ⋮-меню и Tab: по ARIA-практике для `role=menu` Tab закрывает меню, а Б.3 требовал не
+  выпускать фокус. **Решение: ARIA** — Tab закрывает меню, фокус возвращается на ⋮. Б.3 сужен для
+  меню; текущее поведение (фокус в шапку) — расхождение O6.
 
 ## Не проверено
 
@@ -180,12 +181,14 @@ D3–D5 относятся к старому виду и уйдут вместе
 
 - `make help` не показывает цель `dev-down`, хотя она есть в Makefile.
 
-## Предлагаемые спеки исправлений
+## Спеки исправлений — порядок (решение 2026-10-10)
 
-1. Dashboard — итерация 4 (группа 1) — самая большая.
-2. Хром вкладок (группа 2) — общий для всех экранов, делать до сверки остальных.
-3. Оверлеи (группа 6, O1–O5, O7–O9): скролл-лок, ловушка Tab на всех элементах, Esc на document,
-   запоминание триггера, preventDefault на подложке, вид Sub/Server-шторок. Затрагивает все модалки.
-4. Servers (группы 3 и 4): мобильные плитки и шапка — отдельно от правок таблицы подписок на десктопе.
-5. Settings (группа 5).
-6. Тексты (группа 7) — после решения по K1.
+1. Оверлеи + вкладки — общие для всех экранов, первыми.
+   - Вкладки (группа 2).
+   - Оверлеи (группа 6, O1–O9): скролл-лок, ловушка Tab на всех элементах, Esc на document,
+     запоминание триггера, preventDefault на подложке, фокус на ⋮ после Tab, вид Sub/Server-шторок.
+2. Остальное — порядок не выбран:
+   - Dashboard — итерация 4 (группа 1), самая большая;
+   - Servers (группы 3 и 4): мобильные плитки и шапка — отдельно от таблицы подписок на десктопе;
+   - Settings (группа 5);
+   - Тексты (группа 7), включая h1 с подзаголовком по K1.
