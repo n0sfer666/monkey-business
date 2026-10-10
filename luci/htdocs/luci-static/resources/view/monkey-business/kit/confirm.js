@@ -47,6 +47,7 @@ return baseclass.extend({
 				icon: o.danger === false ? '' : icon(),
 				title: o.title,
 				closable: false,
+				back: o.back,
 				body: o.body ? E('div', { 'class': 'mb-confirm-body' }, [ o.body ]) : null,
 				actions: actions,
 				onClose: function() { finish(null); }

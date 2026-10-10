@@ -25,7 +25,7 @@ style.add('subinterval', [
 	'}'
 ].join(''));
 
-function desk(minutes, commit) {
+function desk(minutes, commit, readonly) {
 	var note = E('div', { 'class': 'mb-sub-note', 'role': 'note' });
 	var input = inline.render({
 		value: String(minutes),
@@ -33,6 +33,7 @@ function desk(minutes, commit) {
 		normalize: function(v) { return String(interval.clamp(v)); },
 		label: _('Auto-update interval in minutes, 0 turns it off'),
 		size: 18,
+		readonly: readonly,
 		onCommit: function(v) {
 			input.classList.toggle('mb-sub-off', v === '0');
 			commit(+v);
@@ -56,11 +57,11 @@ function desk(minutes, commit) {
 	return [ input, note ];
 }
 
-function mobile(id, minutes, commit) {
+function mobile(id, minutes, commit, readonly) {
 	var value = E('span', { 'class': 'mb-muted' }, [ '· ' + interval.text(minutes) ]);
 	var slider = E('input', {
 		'type': 'range', 'min': interval.MIN, 'max': interval.MAX, 'step': 5,
-		'value': minutes || interval.DEFAULT, 'aria-label': _('Auto-update interval')
+		'value': minutes || interval.DEFAULT, 'aria-label': _('Auto-update interval'), 'disabled': readonly ? '' : null
 	});
 	var box;
 
@@ -75,7 +76,7 @@ function mobile(id, minutes, commit) {
 	box = E('div', { 'class': 'mb-sub-mob' + (minutes ? '' : ' mb-sub-off') }, [
 		E('div', { 'class': 'mb-sub-mobhead' }, [
 			E('span', { 'id': id }, [ _('Auto-update') + ' ', value ]),
-			toggle.render({ checked: minutes > 0, labelledby: id, onChange: function(on) { set(on ? +slider.value : 0); } })
+			toggle.render({ checked: minutes > 0, labelledby: id, disabled: readonly, onChange: function(on) { set(on ? +slider.value : 0); } })
 		]),
 		slider,
 		E('div', { 'class': 'mb-sub-scale mb-mono' }, [ E('span', {}, [ '10 min' ]), E('span', {}, [ '1 h' ]), E('span', {}, [ '2 h' ]) ])
@@ -84,7 +85,7 @@ function mobile(id, minutes, commit) {
 }
 
 return baseclass.extend({
-	render: function(id, minutes, commit) {
-		return desk(minutes, commit).concat(mobile(id, minutes, commit));
+	render: function(id, minutes, commit, readonly) {
+		return desk(minutes, commit, readonly).concat(mobile(id, minutes, commit, readonly));
 	}
 });

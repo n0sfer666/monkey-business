@@ -24,6 +24,7 @@ return baseclass.extend({
 			'aria-checked': o.checked ? 'true' : 'false',
 			'aria-label': o.label,
 			'aria-labelledby': o.labelledby,
+			'disabled': o.disabled ? '' : null,
 			'click': function() {
 				var next = btn.getAttribute('aria-checked') !== 'true';
 				btn.setAttribute('aria-checked', next ? 'true' : 'false');

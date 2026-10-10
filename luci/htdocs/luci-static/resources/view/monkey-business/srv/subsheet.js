@@ -98,6 +98,7 @@ return baseclass.extend({
 				fail
 			]),
 			actions: [ cancel, add ],
+			back: o.back,
 			locked: function() { return busy; }
 		});
 		check();

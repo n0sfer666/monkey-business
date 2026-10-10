@@ -69,8 +69,9 @@ return baseclass.extend({
 				return;
 			muted.forEach(function(el) { el.inert = false; });
 			ovl.parentNode.removeChild(ovl);
-			if (back && back.focus)
-				back.focus();
+			var to = back && back.isConnected ? back : o.back && o.back();
+			if (to && to.focus)
+				to.focus();
 			if (o.onClose)
 				o.onClose();
 		}

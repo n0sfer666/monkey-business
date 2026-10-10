@@ -6,6 +6,7 @@
 'require view.monkey-business.kit.style as style';
 'require view.monkey-business.kit.confirm as confirm';
 'require view.monkey-business.kit.notify as notice';
+'require view.monkey-business.kit.refocus as refocus';
 'require view.monkey-business.kit.progress as progress';
 'require view.monkey-business.model.subs as model';
 'require view.monkey-business.model.interval as interval';
@@ -13,9 +14,9 @@
 'require view.monkey-business.srv.subrow as subrow';
 'require view.monkey-business.srv.subsheet as subsheet';
 'require view.monkey-business.srv.subreport as report';
+'require view.monkey-business.srv.subpersist as subpersist';
 
 style.add('subpanel', [
-	'.mb.mb-srv{margin-bottom:14px}',
 	'.mb .mb-subs{--mb-sub-cols:72px minmax(96px,1fr) minmax(120px,1.3fr) minmax(96px,140px) minmax(0,180px) auto;display:flex;flex-direction:column}',
 	'.mb .mb-subs-head{display:flex;align-items:center;gap:12px;padding:10px 12px}',
 	'.mb .mb-subs-head .mb-muted{flex:1;min-width:0}',
@@ -42,24 +43,17 @@ return baseclass.extend({
 	create: function(o) {
 		var root = E('section', { 'class': 'mb-panel mb-subs' });
 
-		function persist() {
-			return o.map.save(null, true).then(function() {
-				return store.changes();
-			}).then(function(c) {
-				return c.length ? store.commit() : null;
-			});
+		var persist = subpersist.create(o);
+
+		function addBtn() {
+			return root.querySelector('.mb-subs-add');
 		}
 
-		function fail(prefix) {
-			return function(e) { notice.show(prefix + (e && e.message || e), 'error'); };
-		}
-
-		function refresh() {
-			return store.reset().then(function() {
-				return o.map.load();
-			}).then(function() {
-				return o.map.renderContents();
-			}).then(draw);
+		function edited(sid, opt, v) {
+			store.set(sid, opt, v);
+			if (opt === 'name')
+				return o.onRename();
+			o.onChange();
 		}
 
 		function setMinutes(sid, n) {
@@ -67,6 +61,7 @@ return baseclass.extend({
 			store.set(sid, 'auto_update', c.auto_update);
 			if (c.update_interval)
 				store.set(sid, 'update_interval', c.update_interval);
+			o.onChange();
 		}
 
 		function fetchSub(sid) {
@@ -76,15 +71,17 @@ return baseclass.extend({
 				notice.show(_('Enter a subscription URL first.'), 'warning');
 				return Promise.resolve();
 			}
-			return persist().then(function() {
-				return progress.run(_('Fetching “%s”…').format(name), WAIT, function() {
-					return api.subscriptionUpdate(sid, url);
-				});
-			}).then(function(res) {
-				report.fetch(name, res);
-				if (!(res && res.error))
-					return refresh();
-			}).catch(fail(_('Fetch error: ')));
+			return o.hold(function() {
+				return persist(function() {
+					return progress.run(_('Fetching “%s”…').format(name), WAIT, function() {
+						return api.subscriptionUpdate(sid, url);
+					}).then(function(res) {
+						report.fetch(name, res);
+					});
+				}).catch(notice.fail(_('Fetch error: ')));
+			}, function() {
+				return root.querySelector('[data-sub="' + CSS.escape(sid) + '"] .mb-sub-fetch');
+			});
 		}
 
 		function ping(sid) {
@@ -92,7 +89,7 @@ return baseclass.extend({
 				report.ping(res);
 				if (!(res && res.error))
 					o.onPing(res);
-			}).catch(fail(_('Ping failed: ')));
+			}).catch(notice.fail(_('Ping failed: ')));
 		}
 
 		function remove(sid) {
@@ -111,13 +108,12 @@ return baseclass.extend({
 			}).then(function(ok) {
 				if (!ok)
 					return;
-				return o.map.parse().then(function() {
-					gone.forEach(function(s) { store.remove(s['.name']); });
-					store.remove(sid);
-					if (next)
-						store.set('global', 'active_sub', next);
-					return o.map.renderContents();
-				}).then(draw).catch(fail(_('Delete failed: ')));
+				gone.forEach(function(s) { store.remove(s['.name']); });
+				store.remove(sid);
+				if (next)
+					store.set('global', 'active_sub', next);
+				refocus.around(root, { pattern: /^mb-sub-del$/, attr: 'data-sub', spare: addBtn }, draw);
+				o.onRemove();
 			});
 		}
 
@@ -128,18 +124,17 @@ return baseclass.extend({
 			subsheet.open({
 				name: model.defaultName(list.length),
 				hint: first ? _('Becomes the active subscription') : _('A reserve until you switch to it on the Dashboard'),
+				back: addBtn,
 				onAdd: function(name, url) {
-					return persist().then(function() {
-						return api.subscriptionAdd(name, url);
-					}, function(e) {
-						throw new Error(_('Save failed: ') + (e && e.message || e));
-					}).then(function(res) {
-						if (!(res && res.error)) {
-							report.fetch(name, res);
-							refresh().catch(fail(_('Reload failed: ')));
-						}
-						return res;
-					});
+					return o.hold(function() {
+						return persist(function() {
+							return api.subscriptionAdd(name, url).then(function(res) {
+								if (!(res && res.error))
+									report.fetch(name, res);
+								return res;
+							});
+						});
+					}, null);
 				}
 			});
 		}
@@ -151,7 +146,8 @@ return baseclass.extend({
 				return subrow.render({
 					sub: s,
 					active: s['.name'] === active,
-					onEdit: function(sid, opt, v) { store.set(sid, opt, v); },
+					readonly: o.readonly,
+					onEdit: edited,
 					onInterval: setMinutes,
 					onFetch: fetchSub,
 					onPing: ping,
@@ -162,7 +158,7 @@ return baseclass.extend({
 				E('div', { 'class': 'mb-subs-head' }, [
 					E('h2', {}, [ _('Subscriptions') ]),
 					E('span', { 'class': 'mb-muted' }, [ _('the active one is used first, the rest are a reserve') ]),
-					E('button', { 'type': 'button', 'class': 'mb-btn mb-btn-tint', 'click': add }, [
+					o.readonly ? '' : E('button', { 'type': 'button', 'class': 'mb-btn mb-btn-tint mb-subs-add', 'click': add }, [
 						E('span', { 'class': 'mb-subs-long' }, [ _('+ Add subscription') ]),
 						E('span', { 'class': 'mb-subs-short' }, [ _('+ Add') ])
 					])
@@ -181,13 +177,13 @@ return baseclass.extend({
 					return chain.then(function() {
 						return api.subscriptionUpdate(sid, '').then(function(res) {
 							report.fetch(nameOf(sid), res);
-						}, fail(_('Fetch error: ')));
+						}, notice.fail(_('Fetch error: ')));
 					});
 				}, Promise.resolve());
 			});
 		}
 
 		draw();
-		return { node: E('div', { 'class': 'mb mb-srv' }, [ root ]), draw: draw, refresh: refresh, refetch: refetch };
+		return { node: root, draw: draw, refetch: refetch };
 	}
 });

@@ -61,11 +61,19 @@ return baseclass.extend({
 				return;
 			ev.preventDefault();
 			var next = step(group, KEYS[ev.key]);
-			pick(next.getAttribute('data-value'));
 			next.focus();
+			pick(next.getAttribute('data-value'));
 		});
 
 		select(group, o.value);
 		return group;
+	},
+
+	relabel: function(scope, opts) {
+		opts.forEach(function(opt) {
+			var b = scope.querySelector('.mb-seg-opt[data-value="' + CSS.escape(opt.value) + '"]');
+			if (b)
+				b.textContent = opt.label;
+		});
 	}
 });

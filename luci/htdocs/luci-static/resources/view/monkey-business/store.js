@@ -4,8 +4,24 @@
 'require ui';
 'require view.monkey-business.api as api';
 'require view.monkey-business.model.dirty as dirty';
+'require view.monkey-business.model.sidmap as sidmap';
+'require view.monkey-business.model.order as order';
 
 var CONF = 'monkey-business';
+
+function ids(list) {
+	return list.map(function(s) { return s['.name']; });
+}
+
+function reorder(sids) {
+	return uci.callOrder(CONF, sids).then(function() {
+		uci.unload(CONF);
+		return uci.load(CONF);
+	}, function(e) {
+		order.chain(sids, function(sid, prev, after) { uci.move(CONF, sid, prev, after); });
+		throw new Error(_('order not saved: ') + (e && e.message || e));
+	});
+}
 
 return baseclass.extend({
 	CONF: CONF,
@@ -22,7 +38,22 @@ return baseclass.extend({
 	changes: function() {
 		return uci.changes().then(function(c) { return (c && c[CONF]) || []; });
 	},
-	save: function() { return uci.save(); },
+	save: function(named) {
+		var made = Object.assign({}, uci.state.creates[CONF]);
+		var known = Object.assign({}, uci.state.values[CONF]);
+		var want = uci.state.reorder[CONF] ? ids(uci.sections(CONF)) : null;
+		delete uci.state.reorder[CONF];
+		return uci.save().then(function() {
+			var names = sidmap.match(made, uci.sections(CONF).filter(function(s) { return !known[s['.name']]; }));
+			if (named)
+				named(names);
+			return want ? reorder(sidmap.order(want, names, ids(uci.sections(CONF)))) : null;
+		}, function(e) {
+			if (want)
+				uci.state.reorder[CONF] = true;
+			throw e;
+		});
+	},
 
 	reset: function() {
 		uci.unload(CONF);

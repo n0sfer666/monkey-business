@@ -19,5 +19,12 @@ return baseclass.extend({
 		if (o.next)
 			body += ' ' + _('It is the active subscription — %s becomes active.').format(quote(o.next));
 		return { title: _('Delete %s?').format(quote(o.name)), body: body };
+	},
+
+	deleteServer: function(o) {
+		var body = o.sub
+			? _('It comes back with the next update of %s. To keep it out of rotation, turn it off instead.').format(quote(o.sub))
+			: _('It is a manual server, so it is removed for good. To bring it back, add its link again.');
+		return { title: _('Delete %s?').format(quote(o.name)), body: body };
 	}
 });

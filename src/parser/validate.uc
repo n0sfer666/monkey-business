@@ -3,7 +3,7 @@
 // него весь сервер нельзя), поэтому проверки живут отдельным слоем и применяются только к ручному
 // вводу — там человек видит ошибку сразу и может её исправить, а не ловит «сервер не работает».
 //
-// Коды, а не текст: сообщение рисует LuCI (см. luci/.../serverlink.js), тут только причина.
+// Коды, а не текст: сообщение рисует LuCI (см. luci/.../model/linktext.js), тут только причина.
 
 const TRANSPORTS = { tcp: true, ws: true, xhttp: true, grpc: true, httpupgrade: true };
 const SECURITIES = { reality: true, tls: true, none: true };

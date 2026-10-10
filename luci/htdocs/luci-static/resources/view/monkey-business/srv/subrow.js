@@ -61,13 +61,13 @@ return baseclass.extend({
 		var setMinutes = function(n) { o.onInterval(sid, n); };
 
 		var name = inline.render({
-			value: s.name || '', placeholder: sid, label: _('Subscription name'), size: 24,
+			value: s.name || '', placeholder: sid, label: _('Subscription name'), size: 24, readonly: o.readonly,
 			validate: function(v) { return v ? null : _('Name must not be empty'); },
 			onCommit: function(v) { o.onEdit(sid, 'name', v); }
 		});
 		var url = inline.render({
 			value: s.url || '', placeholder: 'https://…', label: _('Subscription URL'), size: 40,
-			mono: true, mask: model.maskUrl, validate: model.urlError,
+			mono: true, mask: model.maskUrl, validate: model.urlError, readonly: o.readonly,
 			onCommit: function(v) { o.onEdit(sid, 'url', v); }
 		});
 		var del = E('button', {
@@ -82,12 +82,12 @@ return baseclass.extend({
 			E('span', { 'class': 'mb-sub-role' + (o.active ? ' mb-on' : '') }, [ o.active ? _('active') : _('reserve') ]),
 			name,
 			url,
-			E('div', { 'class': 'mb-sub-auto' }, subinterval.render('mb-sub-auto-' + sid, minutes, setMinutes)),
+			E('div', { 'class': 'mb-sub-auto' }, subinterval.render('mb-sub-auto-' + sid, minutes, setMinutes, o.readonly)),
 			traffic(s),
 			E('div', { 'class': 'mb-sub-acts' }, [
-				busybtn.render({ cls: 'mb-sub-fetch', label: _('Fetch'), busy: _('Fetching…'), run: function() { return o.onFetch(sid); } }),
+				o.readonly ? '' : busybtn.render({ cls: 'mb-sub-fetch', label: _('Fetch'), busy: _('Fetching…'), run: function() { return o.onFetch(sid); } }),
 				busybtn.render({ cls: 'mb-sub-ping', label: _('Ping'), busy: _('Pinging…'), run: function() { return o.onPing(sid); } }),
-				del
+				o.readonly ? '' : del
 			])
 		]);
 	}

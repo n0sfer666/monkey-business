@@ -22,6 +22,7 @@ return baseclass.extend({
 		var saved = o.value || '';
 		var input = E('input', {
 			'type': 'text',
+			'readonly': o.readonly ? '' : null,
 			'class': 'mb-inl' + (o.mono ? ' mb-mono' : ''),
 			'value': shown(o, saved),
 			'placeholder': o.placeholder,
@@ -32,6 +33,8 @@ return baseclass.extend({
 		});
 
 		function commit() {
+			if (o.readonly)
+				return null;
 			var next = o.normalize ? o.normalize(input.value.trim()) : input.value.trim();
 			var bad = o.validate ? o.validate(next) : null;
 			input.classList.toggle('mb-bad', !!bad);

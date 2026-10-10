@@ -31,6 +31,7 @@ return baseclass.extend({
 	serversPing: mb('servers_ping'),
 	serverPing: mb('server_ping', [ 'id' ]),
 	parseUri: mb('parse_uri', [ 'uri', 'section' ]),
+	serverLink: mb('server_link', [ 'section' ]),
 	subscriptionUpdate: slow(mb('subscription_update', [ 'sub', 'url' ])),
 	subscriptionAdd: slow(mb('subscription_add', [ 'name', 'url' ])),
 	subscriptionPing: mb('subscription_ping', [ 'sub' ]),

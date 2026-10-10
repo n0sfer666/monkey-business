@@ -11,8 +11,6 @@
 import { safeJson } from "./val.uc";
 import { serverSub } from "./subs.uc";
 
-// Имена плоских опций дублирует таблица LEGACY в luci/.../serveropt.js (форма достаёт из прежнего
-// блоба то же самое) — менять эти три карты и её нужно вместе.
 const TRANSPORT = { tr_type: "type", tr_path: "path", tr_host: "host", tr_mode: "mode", tr_service: "serviceName" };
 const REALITY = { pbk: "publicKey", sid: "shortId", spx: "spiderX" };
 const OBFS = { obfs_type: "type", obfs_password: "password" };

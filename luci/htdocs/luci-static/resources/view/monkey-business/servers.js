@@ -1,132 +1,168 @@
 'use strict';
 'require view';
-'require form';
 'require view.monkey-business.api as api';
-'require ui';
-'require uci';
-'require view.monkey-business.serverfields as fields';
-'require view.monkey-business.serverlink as link';
-'require view.monkey-business.srv.subpanel as subpanel';
-'require view.monkey-business.model.subs as submodel';
-'require view.monkey-business.subs as subs';
 'require view.monkey-business.store as store';
-'require view.monkey-business.pinggrid as pinggrid';
+'require view.monkey-business.kit.style as style';
+'require view.monkey-business.kit.notify as notice';
+'require view.monkey-business.kit.gesture as gesture';
+'require view.monkey-business.model.subs as submodel';
+'require view.monkey-business.srv.subpanel as subpanel';
+'require view.monkey-business.srv.serverpanel as serverpanel';
+
+style.add('servers-view', [
+	'.mb.mb-srv-view{display:flex;flex-direction:column;gap:14px;padding:4px 0 16px}',
+	'.mb .mb-srv-bar{display:flex;align-items:center;gap:12px}',
+	'.mb .mb-srv-hint{flex:1;min-width:0}',
+	'.mb .mb-srv-acts{display:flex;gap:8px}',
+	style.MOBILE + '{',
+	'.mb.mb-srv-view{padding-bottom:0}',
+	'.mb .mb-srv-bar{display:contents}',
+	'.mb .mb-srv-hint{display:none}',
+	'.mb .mb-srv-acts{order:2;position:sticky;bottom:0;z-index:2;padding:10px 12px;',
+	'background:var(--mb-bar);border-top:1px solid var(--mb-line)}',
+	'.mb .mb-srv-acts .mb-btn-primary{flex:1}',
+	'}'
+].join(''));
+
+function report(res) {
+	if (res && res.error)
+		return notice.show(_('Apply failed: ') + res.error, 'warning');
+	if (res && res.skipped == 'disabled')
+		return notice.show(_('Saved. The VPN is off — the new order will apply when you turn it on.'), 'info');
+	notice.show(_('Applied — connected to: ') + ((res && res.server) || '?'), 'info');
+}
 
 return view.extend({
+	handleSave: null,
+	handleSaveApply: null,
+	handleReset: null,
+
 	load: function() {
-		return pinggrid.load();
+		return Promise.all([ store.load(), api.serversList().catch(function() { return null; }) ]);
 	},
 
-	render: function(list) {
-		var pings = pinggrid.create(list);
-		var m = new form.Map('monkey-business');
-
-		var srv = m.section(form.GridSection, 'server', _('Manual servers'),
-			_('Add servers by hand, or reorder fetched ones. Lower priority connects first; if unreachable, the next is used.'));
-		srv.addremove = true;
-		srv.anonymous = true;
-		srv.sortable = true;
-		srv.filter = function(sid) {
-			var id = subs.serverSub(uci.get('monkey-business', sid));
-			var known = uci.sections('monkey-business', 'subscription').map(function(s) { return s['.name']; });
-			return id == null || known.length === 0 || known.indexOf(id) >= 0;
-		};
-
-		// Порядок в модалке: переключатель -> ссылка -> сами поля. Разобранная ссылка раскрывается
-		// в те же поля, поэтому перед сохранением её видно и можно поправить.
-		fields.mode(srv);
-		link.create(srv, function(section, section_id, flat) {
-			var show = section.getOption('_show');
-			var el = show ? show.getUIElement(section_id) : null;
-			if (el != null)
-				el.setValue('1');
-			fields.fill(section, section_id, flat);
-		});
-		fields.create(srv);
-
-		var subcol = srv.option(form.DummyValue, '_sub', _('Subscription'));
-		subcol.cfgvalue = function(sid) {
-			var id = subs.serverSub(uci.get('monkey-business', sid));
-			return id ? (uci.get('monkey-business', id, 'name') || id) : _('manual');
-		};
-
-		pings.attach(srv);
-
-		var off = srv.option(form.Flag, 'disabled', _('Off'),
-			_('Never used for connecting. Still listed and pinged.'));
-		off.editable = true;
-
-		// Клик по Save снимает фокус со ссылки и только ЗАПУСКАЕТ разбор на устройстве — ответ
-		// придёт позже самого сохранения. Без ожидания секция сохранилась бы с пустыми полями:
-		// «Name must not be empty» на ровном месте и второй Save, чтобы всё получилось.
-		srv.handleModalSave = function() {
-			var self = this, args = arguments;
-			var save = function() {
-				return form.GridSection.prototype.handleModalSave.apply(self, args);
-			};
-			var wait = link.pending();
-			return wait ? wait.then(save, save) : save();
-		};
-
+	render: function(data) {
 		var self = this;
-		return m.render().then(function(node) {
-			node.appendChild(E('style', { 'type': 'text/css' },
-				'#cbi-monkey-business-server .cbi-section-table-titles > * {' +
-				' position: sticky; top: 0; z-index: 2;' +
-				' background: var(--background-color-medium, var(--background-color, #2b2b2b)); }'));
+		var readonly = !L.hasViewPermission();
+		var busy = false;
 
-			function wrapTable() {
-				var sec = node.querySelector('#cbi-monkey-business-server');
-				if (!sec) return;
-				var tbl = sec.querySelector(':scope > table.cbi-section-table');
-				if (!tbl) return;
-				var wrap = E('div', { 'class': 'mb-scroll', 'style': 'max-height:55vh;overflow-y:auto' });
-				tbl.parentNode.insertBefore(wrap, tbl);
-				wrap.appendChild(tbl);
-			}
+		function usable(el) {
+			return !!(el && el.isConnected && !el.disabled);
+		}
 
-			wrapTable();
-			var sec = node.querySelector('#cbi-monkey-business-server');
-			if (sec)
-				new MutationObserver(wrapTable).observe(sec, { childList: true });
-			self.panel = subpanel.create({ map: m, onPing: pings.update });
-			return E('div', {}, [ self.panel.node, node ]);
+		function hold(work, back, spare) {
+			busy = true;
+			self.sync();
+			return Promise.resolve().then(work).finally(function() {
+				busy = false;
+				self.sync();
+				var to = usable(back) ? back : spare && spare();
+				if (usable(to))
+					to.focus();
+			});
+		}
+
+		function act(name) {
+			return function(ev) {
+				var back = ev.currentTarget;
+				if (busy)
+					return;
+				back.classList.add('spinning');
+				return hold(function() { return self[name](); }, back, function() { return self.apply; }).finally(function() {
+					back.classList.remove('spinning');
+				});
+			};
+		}
+
+		this.reset = E('button', { 'class': 'mb-btn', 'click': act('doReset') }, [ _('Reset') ]);
+		this.save = E('button', { 'class': 'mb-btn', 'click': act('doSave') }, [ _('Save') ]);
+		this.apply = E('button', { 'class': 'mb-btn mb-btn-primary', 'click': act('doApply') }, [ _('Save & Apply') ]);
+		this.sync = function() {
+			var locked = readonly || busy;
+			var dirty = store.dirty();
+			self.root.inert = busy;
+			self.reset.disabled = locked || !dirty;
+			self.save.disabled = locked || !dirty;
+			self.apply.disabled = locked;
+		};
+
+		this.servers = serverpanel.create({ list: data[1], readonly: readonly, onChange: this.sync });
+		this.subs = subpanel.create({
+			onChange: this.sync,
+			onRename: function() { gesture.after(self.servers.relabel); self.sync(); },
+			onRemove: function() { self.servers.draw(); self.sync(); },
+			onFail: function() { self.draw(); },
+			onReload: this.renew.bind(this),
+			onSaved: this.servers.saved,
+			readonly: readonly,
+			hold: function(work, spare) { return hold(work, null, spare); },
+			onPing: this.servers.onPing
+		});
+		this.root = E('div', { 'class': 'mb mb-srv-view' }, [
+			E('div', { 'class': 'mb-srv-bar' }, [
+				E('div', { 'class': 'mb-srv-hint mb-muted mb-small' }, [ _('Changes stay local until Save & Apply.') ]),
+				E('div', { 'class': 'mb-srv-acts' }, [ this.reset, this.save, this.apply ])
+			]),
+			this.subs.node,
+			this.servers.node
+		]);
+		this.sync();
+		return this.root;
+	},
+
+	draw: function() {
+		this.subs.draw();
+		this.servers.draw();
+		this.sync();
+	},
+
+	reload: function() {
+		var self = this;
+		return store.reset().then(function() {
+			self.servers.reset();
+			self.draw();
 		});
 	},
 
-	handleReset: function() {
-		return this.panel.refresh();
+	renew: function() {
+		var self = this;
+		this.servers.forget();
+		return this.reload().then(function() {
+			return self.servers.relist();
+		});
 	},
 
-	// Save & Apply: commit формы (порядок/серверы/URL), и если VPN включён — переприменить конфиг,
-	// чтобы переключиться на новый первый-по-приоритету сервер. handleSave без apply раньше оставлял
-	// изменения в "Unsaved Changes".
-	handleSaveApply: function(ev, mode) {
-		var self = this, ids = [];
-		return this.handleSave(ev).then(function() {
+	doReset: function() {
+		return this.reload().catch(function() {
+			window.location.reload();
+		});
+	},
+
+	doSave: function() {
+		return store.save(this.servers.saved).catch(notice.fail(_('Save failed: '))).then(this.draw.bind(this));
+	},
+
+	doApply: function() {
+		var self = this;
+		var ids = [];
+		return store.save(this.servers.saved).then(function() {
 			return store.changes();
 		}).then(function(changes) {
 			ids = submodel.refetch(changes, store.sections('subscription').map(function(s) { return s['.name']; }));
 			return store.commit();
 		}).then(function() {
-			return self.panel.refetch(ids);
+			return self.subs.refetch(ids);
 		}).then(function() {
-			return ids.length ? self.panel.refresh() : null;
+			return self.renew();
 		}).then(function() {
 			return api.status();
 		}).then(function(st) {
 			if (st && st.running)
-				return api.configApply().then(function(res) {
-					if (res && res.error)
-						ui.addNotification(null, E('p', {}, [ _('Apply failed: ') + res.error ]), 'warning');
-					else if (res && res.skipped == 'disabled')
-						ui.addNotification(null, E('p', {}, [ _('Saved. The VPN is off — the new order will apply when you turn it on.') ]), 'info');
-					else
-						ui.addNotification(null, E('p', {}, [ _('Applied — connected to: ') + ((res && res.server) || '?') ]), 'info');
-				});
-			ui.addNotification(null, E('p', {}, [ _('Saved. Turn on to connect to the top-priority server.') ]), 'info');
+				return api.configApply().then(report);
+			notice.show(_('Saved. Turn on to connect to the top-priority server.'), 'info');
 		}).catch(function(e) {
-			ui.addNotification(null, E('p', {}, [ _('Save & Apply failed: ') + e ]), 'error');
+			notice.fail(_('Save & Apply failed: '))(e);
+			self.draw();
 		});
 	}
 });
