@@ -76,6 +76,27 @@ test("subscriptionAdd makes the new one active when the active one is empty", fu
 	let r = hsub.subscriptionAdd(mockCtx(st), { name: "Main", url: URL });
 	assertEq(r.active_sub, "sub_0badc0de");
 	assertEq(st.global.active_sub, "sub_0badc0de");
+	assertEq(ids(st), [ "sub_0badc0de" ]);
+});
+
+test("subscriptionAdd keeps the empty active one when switching fails", function() {
+	let st = mkState([], [ sub("subscription", { url: "" }) ], "subscription");
+	st.fetched[URL] = { body: BODY, userinfo: "" };
+	st.hex = [ "0badc0de" ];
+	st.setFail = true;
+	let r = hsub.subscriptionAdd(mockCtx(st), { name: "Main", url: URL });
+	assertEq(r.active_sub, null);
+	assertEq(ids(st), [ "subscription", "sub_0badc0de" ]);
+});
+
+test("subscriptionAdd keeps a non-empty active one", function() {
+	let st = mkState([], [ sub("main", { url: "https://a.example/s" }) ], "main");
+	st.fetched[URL] = { body: BODY, userinfo: "" };
+	st.hex = [ "0badc0de" ];
+	let r = hsub.subscriptionAdd(mockCtx(st), { name: "Second", url: URL });
+	assertEq(r.active_sub, null);
+	assertEq(st.global.active_sub, "main");
+	assertEq(ids(st), [ "main", "sub_0badc0de" ]);
 });
 
 test("subscriptionAdd keeps the empty active one when the fetch fails", function() {
@@ -83,6 +104,7 @@ test("subscriptionAdd keeps the empty active one when the fetch fails", function
 	hsub.subscriptionAdd(mockCtx(st), { name: "Main", url: URL });
 	assertEq(st.global.active_sub, "subscription");
 	assertEq(st.writes, 0);
+	assertEq(ids(st), [ "subscription" ]);
 });
 
 test("subscriptionAdd strips control characters and caps the name", function() {

@@ -58,7 +58,7 @@ return baseclass.extend({
 	render: function(st) {
 		var active = st.active_sub;
 		var shown = null;
-		var selectEl = E('select', { 'class': 'cbi-input-select', 'style': 'width:auto' }, []);
+		var selectEl = E('select', { 'class': 'cbi-input-select', 'style': 'width:auto;max-width:100%;overflow:hidden;text-overflow:ellipsis' }, []);
 		selectEl.addEventListener('change', function() { switchTo(selectEl, active); });
 
 		var reserveEl = E('span', { 'style': 'color:#ff7f00' }, []);

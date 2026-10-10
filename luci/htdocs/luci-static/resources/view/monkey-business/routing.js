@@ -53,7 +53,7 @@ function effects(mode, region) {
 function selectEl(opts, value) {
 	var known = opts.filter(function(o) { return o[0] == value; }).length > 0;
 	var items = known ? opts : opts.concat([ [ value, value + _(' (unknown)') ] ]);
-	var el = E('select', { 'class': 'cbi-input-select' }, items.map(function(o) {
+	var el = E('select', { 'class': 'cbi-input-select', 'style': 'max-width:100%;overflow:hidden;text-overflow:ellipsis' }, items.map(function(o) {
 		return E('option', { 'value': o[0] }, [ o[1] ]);
 	}));
 	el.value = value;

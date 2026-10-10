@@ -61,11 +61,18 @@ return baseclass.extend({
 			cancel.disabled = busy;
 		}
 
-		function failed(title, text, rest) {
+		function fill(title, text, rest) {
 			head.textContent = title;
 			reason.textContent = text;
 			tail.textContent = rest;
+		}
+
+		function failed(title, text, rest) {
+			fill('', '', '');
 			fail.hidden = false;
+			requestAnimationFrame(function() {
+				requestAnimationFrame(function() { fill(title, text, rest); });
+			});
 		}
 
 		function submit() {

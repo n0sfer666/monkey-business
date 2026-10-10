@@ -1,11 +1,11 @@
 # Компактный UI — runbook ручной проверки
 
-Прогоняется после каждой итерации в dev-VM (`make dev-up`, `make dev-deploy`, LuCI на
+Прогоняется после каждой итерации в dev-VM (`make dev`, LuCI на
 `http://localhost:8090`, ssh `root@localhost -p 2222`); на R2S — только готовая фича. Устаревший шаг
 править в том же коммите, где меняется поведение.
 
 ## Подготовка
-1. Деплой: `make dev-deploy` (VM) или `make deploy HOST=root@192.168.1.1` (R2S).
+1. Деплой: `make dev` (VM, повторный запуск после правок — редеплой) или `make deploy HOST=root@192.168.1.1` (R2S).
 2. На роутере: `cd /www/luci-static/resources/view/monkey-business && ls kit model srv set`
    — 24 / 11 / 13 / 1 файлов; `ls commit.js subsection.js pinggrid.js serverfields.js serverlink.js
    serveropt.js` — все «No such file».
@@ -270,6 +270,13 @@ delete-server-sub), progress (*Fetch* подписки), ⋮-меню (моби�
     add / edit и Confirm целиком в экране, кнопки подвала нажимаются, поля Sub / Server видны (тело
     скроллится). На десктопе отступ сверху ужимается до 35% высоты окна; на мобилке шторка не ниже
     своей высоты из борда, но не выше 92% экрана.
+17. VoiceOver (iPhone или macOS Safari): шаг 13 — плашка озвучивается целиком («Couldn't fetch the
+    subscription» + причина) сразу после её появления; повторный *Add & fetch* озвучивает снова.
+18. Dashboard на iPhone / Safari 360 и 390: страница не сдвигается пальцем вбок; длинный пункт
+    *Routing mode* в закрытом select обрезан многоточием, в раскрытом списке виден целиком.
+19. Свежий стенд (`make dev-down`, затем `make dev`): в панели *Subscriptions* одна строка — VPNON с
+    бейджем *active*; пустой строки *reserve* без URL нет (`uci show monkey-business | grep
+    =subscription` — одна секция `sub_…`).
 
 ## Результат
 Итерация 1 — 30/30, итерация 2 — 52/52 (Playwright в VM: 1280 / 800 / 722 / мобилка, тёмная и

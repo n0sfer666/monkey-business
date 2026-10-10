@@ -182,8 +182,10 @@ function subscriptionAdd(ctx, args) {
 		return { error: res.error };
 	}
 	res.sub = id;
-	if (empty != null && ctx.setActiveSub(id))
+	if (empty != null && ctx.setActiveSub(id)) {
+		ctx.removeSubscription(empty);
 		res.active_sub = id;
+	}
 	return res;
 }
 
