@@ -23,9 +23,6 @@ style.add('dash-servers', [
 	'.mb .mb-dash-shd>.mb-dash-grow{display:none}',
 	'.mb .mb-dash-shd .mb-btn.mb-dash-srvbtn{width:36px;height:36px;padding:0;border-radius:6px}',
 	'.mb .mb-dash-segbox{order:1;flex-basis:100%}',
-	'.mb .mb-dash-segbox>.mb-seg{gap:6px;padding:0;background:none;border:0;border-radius:0}',
-	'.mb .mb-dash-shd .mb-seg-opt{flex:0 0 auto;padding:5px 12px;border:1px solid var(--mb-line);border-radius:14px;font-size:13px}',
-	'.mb .mb-dash-shd .mb-seg-opt[aria-checked="true"]{border-color:var(--mb-line-strong);box-shadow:none}',
 	'}'
 ].join(''));
 
@@ -153,6 +150,7 @@ return baseclass.extend({
 			groupKey = key;
 			dom.content(segBox, opts.length > 1 ? seg.render({
 				label: _('Server group'),
+				compact: true,
 				options: opts,
 				value: filter,
 				onChange: function(v) { filter = v; drawRows(); }

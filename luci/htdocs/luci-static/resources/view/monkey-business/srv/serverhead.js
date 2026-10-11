@@ -9,7 +9,7 @@
 style.add('serverpanel', [
 	'.mb .mb-srvs{--mb-srow-cols:20px 28px minmax(0,1fr) minmax(0,1.1fr) 130px 110px 150px 44px 64px;display:flex;flex-direction:column}',
 	'.mb .mb-srvs-head{display:flex;flex-wrap:wrap;align-items:center;gap:8px 10px;padding:10px 12px;border-bottom:1px solid var(--mb-line)}',
-	'.mb .mb-srvs-filter{margin-right:auto}',
+	'.mb .mb-srvs-filter{min-width:0;max-width:100%;margin-right:auto}',
 	'.mb .mb-srvs-head .mb-btn{white-space:nowrap}',
 	'.mb .mb-srvs-gear{display:none}',
 	'.mb .mb-srvs-gear[aria-pressed="true"]{display:inline-flex;background:var(--mb-accent-tint);border-color:var(--mb-accent);color:var(--mb-accent-text)}',
@@ -38,9 +38,6 @@ style.add('serverpanel', [
 	'.mb .mb-srvs-head .mb-btn-ico svg{width:16px;height:16px}',
 	'.mb .mb-srvs-plus{display:inline-flex}',
 	'.mb .mb-srvs-filter{order:5;flex-basis:100%;margin:0;overflow:hidden}',
-	'.mb .mb-srvs-filter .mb-seg{flex-wrap:wrap;gap:6px;padding:0;background:none;border:0}',
-	'.mb .mb-srvs-filter .mb-seg-opt{flex:none;padding:5px 12px;border:1px solid var(--mb-line);border-radius:14px;font-size:13px!important}',
-	'.mb .mb-srvs-filter .mb-seg-opt[aria-checked="true"]{background:var(--mb-line);border-color:var(--mb-line-strong);box-shadow:none}',
 	'.mb .mb-srvs-cols{display:none}',
 	'.mb .mb-srvs-foot{display:block}',
 	'}'
@@ -65,7 +62,7 @@ return baseclass.extend({
 		return E('div', { 'class': 'mb-srvs-head' + (o.moving ? ' mb-srvs-moving' : '') }, [
 			E('h2', {}, [ _('Servers') ]),
 			E('div', { 'class': 'mb-srvs-filter' }, o.filters.length > 1 ? [
-				seg.render({ label: _('Show servers'), options: o.filters, value: o.filter, onChange: o.onFilter })
+				seg.render({ label: _('Show servers'), compact: true, options: o.filters, value: o.filter, onChange: o.onFilter })
 			] : []),
 			busybtn.render({
 				cls: 'mb-btn-sm mb-srvs-ping', icon: icons.PULSE, label: _('Ping all'), busy: _('Pinging %d servers…').format(o.count), pending: o.pinging,
