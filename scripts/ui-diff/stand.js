@@ -34,6 +34,7 @@ async function login(page) {
 async function load(page, name, log, tries = 3) {
 	let last = null;
 	for (let i = 0; i < tries; i++) {
+		await page.goto('about:blank').catch(() => null);
 		log.console.length = 0;
 		log.network.length = 0;
 		await page.goto(BASE + PAGES[name]).catch(e => { last = e; });
