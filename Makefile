@@ -3,7 +3,7 @@ INTEG := monkey-business-integ
 ROOT  := $(shell pwd)
 RUN   := docker run --rm -v $(ROOT):/w -w /w $(IMAGE)
 
-.PHONY: help test-image test-build check lint test-unit test-integ test package deploy dev dev-console dev-status dev-ssh dev-down dev-test-split clean
+.PHONY: help test-image test-build check lint test-unit test-integ test package deploy dev dev-console dev-status dev-ssh dev-down dev-test-split ui-diff clean
 
 help:
 	@echo "monkey-business — targets:"
@@ -22,6 +22,7 @@ help:
 	@echo "  make dev-console   подключиться к консоли VM (выход Ctrl-C)"
 	@echo "  make dev-status    статус VM"
 	@echo "  make dev-test-split [d=domain]  проверить сплит: выходной IP/страна через SOCKS"
+	@echo "  make ui-diff [SCREEN=servers] [WIDTH=1280]  сверка стенда с макетом: pixel diff + замер элементов (А.2), отчёт в .context/investigations/ui-diff/"
 
 # Проверки идут на образе с диска: сборка только если его нет или Dockerfile новее (docker-image.sh).
 test-image:
@@ -71,6 +72,12 @@ dev-down:
 
 dev-test-split:
 	@MB_VM_SSH_PASS=root sh scripts/test-split.sh $(d)
+
+SCREEN ?=
+WIDTH ?=
+
+ui-diff:
+	@NODE_PATH=$$(npm root -g) node scripts/ui-diff/run.js --screen "$(SCREEN)" --width "$(WIDTH)"
 
 clean:
 	@docker rmi -f $(IMAGE) $(INTEG) >/dev/null 2>&1 || true

@@ -12,6 +12,7 @@
 | Всё разом | `make test` | — |
 | Обновить образ проверок | `make test-build` | — (нужна сеть) |
 | Сборка ipk | `make package` | T2 (нужен OpenWrt SDK) |
+| Сверка UI с макетом (pixel diff + замер, А.2) | `make ui-diff SCREEN=servers WIDTH=1280` | T3 (стенд, глобальный Playwright; на хосте) |
 | Dev-стенд | `make dev` (поднять) / `make dev FIXTURE=1` (с вариантами UI) / `make dev-down` (погасить и сбросить) / `make dev-ssh` | T2 (нужен qemu, sshpass) |
 
 Перед коммитом минимум: `make lint && make check && make test-unit` зелёные.
