@@ -3,6 +3,7 @@
 'require view.monkey-business.kit.style as style';
 'require view.monkey-business.kit.tip as tip';
 'require view.monkey-business.kit.icons as icons';
+'require view.monkey-business.pingtext as pingtext';
 
 style.add('pingbar', [
 	'.mb .mb-ping{display:flex;align-items:center;gap:8px;min-width:0;white-space:nowrap}',
@@ -32,7 +33,7 @@ function label(p) {
 		return _('n/a · UDP');
 	if (p.kind === 'off')
 		return _('auto-off');
-	return p.ms != null ? p.ms + ' ms' : '—';
+	return p.ms != null ? pingtext.ms(p.ms) : '—';
 }
 
 function flagged(p) {

@@ -4,6 +4,7 @@
 'require uci';
 'require view.monkey-business.api as api';
 'require view.monkey-business.store as store';
+'require view.monkey-business.pingtext as pingtext';
 'require view.monkey-business.kit.style as style';
 'require view.monkey-business.kit.tabs as tabs';
 'require view.monkey-business.model.servers as model';
@@ -34,7 +35,7 @@ function line(cur, servers) {
 	if (s)
 		parts.push(model.protocol(s));
 	if (s && s.latency_ms != null)
-		parts.push(s.latency_ms + ' ms');
+		parts.push(pingtext.ms(s.latency_ms));
 	if (cur.reserve)
 		parts.push(_('reserve'));
 	return parts.filter(Boolean).join(' · ');
