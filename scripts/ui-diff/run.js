@@ -9,6 +9,7 @@ const { match } = require('./match');
 const { compare } = require('./compare');
 const { pixelDiff } = require('./pixel');
 const { loadSecret } = require('./secrets');
+const { around } = require('./vm');
 const report = require('./report');
 
 const DIFF = { threshold: 0.1, cell: 8, minPx: 16 };
@@ -59,7 +60,7 @@ async function main() {
 	try {
 		browsers.diff = await pw.chromium.launch();
 		for (const e of opt.engines) browsers[e] = e === 'chromium' ? browsers.diff : await pw[e].launch();
-		for (const entry of entries) {
+		for (const entry of entries) await around(entry, async () => {
 			const html = source(opt.boards, entry.board);
 			const ctx = { browsers, entry, opt, secret, statics: staticTexts(html), height: Math.max(previewHeight(html), 900) };
 			for (const engine of opt.engines) {
@@ -71,7 +72,7 @@ async function main() {
 					runs.push(r);
 				}
 			}
-		}
+		});
 	} finally {
 		report.index(opt.out, runs);
 		for (const b of new Set(Object.values(browsers))) await b.close();

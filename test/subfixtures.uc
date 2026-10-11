@@ -85,11 +85,16 @@ function mockCtx(st) {
 			st.applied = j;
 			return st.applyErr;
 		},
-		serviceRunning: function() { return true; },
+		serviceRunning: function() { return st.running !== false; },
 		getAutoswitch: function() { return st.autoswitch; },
 		setAutoswitch: function(from, reason) { st.autoswitch = { from: from, reason: reason }; },
 		clearAutoswitch: function() { st.autoswitch = null; },
-		setServers: function(a) { st.servers = a; },
+		setServers: function(a) {
+			if (st.serversFail)
+				return false;
+			st.servers = a;
+			return true;
+		},
 		setSubscriptionUrl: function(id, u) { st.urls[id] = u; },
 		setUserinfo: function(id, o) { st.userinfo[id] = o; },
 		fetchSubscription: function(u) { return st.fetched[u]; },

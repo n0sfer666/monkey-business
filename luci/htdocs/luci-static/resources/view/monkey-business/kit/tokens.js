@@ -52,6 +52,13 @@ return baseclass.extend({
 		'err-disc': 'rgba(248,81,73,.14)',
 		'err-soft': 'rgba(248,81,73,.07)',
 		'err-soft-edge': 'rgba(248,81,73,.35)',
+		'stop': '#3a2224',
+		'stop-text': '#ffb3ad',
+		'stop-edge': '#6b2e2c',
+		'link': '#7fb2f5',
+		'link-hover': '#a9cbf8',
+		'row-on': 'rgba(91,156,240,.07)',
+		'ok-ring': 'rgba(63,185,80,.18)',
 		'overlay': 'rgba(8,9,11,.45)',
 		'shadow': 'rgba(0,0,0,.5)'
 	},
@@ -106,6 +113,13 @@ return baseclass.extend({
 		'err-disc': 'rgba(196,48,43,.09)',
 		'err-soft': 'rgba(196,48,43,.05)',
 		'err-soft-edge': 'rgba(196,48,43,.3)',
+		'stop': '#fbeceb',
+		'stop-text': '#a32621',
+		'stop-edge': '#e2a29f',
+		'link': '#1d5fc4',
+		'link-hover': '#1d4fa3',
+		'row-on': 'rgba(37,99,201,.06)',
+		'ok-ring': 'rgba(47,158,85,.18)',
 		'overlay': 'rgba(20,24,30,.35)',
 		'shadow': 'rgba(15,20,30,.18)'
 	}

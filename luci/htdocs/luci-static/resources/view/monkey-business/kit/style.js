@@ -4,6 +4,7 @@
 
 var ID = 'mb-style';
 var MOBILE = '@media (max-width: 720px)';
+var STACK = '@media (max-width: 1000px)';
 var added = {};
 
 function vars(map) {
@@ -44,6 +45,10 @@ var BASE = [
 	'.mb .mb-btn-danger{background:var(--mb-err-tint);color:var(--mb-err-text);font-weight:600}',
 	'.mb .mb-btn-danger,.mb .mb-btn-danger:hover{border-color:var(--mb-err-edge-strong)!important}',
 	'.mb .mb-btn:disabled.mb-btn-primary,.mb .mb-btn-primary[aria-disabled="true"]{background:var(--mb-btn);border-color:var(--mb-line)!important}',
+	'.mb .mb-link{margin:0;padding:0;background:transparent;color:var(--mb-link);border:0;font:inherit;line-height:normal;',
+	'cursor:pointer;box-shadow:none;white-space:nowrap}',
+	'.mb .mb-link:hover{color:var(--mb-link-hover);background:transparent;box-shadow:none}',
+	'.mb .mb-link:disabled,.mb .mb-link[aria-disabled="true"]{color:var(--mb-faint);cursor:not-allowed}',
 	'.mb .mb-icon{width:28px;height:28px;padding:0;background:transparent;color:var(--mb-muted);border-color:var(--mb-line)}',
 	'.mb button:focus-visible{outline:2px solid var(--mb-accent);outline-offset:1px}',
 	'.mb .mb-input{display:block;width:100%;min-width:0;max-width:none;height:auto;margin:0;',
@@ -88,6 +93,7 @@ function sheet() {
 
 return baseclass.extend({
 	MOBILE: MOBILE,
+	STACK: STACK,
 
 	add: function(name, css) {
 		var el = sheet();

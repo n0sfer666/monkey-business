@@ -6,9 +6,10 @@
 
 ## Подготовка
 1. Деплой: `make dev` (VM, повторный запуск после правок — редеплой) или `make deploy HOST=root@192.168.1.1` (R2S).
-2. На роутере: `cd /www/luci-static/resources/view/monkey-business && ls kit model srv set`
-   — 24 / 11 / 13 / 1 файлов; `ls commit.js subsection.js pinggrid.js serverfields.js serverlink.js
-   serveropt.js` — все «No such file».
+2. На роутере: `cd /www/luci-static/resources/view/monkey-business && ls kit model srv set dash`
+   — 26 / 14 / 13 / 1 / 16 файлов; `ls commit.js subsection.js pinggrid.js serverfields.js serverlink.js
+   serveropt.js hysteria.js routing.js serverlist.js status.js traffic.js substatus.js icons.js` — все
+   «No such file» (на свежем стенде; deploy старые файлы не удаляет).
 3. В браузере жёсткая перезагрузка (Cmd+Shift+R) на каждой странице приложения.
 4. Открыть DevTools → Console: на всех шагах ниже — без красных ошибок.
 5. Вкладки: на Dashboard, Servers и Settings первой строкой «Monkey Business» и Dashboard · Servers ·
@@ -247,6 +248,47 @@ rpcd.@login[-1].password='$p$root'; uci add_list rpcd.@login[-1].read='*'; uci c
    `disabled`, но видны скринридеру); *Ping* подписки работает.
 2. Нет *Sort by ping*, *+ Add server*, шестерёнки, grip, карандаша и корзины; Off не переключается.
    Фильтр и *Ping all* работают. На мобилке в ⋮ только *Ping*; у сервера без Ping ⋮ скрыт.
+
+## Итерация 4 — Dashboard (сессия 6)
+
+Модалки Routing / Geo — сессия 7; пока *Edit* и *Update…* открывают старые формы в шторке.
+IP выхода и ссылки серверов в скриншоты и отчёты не попадают.
+
+### Вид
+1. `make ui-diff SCREEN=dashboard WIDTH=1280` — состояния `Main` default / missing / unlimited /
+   hidden; `WIDTH=390` — `MobileDashboard` default / missing. Хуки ssh сами прячут geosite.dat и
+   снимают лимит трафика и возвращают всё назад (`ls /usr/share/xray/*.uidiff` и
+   `/tmp/mb-uidiff.conf` после прогона — нет). Расхождений вне раздела «Шум ui-diff (Dashboard)»
+   аудита нет.
+2. 1280: слева Status (заголовок, строка фазы, Turn on/off, Subscription, Exit IP + *Check*,
+   Traffic + *Hide*), Routing (Mode / Region, чипы, Custom rules *Edit*), Components (geo data,
+   hysteria2); справа Servers — фильтр-группы, *Ping all*, *Sort by ping*, строки 45px с *Connect*.
+3. ≤ 1000px — одна колонка; подпись подписки короткая («+N reserve»), не наезжает на Exit IP.
+   1024 / 800 / 721 / 390, Chromium и WebKit, тёмная и светлая — горизонтального скролла нет.
+4. ≤ 720px: Exit IP и *Check* в одну строку, кнопка Turn on/off на всю ширину.
+
+### Действия (VPN выключен → включён)
+1. *Ping all* → у строк «N ms» цветом.
+2. *Sort by ping* при выключенном VPN → «Sorted by ping. The VPN is off — the order applies when
+   you turn it on.»; включён → «Sorted by ping.»; повтор → «Already sorted by ping.». Несохранённые
+   правки на вкладке Servers → отказ «the Servers tab has unsaved changes…», порядок не тронут.
+3. *Turn on* → «Connecting…» → заголовок Connected; *Turn off* → Off.
+4. *Check* → «checking…» → `<IP> · <код страны>`.
+5. *Connect* у неактивной строки → «Connected to <имя>.», строка помечена активной; pid xray
+   сменился (`pgrep -f [x]ray`). Двойной клик — один запрос, строки и *Sort* заблокированы до ответа.
+   *Connect* у уже выбранного сервера: VPN включён → «Already on …»; выключен → «… is now first.
+   The VPN is off…».
+6. Region → cn → *Save & Apply* → «Routing mode applied.»; вернуть ru. Mode «Only blocked via VPN»
+   при ru сейчас падает «xray config validation failed» — известный баг генератора (сессия 7).
+7. *Edit* у Custom rules и *Update…* у geo data → шторка со старой формой; Esc закрывает, фокус на
+   кнопке.
+8. Subscription → другая подписка → страница перечитана, выбрана она; вернуть.
+9. hysteria2 *Update* / *Install* → «installing…», затем «hysteria client installed.»; загрузка
+   дольше ~16 мин → «The download is still running…», строка остаётся installed (если был).
+   Перезагрузка страницы во время загрузки → строка снова «updating…», ссылка неактивна. Повтор после
+   ошибки (`echo "error: x" > /tmp/mb-hysteria.state`) → старая ошибка не всплывает.
+10. Нет geosite.dat (`mv /usr/share/xray/geosite.dat{,.bak}`) → плашка «Can't turn on: geo data is missing (geosite.dat)…»,
+    *Turn on* неактивна; вернуть файл.
 
 ## Оверлеи
 

@@ -36,6 +36,7 @@ return baseclass.extend({
 	subscriptionAdd: slow(mb('subscription_add', [ 'name', 'url' ])),
 	subscriptionPing: mb('subscription_ping', [ 'sub' ]),
 	subscriptionSelect: mb('subscription_select', [ 'sub' ]),
+	serverConnect: mb('server_connect', [ 'id' ]),
 	geoStatus: mb('geo_status'),
 	geoUpdate: mb('geo_update', [ 'geoip_url', 'geosite_url' ]),
 	geoInstall: mb('geo_install', [ 'which' ]),

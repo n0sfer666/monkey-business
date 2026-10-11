@@ -44,5 +44,7 @@ return baseclass.extend({
 		'<circle cx="15" cy="12" r="1.6"></circle><circle cx="9" cy="18" r="1.6"></circle><circle cx="15" cy="18" r="1.6"></circle></svg>',
 	WIFI_OFF: WIFI_OFF,
 	EDIT: svg(16, '<path d="M4 20h4L19 9l-4-4L4 16v4zM13 7l4 4"></path>'),
-	ALERT: svg(14, '<circle cx="12" cy="12" r="9"></circle><path d="M12 7v6M12 16.5v.5"></path>')
+	ALERT: svg(14, '<circle cx="12" cy="12" r="9"></circle><path d="M12 7v6M12 16.5v.5"></path>'),
+	ARROW: svg(14, '<path d="M5 12h12M13 6l6 6-6 6"></path>'),
+	WARN: svg(14, '<path d="M12 3l10 18H2L12 3zM12 10v5M12 18v.5"></path>')
 });

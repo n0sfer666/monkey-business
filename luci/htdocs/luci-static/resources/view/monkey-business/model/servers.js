@@ -77,6 +77,10 @@ function ping(p) {
 	};
 }
 
+function byId(servers, id) {
+	return servers.filter(function(s) { return s.id === id; })[0] || null;
+}
+
 function rank(p) {
 	return (p != null && !p.na && p.ms != null) ? p.ms : Infinity;
 }
@@ -92,5 +96,6 @@ return baseclass.extend({
 	filters: filters,
 	pingOf: pingOf,
 	ping: ping,
-	rank: rank
+	rank: rank,
+	byId: byId
 });

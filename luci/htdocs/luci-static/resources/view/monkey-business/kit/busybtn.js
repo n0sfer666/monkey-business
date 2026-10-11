@@ -1,6 +1,7 @@
 'use strict';
 'require baseclass';
 'require view.monkey-business.kit.style as style';
+'require view.monkey-business.kit.guard as guard';
 
 style.add('busybtn', [
 	'@keyframes mb-spin{to{transform:rotate(360deg)}}',
@@ -41,13 +42,9 @@ return baseclass.extend({
 		if (o.pending)
 			hold(btn, o);
 		btn.addEventListener('click', function() {
-			if (btn.getAttribute('aria-disabled') === 'true')
-				return;
-			hold(btn, o);
-			Promise.resolve(o.run()).finally(function() {
-				btn.removeAttribute('aria-disabled');
-				btn.removeAttribute('aria-busy');
-				paint(btn, o.icon, o.label);
+			guard.run(btn, function() {
+				hold(btn, o);
+				return Promise.resolve(o.run()).finally(function() { paint(btn, o.icon, o.label); });
 			});
 		});
 		return btn;

@@ -32,7 +32,7 @@ function storeServers(cursor, servers) {
 			if (flat[k] != null)
 				cursor.set(CONFIG, name, k, "" + flat[k]);
 	}
-	cursor.commit(CONFIG);
+	return cursor.commit(CONFIG) === true;
 }
 
 function selectedId() {

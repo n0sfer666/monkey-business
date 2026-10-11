@@ -6,13 +6,15 @@ QEMU dev-VM (LuCI localhost:8090). Макет — артефакт Qi9eCMkVJJSUM
 Скриншоты и логи лежат локально в `.context/investigations/2026-10-10-compact-ui-audit/` (gitignored):
 `sbs/` — пары «макет | реализация», `impl/`, `mock/`, `ovl/`, `nav/`, `widths/`, `func/`, `*.log`.
 
-**Статус на 2026-10-11 (сессия 5/8, Settings 1280 + 390):** закрыты группы 2, 3, 4, 5, 6, X1–X5.
-S1 и T5 — ошибки аудита. Открыто 5 строк — Dashboard D1–D5, старый вид.
+**Статус на 2026-10-11 (сессия 6/8, Dashboard 1280 + 390):** закрыты группы 2, 3, 4, 5, 6, X1–X5,
+D1, D3–D5. S1 и T5 — ошибки аудита. Открыта 1 строка — D2 (модалки Routing / Geo, сессия 7).
 
 Servers 1280 сдан по `make ui-diff` (`2026-10-11-052716`), Servers 390 — по `MobileServers-list` /
 `-arrange`, Settings 1280 / 390 — `2026-10-11-173419` / `2026-10-11-174059`: вне классов шума (разделы
 «Шум ui-diff») расхождений 0, контраст 0, console 0 в chromium и webkit, dark и light; области
-diff.png проверены глазами.
+diff.png проверены глазами. Dashboard 1280 / 390 — `2026-10-11-200834` / `2026-10-11-201455`
+(состояния default, geo missing, traffic unlimited, traffic hidden): вне шума расхождений 0, лишних 0
+на 1280, контраст 0, console 0.
 
 Колонка «Статус» в таблицах обновляется в коммите, который закрывает строку.
 
@@ -24,7 +26,7 @@ diff.png проверены глазами.
 
 | Экран / борд | Поведение | Макет | Конфликт спеки и макета |
 |---|---|---|---|
-| Dashboard / `Main`, `MobileDashboard` | fail — итерация 4 не сделана | fail — старый LuCI-вид | — |
+| Dashboard / `Main`, `MobileDashboard` | pass (runbook «Итерация 4», живые действия в VM) | pass — вне шума 0 | — |
 | Servers / `Servers` | pass (staged-шаги) | fail | h1 + подзаголовок — решён: макет |
 | Servers / `MobileServers` | pass (staged-шаги) | fail — строки вместо плиток | — |
 | Settings / `Settings`, `MobileSettings` | pass (staged-шаги) | fail | h1 + подзаголовок — решён: макет |
@@ -88,13 +90,14 @@ Severity: B — blocker, M — major, m — minor. Тема «обе» — од�
 
 | # | Борд | Ширина | Тема | Браузер | Ожидалось | Есть | Sev | Скриншот | Статус |
 |---|---|---|---|---|---|---|---|---|---|
-| D1 | Main / MobileDashboard | 1280, 390 | обе | оба | Карта статуса (Connected / Turn off), выбор подписки, Exit IP + Check, трафик Hide/Show, список серверов с фильтром и Connect, карточка Routing (Mode / Region, чипы, Custom rules Edit), Components (geo Update…, hysteria2 Update), блок «geo data is missing» | Старый LuCI-вид: Subscription traffic, Status, Split, Custom routing, Geo databases, hysteria2, Servers. Ни одного блока бордов | B | `sbs/*-dashboard.png` | открыто |
-| D2 | RoutingModal / GeoModal (+Mobile) | 1280, 390 | обе | оба | Модалки Custom rules и Geo databases | Нет | B | `mock/RoutingModal--default.png`, `mock/GeoModal--default.png` | открыто |
-| D3 | — | 1280 | тёмная | оба | Контраст ≥ 4.5 | 4.49 (#888 на #222) | m | `widths/` | открыто |
-| D4 | — | 1280 | светлая | оба | Контраст ≥ 4.5 | 3.54 и 3.38 (#33a02c на белом) | m | `widths/` | открыто |
-| D5 | — | 390, 360 | тёмная | WebKit | Нет горизонтального скролла | scrollWidth 427 | M | `widths/webkit-390-*dashboard*` | открыто |
+| D1 | Main / MobileDashboard | 1280, 390 | обе | оба | Карта статуса (Connected / Turn off), выбор подписки, Exit IP + Check, трафик Hide/Show, список серверов с фильтром и Connect, карточка Routing (Mode / Region, чипы, Custom rules Edit), Components (geo Update…, hysteria2 Update), блок «geo data is missing» | Старый LuCI-вид: Subscription traffic, Status, Split, Custom routing, Geo databases, hysteria2, Servers. Ни одного блока бордов | B | `sbs/*-dashboard.png` | закрыто (сессия 6) |
+| D2 | RoutingModal / GeoModal (+Mobile) | 1280, 390 | обе | оба | Модалки Custom rules и Geo databases | Нет | B | `mock/RoutingModal--default.png`, `mock/GeoModal--default.png` | открыто → сессия 7 |
+| D3 | — | 1280 | тёмная | оба | Контраст ≥ 4.5 | 4.49 (#888 на #222) | m | `widths/` | закрыто: контраст 0 в ui-diff |
+| D4 | — | 1280 | светлая | оба | Контраст ≥ 4.5 | 3.54 и 3.38 (#33a02c на белом) | m | `widths/` | закрыто: контраст 0 в ui-diff |
+| D5 | — | 390, 360 | тёмная | WebKit | Нет горизонтального скролла | scrollWidth 427 | M | `widths/webkit-390-*dashboard*` | закрыто: T3 390/721/800/1024, оба движка |
 
-D3–D5 относятся к старому виду и уйдут вместе с D1.
+D3–D5 относились к старому виду; перепроверены на новом экране (сессия 6). Edit (Custom rules) и
+Update… (geo) до сессии 7 открывают старые формы в шторке — это D2.
 
 ### Группа 2. Хром — вкладки
 
@@ -226,12 +229,20 @@ D3–D5 относятся к старому виду и уйдут вместе
   `{{sec.title}}` в борде даёт и h2, и text — дубли «General / DNS / Anti-DPI».
 - Высоты панелей — производные от строк выше.
 
+## Шум ui-diff (Dashboard 1280/390) — не расхождения
+
+- Данные стенда: в группе 4 сервера против 7 в борде — строки 5–7 с пингами, полосами, Ping/Connect;
+  имя активного сервера, пинги, Turn on/off, Install/Update, Exit IP «—», «+1 reserve».
+- Шеврон select (Subscription, Mode, Region) — CSS-фон, в борде svg-элемент (нет ×3).
+- Ширина контейнера темы 1180 против 1232; высота карточки Servers — борд растянут на 880.
+- 390: шапка LuCI (h1, Menu); узкая подпись подписки скрыта на 1280 и наоборот — ui-diff читает
+  скрытый span; блоки Servers / Routing / Components «лишние» только из-за текста данных (5 строк).
+
 ## Не проверено
 
 - Save / Save & Apply и всё, что идёт после применения: шаги runbook с перезапуском xray, удаление
   подписки с сохранением, connect. Причина — аудит не меняет состояние VM.
 - Состояния бордов, которые нельзя воспроизвести:
-  - `Main` geo missing / traffic unlimited, `MobileDashboard` missing — нет экрана (D1);
   - `ConfirmModal` delete-sub — в VM одна подписка, вторую без успешного fetch не добавить;
   - `RoutingModal` с ошибками строк — нет модалки (D2).
 - Визуальная сверка `Servers--checking`, `ServerModal--edit`, мобильного ⋮-меню в режиме перестановки:
@@ -241,6 +252,8 @@ D3–D5 относятся к старому виду и уйдут вместе
   Это тема LuCI, наблюдение, не дефект приложения.
 - Живой телефон: жалоба «грузится только Settings» в VM не воспроизвелась (см. выше).
 - Servers 1280: вариант ping «1240 ms» (over limit) — в фикстуре нет такого сервера.
+- Dashboard readonly (`!L.hasViewPermission()`): контролы отключаются по коду, живьём не проверено —
+  нужен пользователь LuCI с ACL только на чтение.
 - Firefox: `field-sizing:content` у поля интервала — есть fallback `@supports` 9ch, в Firefox не гонял.
 
 ## Попутно
@@ -250,6 +263,11 @@ D3–D5 относятся к старому виду и уйдут вместе
 - URL подписки в инлайн-поле был sans: `.mb-mono` перебивался `.mb-input` — исправлено (`--mb-mono`).
 - Тема bootstrap рисует галочку маской на `::after` чекбокса и красит рамку на `:focus` с `!important` —
   кастомный чекбокс должен гасить `mask`, `position`, `background` у `::after`.
+
+- gfwlist при region ru: `src/generator/routing.uc:56` строит `geosite:geolocation-!ru`, такого тега в
+  geosite.dat нет → «xray config validation failed». Чипы `model/routing.js` — тот же тег. Сессия 7.
+- `src/runtime/apply.uc:47-52` теряет текст ошибки xray (`/tmp/mb-xray.err` пустой) — в UI только
+  общее «validation failed».
 
 ## Спеки исправлений — порядок (решение 2026-10-10)
 

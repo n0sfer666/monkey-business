@@ -10,7 +10,7 @@
 //   getSubscription(id) -> subscription|null   setActiveSub(id) -> bool (легло ли в UCI)
 //   setSubscriptionUrl(id, url)   setUserinfo(id, { used_upload, used_download, total, expire })
 //   getAutoswitch() -> { from, reason }|null   setAutoswitch(from, reason)   clearAutoswitch() (tmpfs)
-//   getServers() -> [server, ...]      setServers(arr)
+//   getServers() -> [server, ...]      setServers(arr) -> bool
 //   getSelectedServer() -> server|null   getSelectedId() -> string   setSelected(id) — рантайм-состояние,
 //     НЕ uci-commit
 //   fetchSubscription(url) -> { body, userinfo }|null

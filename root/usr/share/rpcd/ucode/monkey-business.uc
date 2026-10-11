@@ -20,6 +20,7 @@ import * as hping from '/usr/share/rpcd/ucode/lib/monkey-business/rpcd/ping.uc';
 import * as hswitch from '/usr/share/rpcd/ucode/lib/monkey-business/rpcd/autoswitch.uc';
 import * as huri from '/usr/share/rpcd/ucode/lib/monkey-business/rpcd/uri.uc';
 import * as hy from '/usr/share/rpcd/ucode/lib/monkey-business/rpcd/hysteria.uc';
+import { serverConnect } from '/usr/share/rpcd/ucode/lib/monkey-business/rpcd/connect.uc';
 import * as sh from '/usr/share/rpcd/ucode/lib/monkey-business/runtime/shell.uc';
 import { CONFIG, XRAY_CONF, WD_STATE } from '/usr/share/rpcd/ucode/lib/monkey-business/runtime/paths.uc';
 import { loadSection, loadSubscriptions, loadServers, storeServers, selectedId, selectedServer, storeSelected }
@@ -49,7 +50,7 @@ function buildCtx() {
 			return cursor.commit(CONFIG) === true;
 		},
 		getServers: function() { return loadServers(cursor); },
-		setServers: function(servers) { storeServers(cursor, servers); },
+		setServers: function(servers) { return storeServers(cursor, servers); },
 		getSelectedServer: function() { return selectedServer(cursor); },
 		getSelectedId: function() { return selectedId(); },
 		setSelected: function(id) { storeSelected(sh, id); },
@@ -186,6 +187,7 @@ const methods = {
 	subscription_select:  { args: { sub: '' }, call: function(req) { return h.subscriptionSelect(buildCtx(), req.args); } },
 	parse_uri:            { args: { uri: '', section: '' }, call: function(req) { return huri.parseServerUri(buildCtx(), req.args); } },
 	server_link:          { args: { section: '' }, call: function(req) { return huri.serverLink(buildCtx(), req.args); } },
+	server_connect:       { args: { id: '' }, call: function(req) { return serverConnect(buildCtx(), req.args); } },
 	config_apply:         { args: { deadline: 0 }, call: function(req) { return h.configApply(buildCtx(), req.args); } },
 	service_toggle:       { args: { enabled: false }, call: function(req) { return h.serviceToggle(buildCtx(), req.args); } },
 	geo_update:           { args: { geoip_url: '', geosite_url: '' }, call: function(req) { return h.geoUpdate(buildCtx(), req.args); } },
