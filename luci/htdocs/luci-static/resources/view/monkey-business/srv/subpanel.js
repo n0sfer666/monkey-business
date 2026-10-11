@@ -27,7 +27,9 @@ style.add('subpanel', [
 	style.MOBILE + '{',
 	'.mb .mb-subs{border-radius:10px}',
 	'.mb .mb-subs-head .mb-muted{display:none}',
+	'.mb .mb-subs-head{gap:8px;border-bottom-color:var(--mb-line-soft)}',
 	'.mb .mb-subs-head h2{flex:1;font-size:15px}',
+	'.mb .mb-subs-add{padding:7px 12px;border-radius:6px;font-size:13px!important}',
 	'.mb .mb-subs-cols,.mb .mb-subs-long{display:none}',
 	'.mb .mb-subs-add::after{display:inline}',
 	'}'

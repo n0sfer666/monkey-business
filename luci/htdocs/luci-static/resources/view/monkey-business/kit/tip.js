@@ -47,7 +47,7 @@ return baseclass.extend({
 		return make('note', text, ICON, label);
 	},
 
-	icon: function(text, svg, after) {
-		return make('button', text, svg, '', after);
+	icon: function(text, svg) {
+		return make('button', text, svg, '');
 	}
 });

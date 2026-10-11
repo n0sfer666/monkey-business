@@ -20,7 +20,9 @@ var FOCUS = /^mb-(srow|srvs|seg)-|^mb-tile$/;
 
 return baseclass.extend({
 	create: function(o) {
-		var root = E('section', { 'class': 'mb-panel mb-srvs' });
+		var view = E('div', { 'class': 'mb-srvs-view' });
+		var live = E('div', { 'class': 'mb-srvs-live', 'aria-live': 'polite' });
+		var root = E('section', { 'class': 'mb-panel mb-srvs' }, [ view, live ]);
 		var list = E('div', { 'role': 'list', 'aria-label': _('Servers') });
 		var st = { filter: 'all', moving: false, picked: null, pinging: false, pings: {}, known: {} };
 		var edit = serveredit.create({
@@ -163,12 +165,13 @@ return baseclass.extend({
 			var opts = model.filters(servers, subList());
 			if (!opts.some(function(f) { return f.value === st.filter; }))
 				st.filter = 'all';
-			dom.content(root, [ serverhead.render({
+			live.textContent = st.moving ? servertiles.moving(servers, st.picked) : '';
+			dom.content(view, [ serverhead.render({
 				count: servers.length, filters: opts, filter: st.filter, moving: st.moving, pinging: st.pinging, readonly: o.readonly,
 				onFilter: function(v) { st.filter = v; st.moving = false; draw(); },
 				onGear: function() { st.moving = !st.moving; st.picked = null; draw(); },
 				onPingAll: pingAll, onSort: sort, onAdd: edit.add
-			}) ].concat(body(servers)));
+			}) ].concat(body(servers), o.readonly || !servers.length ? [] : serverhead.foot()));
 		}
 
 		function relabel() {

@@ -4,14 +4,17 @@
 'require view.monkey-business.kit.scrolllock as scrolllock';
 
 style.add('menu', [
-	'.mb.mb-menu{position:fixed;z-index:1001;width:220px;max-width:calc(100vw - 16px);padding:4px;background:var(--mb-pop);',
+	'.mb.mb-menu{position:fixed;z-index:1001;width:220px;max-width:calc(100vw - 16px);padding:6px 0;background:var(--mb-menu);',
 	'border:1px solid var(--mb-line-strong);border-radius:10px;box-shadow:0 12px 32px var(--mb-shadow)}',
-	'.mb .mb-menu-item{display:flex;align-items:center;width:100%;min-height:44px;margin:0;padding:0 12px;background:none;',
-	'border:0;border-radius:6px;color:var(--mb-text);font:inherit;text-align:left;cursor:pointer;box-shadow:none}',
-	'.mb .mb-menu-item:hover,.mb .mb-menu-item:focus{background:var(--mb-btn);outline:none;box-shadow:none}',
+	'.mb .mb-menu-item{display:flex;align-items:center;gap:12px;width:100%;min-height:44px;margin:0;padding:0 14px;background:none;',
+	'border:0;border-radius:0;color:var(--mb-text);font:inherit;font-size:14px;text-align:left;cursor:pointer;box-shadow:none}',
+	'.mb .mb-menu-item:hover,.mb .mb-menu-item:focus{background:var(--mb-btn-on);outline:none;box-shadow:none}',
+	'.mb .mb-menu-item:focus-visible{outline:2px solid var(--mb-accent);outline-offset:-2px}',
+	'.mb .mb-menu-ico{display:inline-flex;flex-shrink:0}',
+	'.mb .mb-menu-ico svg{width:18px;height:18px}',
 	'.mb .mb-menu-warn{color:var(--mb-warn-text)}',
 	'.mb .mb-menu-danger{color:var(--mb-err-text)}',
-	'.mb .mb-menu-sep{height:1px;margin:4px 0;background:var(--mb-line)}'
+	'.mb .mb-menu-sep{height:1px;margin:6px 0;background:var(--mb-line-strong)}'
 ].join(''));
 
 var GAP = 8;
@@ -27,6 +30,14 @@ function place(menu, anchor) {
 	menu.style.top = top + 'px';
 }
 
+function label(it) {
+	if (!it.icon)
+		return [ it.label ];
+	var ico = E('span', { 'class': 'mb-menu-ico' });
+	ico.innerHTML = it.icon;
+	return [ ico, E('span', {}, [ it.label ]) ];
+}
+
 function item(it, close) {
 	return E('button', {
 		'type': 'button',
@@ -37,7 +48,7 @@ function item(it, close) {
 			close(true);
 			it.run();
 		}
-	}, [ it.label ]);
+	}, label(it));
 }
 
 function step(menu, dir) {

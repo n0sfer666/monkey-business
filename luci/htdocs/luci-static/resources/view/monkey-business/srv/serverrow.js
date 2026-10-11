@@ -18,6 +18,7 @@ style.add('serverrow', [
 	'.mb .mb-srow-grip:focus-visible{outline:2px solid var(--mb-accent)}',
 	'.mb .mb-srow-grip[aria-disabled="true"]{visibility:hidden}',
 	'.mb .mb-srow-n{color:var(--mb-muted);font-family:var(--mb-mono)}',
+	'.mb .mb-srow-pos,.mb .mb-srow-dots{display:none}',
 	'.mb .mb-srow-name,.mb .mb-srow-line{display:flex;align-items:center;gap:8px;max-width:100%}',
 	'.mb .mb-srow-line>*{min-width:0}',
 	'.mb .mb-srow-title,.mb .mb-srow-cut{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}',
@@ -31,12 +32,17 @@ style.add('serverrow', [
 	'.mb .mb-icon.mb-srow-del{color:var(--mb-err-icon)}',
 	'.mb .mb-srow-acts svg,.mb .mb-srow-more svg{display:block;margin:auto}',
 	style.MOBILE + '{',
-	'.mb .mb-srow{grid-template-columns:16px minmax(0,1fr) auto 36px;gap:10px;padding:8px 12px;min-height:56px}',
-	'.mb .mb-srow-grip,.mb .mb-srow-addr,.mb .mb-srow-proto,.mb .mb-srow-src,.mb .mb-srow-off,.mb .mb-srow-acts{display:none}',
+	'.mb .mb-srow{grid-template-columns:16px minmax(0,1fr) auto 36px;gap:10px;padding:7px 12px;min-height:0}',
+	'.mb .mb-srow-grip{display:none}',
+	'.mb .mb-srow-dots{display:flex;width:16px;height:16px;fill:var(--mb-faint)}.mb .mb-srow-dots svg{width:16px;height:16px}',
+	'.mb .mb-srow-pos{display:inline}.mb .mb-srow-line{gap:6px}',
+	'.mb .mb-srow-n,.mb .mb-srow-addr,.mb .mb-srow-proto,.mb .mb-srow-src,.mb .mb-srow-off,.mb .mb-srow-acts{display:none}',
 	'.mb .mb-srow:last-child{border-bottom:0}',
-	'.mb .mb-srow-name{flex-direction:column;align-items:flex-start;gap:2px}',
-	'.mb .mb-srow-meta{display:block;max-width:100%}',
-	'.mb .mb-srow-more{display:inline-flex}',
+	'.mb .mb-srow-name{flex-direction:column;align-items:flex-start;gap:2px;line-height:17px}',
+	'.mb .mb-srow-meta{display:block;max-width:100%;line-height:15px}',
+	'.mb .mb-srow-more{display:inline-flex;background:transparent;border-color:var(--mb-line);border-radius:6px;color:var(--mb-muted)}',
+	'.mb .mb-srow-more[aria-expanded="true"]{background:var(--mb-line);border-color:var(--mb-accent)!important;color:var(--mb-text)}',
+	'.mb .mb-srow-more svg{width:16px;height:16px}',
 	'}'
 ].join(''));
 
@@ -44,6 +50,12 @@ function iconBtn(cls, icon, label, run) {
 	var b = E('button', { 'type': 'button', 'class': 'mb-btn mb-icon ' + cls, 'aria-label': label, 'title': label, 'click': run });
 	b.innerHTML = icon;
 	return b;
+}
+
+function dots() {
+	var d = E('span', { 'class': 'mb-srow-dots', 'aria-hidden': 'true' });
+	d.innerHTML = icons.GRIP;
+	return d;
 }
 
 function grip(o, sid, name) {
@@ -63,13 +75,15 @@ function grip(o, sid, name) {
 }
 
 function actions(o, sid, off, manual) {
-	var items = o.pingable ? [ { label: _('Ping'), run: function() { o.onPing(sid); } } ] : [];
+	var items = o.pingable ? [ { label: _('Ping'), icon: icons.PULSE, run: function() { o.onPing(sid); } } ] : [];
 	if (o.readonly)
 		return items;
 	if (manual)
-		items.push({ label: _('Edit'), run: function() { o.onEdit(sid); } });
-	items.push({ label: off ? _('Turn on') : _('Turn off'), kind: off ? null : 'warn', run: function() { o.onOff(sid, !off); } });
-	items.push('-', { label: _('Delete'), kind: 'danger', run: function() { o.onDelete(sid); } });
+		items.push({ label: _('Edit'), icon: icons.PEN, run: function() { o.onEdit(sid); } });
+	if (items.length)
+		items.push('-');
+	items.push({ label: off ? _('Turn on') : _('Turn off'), icon: icons.BAN, kind: 'warn', run: function() { o.onOff(sid, !off); } });
+	items.push({ label: _('Delete'), icon: icons.TRASH, kind: 'danger', run: function() { o.onDelete(sid); } });
 	return items;
 }
 
@@ -114,10 +128,11 @@ return baseclass.extend({
 
 		return E('div', { 'class': 'mb-srow' + (off || o.ping.kind === 'off' ? ' mb-dim' : ''), 'data-sid': sid, 'role': 'listitem' }, [
 			grip(o, sid, name),
+			dots(),
 			E('span', { 'class': 'mb-srow-n' }, [ String(o.n) ]),
 			E('div', { 'class': 'mb-srow-name' }, [
 				E('div', { 'class': 'mb-srow-line' }, [
-					E('span', { 'class': 'mb-srow-title', 'title': name }, [ name ]),
+					E('span', { 'class': 'mb-srow-title', 'title': name }, [ E('span', { 'class': 'mb-srow-pos' }, [ o.n + '. ' ]), name ]),
 					off ? E('span', { 'class': 'mb-srow-badge' }, [ _('off') ]) : ''
 				]),
 				E('span', { 'class': 'mb-srow-meta mb-srow-cut mb-muted mb-small' }, [ meta(s, src) ])

@@ -12,12 +12,13 @@ var SPIN = '<svg class="mb-spin" viewBox="0 0 24 24" width="14" height="14" fill
 	'<circle cx="12" cy="12" r="9" style="stroke:var(--mb-line-strong)"></circle>' +
 	'<path d="M21 12a9 9 0 0 0-9-9" style="stroke:var(--mb-accent)"></path></svg>';
 
-function content(icon, text) {
+function content(icon, text, cls) {
+	var txt = E('span', { 'class': 'mb-btn-txt' }, [].concat(text));
 	if (!icon)
-		return [ text ];
-	var ico = E('span', { 'class': 'mb-btn-ico' });
+		return [ txt ];
+	var ico = E('span', { 'class': 'mb-btn-ico' + (cls ? ' ' + cls : '') });
 	ico.innerHTML = icon;
-	return [ ico, text ];
+	return [ ico, txt ];
 }
 
 function paint(btn, icon, text) {

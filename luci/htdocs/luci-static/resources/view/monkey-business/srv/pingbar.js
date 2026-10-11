@@ -14,10 +14,7 @@ style.add('pingbar', [
 	'.mb .mb-ping-slow .mb-ping-ms{color:var(--mb-slow)}',
 	'.mb .mb-ping-off .mb-tip{color:var(--mb-err)}',
 	'.mb .mb-ping-na .mb-tip{color:var(--mb-na)}',
-	'.mb .mb-ping-txt{display:none}',
-	'.mb .mb-ping-off .mb-ping-txt{color:var(--mb-err-text)}',
-	'.mb .mb-ping-na .mb-ping-txt{color:var(--mb-muted)}',
-	style.MOBILE + '{.mb .mb-ping-bar{display:none}.mb .mb-ping-txt{display:inline}}'
+	style.MOBILE + '{.mb .mb-ping-bar{display:none}.mb .mb-ping-ms{font-size:13px}.mb .mb-ping .mb-tip svg{width:18px;height:18px}}'
 ].join(''));
 
 var LIMIT_MS = 1000;
@@ -39,7 +36,7 @@ function label(p) {
 }
 
 function flagged(p) {
-	return tip.icon(tipText(p), p.kind === 'na' ? icons.NA : icons.WIFI_OFF, E('span', { 'class': 'mb-ping-txt' }, [ label(p) ]));
+	return tip.icon(tipText(p), p.kind === 'na' ? icons.NA : icons.WIFI_OFF);
 }
 
 return baseclass.extend({

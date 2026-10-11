@@ -23,14 +23,15 @@ style.add('subrow', [
 	'.mb .mb-sub-bar>div{height:100%;background:var(--mb-accent)}',
 	'.mb .mb-sub-bar>.mb-hot{background:var(--mb-warn)}',
 	'.mb .mb-sub-acts{display:flex;gap:6px;justify-content:flex-end}',
-	'.mb .mb-sub-ttext{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}',
+	'.mb .mb-sub-ttext,.mb .mb-sub-tmob>span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}',
+	'.mb .mb-sub-tmob{display:none}',
 	'.mb .mb-sub-acts .mb-btn{border-radius:5px}',
 	'.mb .mb-sub-acts .mb-btn:not(.mb-icon){padding:4px 10px;white-space:nowrap}',
 	'.mb .mb-icon.mb-sub-del{color:var(--mb-err-text)}',
 	'.mb .mb-sub-del,.mb .mb-sub-del:hover{border-color:var(--mb-err-edge)!important}',
 	style.MOBILE + '{',
-	'.mb .mb-sub{grid-template-columns:auto minmax(0,1fr) auto auto;row-gap:8px;padding:10px 12px;',
-	'grid-template-areas:"role name name del" "url url url url" "bar bar bar bar" "text text fetch ping" "auto auto auto auto"}',
+	'.mb .mb-sub{grid-template-columns:auto minmax(0,1fr) auto auto 36px;gap:8px;padding:10px 12px;',
+	'grid-template-areas:"role name name name del" "url url url url url" "bar bar bar bar bar" "text text fetch ping ping" "upd upd upd upd upd"}',
 	'.mb .mb-sub-acts,.mb .mb-sub-traf{display:contents}',
 	'.mb .mb-sub-role{grid-area:role}',
 	'.mb .mb-sub .mb-sub-name{grid-area:name;width:100%;padding:6px 8px}',
@@ -38,11 +39,12 @@ style.add('subrow', [
 	'.mb .mb-sub-del{grid-area:del}',
 	'.mb .mb-sub-fetch{grid-area:fetch}',
 	'.mb .mb-sub-ping{grid-area:ping}',
-	'.mb .mb-sub-acts .mb-btn{border-radius:8px}',
-	'.mb .mb-sub-acts .mb-btn:not(.mb-icon){padding:6px 10px}',
+	'.mb .mb-sub-acts .mb-btn{border-radius:6px}',
+	'.mb .mb-sub-acts .mb-btn:not(.mb-icon){padding:6px 10px;font-size:13px!important}',
 	'.mb .mb-sub-bar{grid-area:bar}',
-	'.mb .mb-sub-ttext{grid-area:text}',
-	'.mb .mb-sub-auto{grid-area:auto;justify-self:stretch;display:block}',
+	'.mb .mb-sub-ttext{display:none}',
+	'.mb .mb-sub-tmob{grid-area:text;display:flex;flex-direction:column;gap:4px;min-width:0}',
+	'.mb .mb-sub-auto{grid-area:upd;display:block}',
 	'.mb .mb-sub:last-child{border-bottom:0}',
 	'}'
 ].join(''));
@@ -50,12 +52,15 @@ style.add('subrow', [
 function traffic(s) {
 	var t = model.traffic(s);
 	if (!t)
-		return E('div', { 'class': 'mb-sub-traf' }, [ E('span', { 'class': 'mb-sub-ttext mb-muted mb-small' }, [ '—' ]) ]);
+		return E('div', { 'class': 'mb-sub-traf' }, [
+			E('span', { 'class': 'mb-sub-ttext mb-muted mb-small' }, [ '—' ]),
+			E('div', { 'class': 'mb-sub-tmob mb-muted mb-small' }, [ E('span', {}, [ '—' ]) ])
+		]);
+	var gb = t.used + ' / ' + t.total + ' GB';
 	return E('div', { 'class': 'mb-sub-traf' }, [
 		E('div', { 'class': 'mb-sub-bar' }, [ E('div', { 'class': t.pct > 80 ? 'mb-hot' : '', 'style': 'width:' + t.pct + '%' }) ]),
-		E('span', { 'class': 'mb-sub-ttext mb-muted mb-small' }, [
-			t.used + ' / ' + t.total + ' GB' + (t.expire ? ' · ' + t.expire : '')
-		])
+		E('span', { 'class': 'mb-sub-ttext mb-muted mb-small' }, [ gb + (t.expire ? ' · ' + t.expire : '') ]),
+		E('div', { 'class': 'mb-sub-tmob mb-muted mb-small' }, [ E('span', {}, [ gb ]), t.expire ? E('span', {}, [ t.expire ]) : '' ])
 	]);
 }
 

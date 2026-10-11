@@ -36,6 +36,8 @@ return baseclass.extend({
 	PEN: svg(14, '<path d="M4 20h4L19 9l-4-4L4 16v4z"></path>'),
 	PULSE: svg(14, '<polyline points="21 14 18 14 15 7 10 17 7 11 5 14 3 14"></polyline>'),
 	SORT: svg(14, '<path d="M4 6h10M4 12h7M4 18h4M18 5v14M15 16l3 3 3-3"></path>'),
+	PLUS: svg(16, '<path d="M12 5v14M5 12h14"></path>'),
+	BAN: svg(18, '<circle cx="12" cy="12" r="9"></circle><path d="M8 8l8 8"></path>'),
 	NA: svg(16, '<circle cx="12" cy="12" r="9"></circle><path d="M8 12h8"></path>'),
 	GRIP: '<svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor" aria-hidden="true">' +
 		'<circle cx="9" cy="6" r="1.6"></circle><circle cx="15" cy="6" r="1.6"></circle><circle cx="9" cy="12" r="1.6"></circle>' +

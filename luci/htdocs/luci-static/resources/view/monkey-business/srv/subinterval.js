@@ -23,8 +23,9 @@ style.add('subinterval', [
 	'.mb .mb-sub-mob{display:flex;flex-direction:column;gap:8px;padding:10px;background:var(--mb-bg);',
 	'border:1px solid var(--mb-line);border-radius:8px}',
 	'.mb .mb-sub-mobhead{display:flex;align-items:center;gap:10px}',
-	'.mb .mb-sub-mobhead>span{flex:1}',
-	'.mb .mb-sub-mob input[type=range]{width:100%;margin:4px 0 0;accent-color:var(--mb-accent);cursor:pointer}',
+	'.mb .mb-sub-mobhead>span{flex:1;font-size:13px}',
+	'.mb .mb-sub-mob:not(.mb-sub-off) .mb-sub-val{color:var(--mb-accent-text)}',
+	'.mb .mb-sub-mob input[type=range]{width:100%;height:16px;margin:4px 0 0;padding:0;border-radius:0;accent-color:var(--mb-accent);cursor:pointer}',
 	'.mb .mb-sub-scale{display:flex;justify-content:space-between;color:var(--mb-faint);font-size:11px}',
 	'.mb .mb-sub-mob.mb-sub-off input[type=range],.mb .mb-sub-mob.mb-sub-off .mb-sub-scale{display:none}',
 	'}'
@@ -63,7 +64,7 @@ function desk(minutes, commit, readonly) {
 }
 
 function mobile(id, minutes, commit, readonly) {
-	var value = E('span', { 'class': 'mb-muted' }, [ '· ' + interval.text(minutes) ]);
+	var value = E('span', { 'class': 'mb-sub-val mb-muted' }, [ '· ' + interval.text(minutes) ]);
 	var slider = E('input', {
 		'type': 'range', 'min': interval.MIN, 'max': interval.MAX, 'step': 5,
 		'value': minutes || interval.DEFAULT, 'aria-label': _('Auto-update interval'), 'disabled': readonly ? '' : null
