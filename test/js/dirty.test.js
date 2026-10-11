@@ -42,3 +42,25 @@ test('changes of another config are ignored', () => {
 	const s = state({ changes: { network: { lan: { proto: 'dhcp' } } }, creates: { network: { x: {} } } });
 	assert.strictEqual(dirty.pending(s, CONF), false);
 });
+
+function typed(extra) {
+	return state(Object.assign({
+		values: { [CONF]: {
+			global: { '.type': 'global', active_sub: 'sub_a' },
+			sub_a: { '.type': 'subscription', name: 'A' },
+			cfg01: { '.type': 'server', name: 'S' }
+		} }
+	}, extra));
+}
+
+test('touched is false when only other section types changed', () => {
+	const s = typed({ changes: { [CONF]: { cfg01: { name: 'T' }, global: { active_sub: 'sub_b' } } }, reorder: { [CONF]: true } });
+	assert.strictEqual(dirty.touched(s, CONF, 'subscription'), false);
+});
+
+test('touched sees edits, creates and deletes of the type', () => {
+	assert.strictEqual(dirty.touched(typed({ changes: { [CONF]: { sub_a: { name: 'B' } } } }), CONF, 'subscription'), true);
+	assert.strictEqual(dirty.touched(typed({ changes: { [CONF]: { sub_a: { name: 'A' } } } }), CONF, 'subscription'), false);
+	assert.strictEqual(dirty.touched(typed({ creates: { [CONF]: { sub_b: { '.type': 'subscription' } } } }), CONF, 'subscription'), true);
+	assert.strictEqual(dirty.touched(typed({ deletes: { [CONF]: { sub_a: true } } }), CONF, 'subscription'), true);
+});

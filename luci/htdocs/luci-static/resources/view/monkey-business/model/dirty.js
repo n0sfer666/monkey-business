@@ -18,7 +18,23 @@ function changed(changes, values) {
 	});
 }
 
+function typeOf(state, conf, sid) {
+	var s = (state.creates[conf] || {})[sid] || (state.values[conf] || {})[sid];
+	return s && s['.type'];
+}
+
 return baseclass.extend({
+	touched: function(state, conf, type) {
+		function mine(sid) { return typeOf(state, conf, sid) === type; }
+		if (Object.keys(state.creates[conf] || {}).some(mine) || Object.keys(state.deletes[conf] || {}).some(mine))
+			return true;
+		var changes = state.changes[conf] || {};
+		var own = {};
+		Object.keys(changes).filter(mine).forEach(function(sid) { own[sid] = changes[sid]; });
+		return changed(own, state.values[conf]);
+	},
+
+
 	pending: function(state, conf) {
 		if (filled(state.creates[conf]) || filled(state.deletes[conf]))
 			return true;

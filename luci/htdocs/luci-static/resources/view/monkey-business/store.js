@@ -35,6 +35,7 @@ return baseclass.extend({
 	sections: function(type, cb) { return uci.sections(CONF, type, cb); },
 
 	dirty: function() { return dirty.pending(uci.state, CONF); },
+	touched: function(type) { return dirty.touched(uci.state, CONF, type); },
 	pending: function() { return api.uciChanges(); },
 	own: function(all) { return (all && all[CONF]) || []; },
 	changes: function() { return this.pending().then(this.own); },

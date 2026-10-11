@@ -12,26 +12,19 @@
 'require view.monkey-business.model.interval as interval';
 'require view.monkey-business.model.confirmtext as confirmtext';
 'require view.monkey-business.srv.subrow as subrow';
+'require view.monkey-business.srv.subhead as subhead';
 'require view.monkey-business.srv.subsheet as subsheet';
 'require view.monkey-business.srv.subreport as report';
 'require view.monkey-business.srv.subpersist as subpersist';
 
 style.add('subpanel', [
 	'.mb .mb-subs{--mb-sub-cols:80px minmax(80px,1fr) minmax(100px,1.3fr) minmax(96px,130px) minmax(120px,190px) minmax(150px,210px);display:flex;flex-direction:column}',
-	'.mb .mb-subs-head{display:flex;align-items:center;gap:12px;padding:10px 12px;border-bottom:1px solid var(--mb-line)}',
-	'.mb .mb-subs-head .mb-muted{flex:1;min-width:0}',
 	'.mb .mb-subs-cols{display:grid;grid-template-columns:var(--mb-sub-cols);gap:12px;padding:7px 12px;',
 	'border-bottom:1px solid var(--mb-line);color:var(--mb-muted);font-size:12px}',
 	'.mb .mb-subs-empty{padding:12px}',
-	'.mb .mb-subs-add::after{content:attr(data-short);display:none}',
 	style.MOBILE + '{',
 	'.mb .mb-subs{border-radius:10px}',
-	'.mb .mb-subs-head .mb-muted{display:none}',
-	'.mb .mb-subs-head{gap:8px;border-bottom-color:var(--mb-line-soft)}',
-	'.mb .mb-subs-head h2{flex:1;font-size:15px}',
-	'.mb .mb-subs-add{padding:7px 12px;border-radius:6px;font-size:13px!important}',
-	'.mb .mb-subs-cols,.mb .mb-subs-long{display:none}',
-	'.mb .mb-subs-add::after{display:inline}',
+	'.mb .mb-subs-cols{display:none}',
 	'}'
 ].join(''));
 
@@ -44,6 +37,8 @@ function nameOf(sid) {
 return baseclass.extend({
 	create: function(o) {
 		var root = E('section', { 'class': 'mb-panel mb-subs' });
+		var narrow = window.matchMedia(style.MOBILE.replace('@media ', ''));
+		var open = false;
 
 		var persist = subpersist.create(o);
 
@@ -131,8 +126,10 @@ return baseclass.extend({
 					return o.hold(function() {
 						return persist(function() {
 							return api.subscriptionAdd(name, url).then(function(res) {
-								if (!(res && res.error))
+								if (!(res && res.error)) {
+									open = true;
 									report.fetch(name, res);
+								}
 								return res;
 							});
 						});
@@ -141,10 +138,22 @@ return baseclass.extend({
 			});
 		}
 
+		function toggle() {
+			open = !open;
+			refocus.around(root, { pattern: /^mb-subs-toggle$/ }, paint);
+		}
+
 		function draw() {
+			if (!store.sections('subscription').length || store.touched('subscription'))
+				open = true;
+			paint();
+		}
+
+		function paint() {
 			var list = store.sections('subscription');
 			var active = model.activeId(list, store.get('global', 'active_sub'));
-			var rows = list.map(function(s) {
+			var shut = narrow.matches && !open;
+			var rows = shut ? [] : list.map(function(s) {
 				return subrow.render({
 					sub: s,
 					active: s['.name'] === active,
@@ -156,18 +165,22 @@ return baseclass.extend({
 					onDelete: remove
 				});
 			});
+			root.classList.toggle('mb-subs-shut', shut);
 			dom.content(root, [
-				E('div', { 'class': 'mb-subs-head' }, [
-					E('h2', {}, [ _('Subscriptions') ]),
-					E('span', { 'class': 'mb-muted' }, [ _('the active one is used first, the rest are a reserve') ]),
-					o.readonly ? '' : E('button', { 'type': 'button', 'class': 'mb-btn mb-btn-sm mb-btn-tint mb-subs-add', 'data-short': _('+ Add'), 'click': add }, [
-						E('span', { 'class': 'mb-subs-long' }, [ _('+ Add subscription') ])
-					])
-				]),
+				subhead.render({
+					narrow: narrow.matches,
+					open: !shut,
+					list: list,
+					active: active,
+					readonly: o.readonly,
+					onToggle: toggle,
+					onAdd: add
+				})
+			].concat(shut ? [] : [
 				rows.length ? E('div', { 'class': 'mb-subs-cols' }, [ _('Role'), _('Name'), _('URL'), _('Auto-update'), _('Traffic'), '' ].map(function(t) {
 					return E('span', {}, [ t ]);
 				})) : E('div', { 'class': 'mb-subs-empty mb-muted' }, [ _('No subscriptions yet. Add the VPNON link to get servers.') ])
-			].concat(rows));
+			], rows));
 		}
 
 		function refetch(ids) {
@@ -184,6 +197,7 @@ return baseclass.extend({
 			});
 		}
 
+		narrow.addEventListener('change', draw);
 		draw();
 		return { node: root, draw: draw, refetch: refetch };
 	}
