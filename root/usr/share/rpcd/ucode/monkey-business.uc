@@ -21,6 +21,7 @@ import * as hswitch from '/usr/share/rpcd/ucode/lib/monkey-business/rpcd/autoswi
 import * as huri from '/usr/share/rpcd/ucode/lib/monkey-business/rpcd/uri.uc';
 import * as hy from '/usr/share/rpcd/ucode/lib/monkey-business/rpcd/hysteria.uc';
 import { serverConnect } from '/usr/share/rpcd/ucode/lib/monkey-business/rpcd/connect.uc';
+import { routingCheck, setRouting } from '/usr/share/rpcd/ucode/lib/monkey-business/rpcd/routing.uc';
 import * as sh from '/usr/share/rpcd/ucode/lib/monkey-business/runtime/shell.uc';
 import { CONFIG, XRAY_CONF, WD_STATE } from '/usr/share/rpcd/ucode/lib/monkey-business/runtime/paths.uc';
 import { loadSection, loadSubscriptions, loadServers, storeServers, selectedId, selectedServer, storeSelected }
@@ -156,6 +157,7 @@ function buildCtx() {
 		applyHysteria: function(jsonStr) { return hysteria.apply(jsonStr); },
 		hysteriaStatus: function() { return hysteria.status(); },
 		hysteriaInstall: function() { return hysteria.install(); },
+		warn: function(msg) { system('logger -t monkey-business ' + sh.shq(msg)); },
 		setCustomRouting: function(direct, proxy) {
 			cursor.set(CONFIG, 'global', 'custom_direct', direct);
 			cursor.set(CONFIG, 'global', 'custom_proxy', proxy);
@@ -191,7 +193,8 @@ const methods = {
 	config_apply:         { args: { deadline: 0 }, call: function(req) { return h.configApply(buildCtx(), req.args); } },
 	service_toggle:       { args: { enabled: false }, call: function(req) { return h.serviceToggle(buildCtx(), req.args); } },
 	geo_update:           { args: { geoip_url: '', geosite_url: '' }, call: function(req) { return h.geoUpdate(buildCtx(), req.args); } },
-	set_routing:          { args: { direct: '', proxy: '' }, call: function(req) { return h.setRouting(buildCtx(), req.args); } },
+	set_routing:          { args: { direct: '', proxy: '' }, call: function(req) { return setRouting(buildCtx(), req.args); } },
+	routing_check:        { args: { direct: '', proxy: '' }, call: function(req) { return routingCheck(req.args); } },
 	set_mode:             { args: { mode: '', region: '' }, call: function(req) { return h.setMode(buildCtx(), req.args); } },
 	geo_status:           { call: function() { return h.geoStatus(buildCtx()); } },
 	geo_install:          { args: { which: '' }, call: function(req) { return h.geoInstall(buildCtx(), req.args); } },

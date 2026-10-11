@@ -5,6 +5,7 @@ import * as hsub from "../../src/rpcd/subscription.uc";
 import * as hping from "../../src/rpcd/ping.uc";
 import { directBypass } from "../../src/lib/bypass.uc";
 import * as hsel from "../../src/rpcd/select.uc";
+import { routingCheck, setRouting } from "../../src/rpcd/routing.uc";
 import { readfile } from "fs";
 import { findSelected, serverId } from "../../src/lib/subs.uc";
 
@@ -51,6 +52,7 @@ function mockCtx(state) {
 			return state.applyErr;
 		},
 		setCustomRouting: function(d, p) { state.custom = { direct: d, proxy: p }; },
+		warn: function(m) { push(state.warns, m); },
 		setMode: function(mode, region) {
 			if (state.setModeFail)
 				return false;
@@ -86,6 +88,7 @@ function freshState() {
 		applyErr: null,
 		applied: null,
 		stopped: false,
+		warns: [],
 	};
 }
 
@@ -538,10 +541,40 @@ test("configApply skips runtime work while disabled", function() {
 // иначе правки молча терялись бы, а при включении применился бы старый сплит.
 test("setRouting persists lists while disabled", function() {
 	let st = freshState();
-	let r = h.setRouting(mockCtx(st), { direct: "a.example", proxy: "b.example" });
+	let r = setRouting(mockCtx(st), { direct: "a.example", proxy: "b.example" });
 	assertEq(r.skipped, "disabled");
 	assertEq(st.custom.direct, "a.example");
 	assertEq(st.custom.proxy, "b.example");
+});
+
+test("setRouting refuses invalid lines and writes nothing", function() {
+	let st = freshState();
+	st.global.enabled = "1";
+	let r = setRouting(mockCtx(st), { direct: "a.example\nlocalhost", proxy: "b.example" });
+	assertEq(r.error, "invalid_rules");
+	assertEq(r.items, [ { list: "direct", line: 2, code: "not_full", arg: "localhost" } ]);
+	assertEq(st.custom, null);
+	assertEq(st.applied, null);
+});
+
+test("routingCheck returns items and tolerates missing args", function() {
+	assertEq(routingCheck({ direct: "ok.com", proxy: "geoip:" }).items,
+		[ { list: "proxy", line: 1, code: "geo_empty", arg: "geoip" } ]);
+	assertEq(routingCheck({}).items, []);
+	assertEq(routingCheck(null).items, []);
+});
+
+test("configApply warns about stored invalid custom lines", function() {
+	let st = freshState();
+	st.global.enabled = "1";
+	st.fetchResult = { body: SUB, userinfo: "" };
+	let ctx = mockCtx(st);
+	hsub.subscriptionUpdate(ctx, {});
+	st.global.custom_direct = "ok.com\nbad entry";
+	st.global.custom_proxy = "localhost";
+	st.warns = [];
+	h.configApply(ctx);
+	assertEq(uniq(st.warns), [ "rpcd: custom rules skipped: direct line 2 (space), proxy line 1 (not_full)" ]);
 });
 
 // Ядерный обход перестал быть отдельным тумблером: единственный источник истины — режим. Иначе

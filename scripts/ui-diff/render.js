@@ -30,8 +30,10 @@ function tidy(data, scrub) {
 	return data;
 }
 
-function shot(page, box, mask) {
-	return page.screenshot({ clip: box, fullPage: true, scale: 'css', mask, maskColor: '#7f7f7f' });
+async function shot(page, box, mask, fixed) {
+	const at = fixed ? await page.evaluate(() => [scrollX, scrollY]) : [0, 0];
+	const clip = Object.assign({}, box, { x: box.x - at[0], y: box.y - at[1] });
+	return page.screenshot({ clip, fullPage: !fixed, scale: 'css', mask, maskColor: '#7f7f7f' });
 }
 
 async function clicks(page, list, label) {
@@ -43,13 +45,31 @@ async function clicks(page, list, label) {
 	}
 }
 
+async function fills(page, list, label) {
+	for (const [sel, text] of list) {
+		await page.locator(sel).first().fill(text, { timeout: 5000 }).catch(e => {
+			throw new Error(`${label}: fill ${sel}: ${e.message.split('\n')[0]}`);
+		});
+	}
+	if (list.length) await page.waitForTimeout(300);
+}
+
+async function settle(page, sel, label) {
+	if (!sel) return;
+	await page.locator(sel).first().waitFor({ state: 'attached', timeout: 10000 }).catch(e => {
+		throw new Error(`${label}: wait ${sel}: ${e.message.split('\n')[0]}`);
+	});
+	await page.waitForTimeout(400);
+}
+
 function renderBoard(browser, entry, dir, height, file) {
 	return within(browser, entry.width, height, 'dark', async page => {
 		await openBoard(page, dir, entry);
 		await clicks(page, entry.boardClick, entry.label);
+		await fills(page, entry.boardFill, entry.label);
 		const data = await page.evaluate(collect, { root: entry.boardRoot });
 		if (!data) throw new Error(entry.board + ': nothing collected on the board');
-		const png = await shot(page, data.box, []);
+		const png = await shot(page, data.box, [], false);
 		fs.writeFileSync(file, png);
 		return { data: tidy(data, String), png };
 	});
@@ -63,11 +83,12 @@ function renderStand(browser, entry, theme, height, secret, file) {
 		const loaded = await load(page, entry.page, log);
 		if (!loaded.ok) throw new Error(`${entry.page}: stand did not load after ${loaded.attempt} tries: ${scrub(loaded.error)}`);
 		await clicks(page, entry.standClick, entry.label);
+		await settle(page, entry.standWait, entry.label);
 		const data = await page.evaluate(collect, { root: entry.implRoot });
 		if (!data) throw new Error(entry.page + ': nothing collected on the stand');
 		for (let i = 0; i < SHOTS; i++) {
 			await mark(page, secret, host, LINK_SOURCE);
-			const png = await shot(page, data.box, [page.locator(`[${MARK}]`)]);
+			const png = await shot(page, data.box, [page.locator(`[${MARK}]`)], entry.fixed);
 			if (await mark(page, secret, host, LINK_SOURCE)) continue;
 			fs.writeFileSync(file, png);
 			return { data: tidy(data, scrub), png, log, loaded };

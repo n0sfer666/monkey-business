@@ -41,4 +41,24 @@ function firstLine(s) {
 	return length(parts) > 0 ? trim(parts[0]) : '';
 }
 
-export { shq, runCapture, stripExit, noSelfMatch, firstLine };
+function xrayError(out) {
+	for (let l in split((out != null) ? out : '', '\n')) {
+		let at = index(l, 'Failed to start:');
+		if (at < 0)
+			continue;
+		let parts = map(split(substr(l, at + 16), ' > '), function(p) {
+			return trim(replace(trim(p), /^[a-z0-9_\/]+: /, ''));
+		});
+		let tail = (length(parts) > 2) ? slice(parts, -2) : slice(parts, -1);
+		return 'xray rejected the config: ' + join(' — ', tail);
+	}
+	let last = '';
+	for (let l in split(stripExit(out), '\n')) {
+		l = trim(l);
+		if (l != '' && match(l, /^(Xray [0-9]|A unified platform)/) == null)
+			last = l;
+	}
+	return last;
+}
+
+export { shq, runCapture, stripExit, noSelfMatch, firstLine, xrayError };

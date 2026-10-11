@@ -11,7 +11,8 @@
 					"server_ping",
 					"geo_status",
 					"hysteria_status",
-					"check_exit"
+					"check_exit",
+					"routing_check"
 				]
 			},
 			"uci": [

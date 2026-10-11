@@ -1,5 +1,5 @@
 import { test, assertEq, run } from "../harness.uc";
-import { shq, stripExit, noSelfMatch, firstLine } from "../../src/runtime/shell.uc";
+import { shq, stripExit, noSelfMatch, firstLine, xrayError } from "../../src/runtime/shell.uc";
 
 test("shq wraps a plain value in single quotes", function() {
 	assertEq(shq("https://sub.example/x?token=abc"), "'https://sub.example/x?token=abc'");
@@ -37,6 +37,21 @@ test("firstLine trims and takes only the first line", function() {
 	assertEq(firstLine("  first \n second \n"), "first");
 	assertEq(firstLine(""), "");
 	assertEq(firstLine(null), "");
+});
+
+test("xrayError keeps the last two segments of xray's Failed to start line", function() {
+	let banner = "Xray 25.1.1 (Xray, Penetrates Everything.)\nA unified platform for anti-censorship.\n";
+	assertEq(xrayError(banner + "Failed to start: main: failed to load config files: [/tmp/t.json] > infra/conf: failed to build routing configuration > infra/conf: failed to load geosite: NOSUCH > infra/conf: code not found in geosite.dat: NOSUCH\n"),
+		"xray rejected the config: failed to load geosite: NOSUCH — code not found in geosite.dat: NOSUCH");
+	assertEq(xrayError(banner + "Failed to start: main: failed to load config files: [/tmp/t.json] > infra/conf: invalid IP: 10.0.0.0/33 > infra/conf: invalid network mask for router: 33"),
+		"xray rejected the config: invalid IP: 10.0.0.0/33 — invalid network mask for router: 33");
+	assertEq(xrayError("Failed to start: main: failed to load config files: [/tmp/t.json] > invalid character 'b' looking for beginning of object key string"),
+		"xray rejected the config: invalid character 'b' looking for beginning of object key string");
+	assertEq(xrayError(banner), "");
+	assertEq(xrayError("sh: xray: not found\nMB_EXIT:127\n"), "sh: xray: not found");
+	assertEq(xrayError(banner + "panic: boom\n"), "panic: boom");
+	assertEq(xrayError(""), "");
+	assertEq(xrayError(null), "");
 });
 
 exit(run());

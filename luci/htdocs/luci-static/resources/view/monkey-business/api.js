@@ -27,6 +27,7 @@ return baseclass.extend({
 	configApply: mb('config_apply'),
 	setMode: mb('set_mode', [ 'mode', 'region' ]),
 	setRouting: mb('set_routing', [ 'direct', 'proxy' ]),
+	routingCheck: mb('routing_check', [ 'direct', 'proxy' ]),
 	serversList: mb('servers_list'),
 	serversPing: mb('servers_ping'),
 	serverPing: mb('server_ping', [ 'id' ]),

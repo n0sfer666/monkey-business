@@ -60,7 +60,10 @@ return baseclass.extend({
 		'row-on': 'rgba(91,156,240,.07)',
 		'ok-ring': 'rgba(63,185,80,.18)',
 		'overlay': 'rgba(8,9,11,.45)',
-		'shadow': 'rgba(0,0,0,.5)'
+		'shadow': 'rgba(0,0,0,.5)',
+		'gutter': '#1b1d21',
+		'lineno': '#5d636a',
+		'err-badge': 'rgba(248,81,73,.18)'
 	},
 
 	light: {
@@ -121,6 +124,9 @@ return baseclass.extend({
 		'row-on': 'rgba(37,99,201,.06)',
 		'ok-ring': 'rgba(47,158,85,.18)',
 		'overlay': 'rgba(20,24,30,.35)',
-		'shadow': 'rgba(15,20,30,.18)'
+		'shadow': 'rgba(15,20,30,.18)',
+		'gutter': '#eceef1',
+		'lineno': '#666d75',
+		'err-badge': 'rgba(196,48,43,.12)'
 	}
 });

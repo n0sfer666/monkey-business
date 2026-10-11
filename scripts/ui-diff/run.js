@@ -62,7 +62,7 @@ async function main() {
 		for (const e of opt.engines) browsers[e] = e === 'chromium' ? browsers.diff : await pw[e].launch();
 		for (const entry of entries) await around(entry, async () => {
 			const html = source(opt.boards, entry.board);
-			const ctx = { browsers, entry, opt, secret, statics: staticTexts(html), height: Math.max(previewHeight(html), 900) };
+			const ctx = { browsers, entry, opt, secret, statics: staticTexts(html), height: entry.fixed ? previewHeight(html) : Math.max(previewHeight(html), 900) };
 			for (const engine of opt.engines) {
 				const file = `${entry.label}-${entry.width}-${engine}.board.png`;
 				const board = Object.assign({ file }, await renderBoard(browsers[engine], entry, opt.boards, ctx.height, path.join(opt.out, file)));

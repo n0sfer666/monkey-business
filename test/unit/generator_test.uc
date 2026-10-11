@@ -319,12 +319,16 @@ test("wildcard *.domain becomes xray domain: rule", function() {
 	assertEq(r.rules[1].outboundTag, "proxy");
 });
 
-test("degenerate '*.' is not converted to empty domain: rule", function() {
+test("invalid custom entries are skipped, valid neighbours kept", function() {
 	let r = buildRouting({
 		routing_mode: "bypass-local", local_region: "ru",
-		custom_direct: "*.\nkeep.com",
+		custom_direct: "*.\nkeep.com\nhttps://x.com\n10.0.0.0/33\nGEOSITE:Netflix",
+		custom_proxy: "localhost, 1.2.3.4, *.ru, Full:x.org, ::ffff:1.2.3.4",
 	});
-	assertEq(r.rules[0].domain, ["*.", "keep.com"]);
+	assertEq(r.rules[0].domain, ["keep.com", "geosite:Netflix"]);
+	assertEq(r.rules[1].domain, ["domain:ru", "full:x.org"]);
+	assertEq(r.rules[2].ip, ["1.2.3.4", "::ffff:1.2.3.4"]);
+	assertEq(r.rules[2].outboundTag, "proxy");
 });
 
 test("test_socks adds localhost socks inbound", function() {

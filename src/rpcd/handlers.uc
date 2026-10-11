@@ -21,12 +21,13 @@
 //   serviceRunning() -> bool   setEnabled(bool) -> bool (легло ли в UCI)   updateGeo(args) -> { status }
 //   failoverCap() -> int (сколько кандидатов пробовать в selectWorking; 0 = все)
 //   watchdogPhase() -> "healthy"|"reconnecting"|"down"|null   lastEvent() -> string
-//   setCustomRouting(direct, proxy)   setMode(mode, region) -> bool (легло ли в UCI)
-//   directBypassActive() -> bool (ФАКТ из nft, не намерение)   geoStatus() -> { state, geoip, geosite }
+//   setCustomRouting(direct, proxy)   setMode(mode, region) -> bool (легло ли в UCI)   warn(msg) -> syslog
+//   directBypassActive() -> bool (ФАКТ из nft, не намерение)   geoStatus() -> { state, geoip, geosite, updated }
 //   geoInstall(which) -> { ok, detail }   checkExit(domain) -> { ip, country, code }|{ error }
 //   hysteriaInstalled() -> bool   applyHysteria(jsonStr|null) -> errString|null
 
 import { isTrue } from "../lib/val.uc";
+import { validateRules } from "../lib/rules.uc";
 import { generateJson } from "../generator/xray.uc";
 import { selectWorking, listedServers } from "./select.uc";
 import { directBypass } from "../lib/bypass.uc";
@@ -37,8 +38,14 @@ const ROUTING_MODES = ["bypass-local", "gfwlist", "global"];
 const LOCAL_REGIONS = ["ru", "cn", "ir", "other"];
 
 function genConfig(ctx, server) {
+	let g = ctx.getGlobal();
+	let bad = map(validateRules(g.custom_direct, g.custom_proxy), function(e) {
+		return sprintf("%s line %d (%s)", e.list, e.line, e.code);
+	});
+	if (length(bad))
+		ctx.warn("rpcd: custom rules skipped: " + join(", ", bad));
 	return {
-		global: ctx.getGlobal(),
+		global: g,
 		server: server,
 		dns: ctx.getDns(),
 		anti_dpi: ctx.getAntiDpi(),
@@ -112,17 +119,9 @@ function geoUpdate(ctx, args) {
 	return ctx.updateGeo(args);
 }
 
-// Записать custom direct/proxy в UCI (commit на стороне сервера, без LuCI-стейджинга) и применить.
-function setRouting(ctx, args) {
-	let direct = (args != null && args.direct != null) ? args.direct : "";
-	let proxy = (args != null && args.proxy != null) ? args.proxy : "";
-	ctx.setCustomRouting(direct, proxy);
-	return configApply(ctx);
-}
-
 // Режим маршрутизации + регион переехали из формы Settings на дашборд: они меняют не только конфиг
 // xray, но и файрвол (ядерный обход), а форма LuCI умеет только стейджить UCI — «сохранил и ничего
-// не изменилось» здесь особенно дорого. Пишем и применяем сразу, как setRouting. Пустое значение =
+// не изменилось» здесь особенно дорого. Пишем и применяем сразу, как setRouting (src/rpcd/routing.uc). Пустое значение =
 // «не трогать»: UI шлёт оба поля, но ubus-контракт допускает частичный вызов.
 function setMode(ctx, args) {
 	let g = ctx.getGlobal();
@@ -196,5 +195,5 @@ function checkExit(ctx, args) {
 	return ctx.checkExit(domain);
 }
 
-export { configApply, serviceToggle, geoUpdate, setRouting, setMode, subscriptionSelect, geoStatus, geoInstall,
+export { configApply, serviceToggle, geoUpdate, setMode, subscriptionSelect, geoStatus, geoInstall,
 	checkExit };

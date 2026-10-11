@@ -251,7 +251,7 @@ rpcd.@login[-1].password='$p$root'; uci add_list rpcd.@login[-1].read='*'; uci c
 
 ## Итерация 4 — Dashboard (сессия 6)
 
-Модалки Routing / Geo — сессия 7; пока *Edit* и *Update…* открывают старые формы в шторке.
+Модалки Routing / Geo — итерация 5.
 IP выхода и ссылки серверов в скриншоты и отчёты не попадают.
 
 ### Вид
@@ -279,8 +279,9 @@ IP выхода и ссылки серверов в скриншоты и отч
    *Connect* у уже выбранного сервера: VPN включён → «Already on …»; выключен → «… is now first.
    The VPN is off…».
 6. Region → cn → *Save & Apply* → «Routing mode applied.»; вернуть ru. Mode «Only blocked via VPN»
-   при ru сейчас падает «xray config validation failed» — известный баг генератора (сессия 7).
-7. *Edit* у Custom rules и *Update…* у geo data → шторка со старой формой; Esc закрывает, фокус на
+   при ru сейчас падает «Apply failed: xray rejected the config: …» (`geosite:geolocation-!ru`
+   нет в geosite.dat) — известный баг генератора (сессия 8).
+7. *Edit* у Custom rules и *Update…* у geo data → модалки итерации 5; Esc закрывает, фокус на
    кнопке.
 8. Subscription → другая подписка → страница перечитана, выбрана она; вернуть.
 9. hysteria2 *Update* / *Install* → «installing…», затем «hysteria client installed.»; загрузка
@@ -289,6 +290,49 @@ IP выхода и ссылки серверов в скриншоты и отч
    ошибки (`echo "error: x" > /tmp/mb-hysteria.state`) → старая ошибка не всплывает.
 10. Нет geosite.dat (`mv /usr/share/xray/geosite.dat{,.bak}`) → плашка «Can't turn on: geo data is missing (geosite.dat)…»,
     *Turn on* неактивна; вернуть файл.
+
+## Итерация 5 — модалки Routing / Geo (сессия 7)
+
+Стенд `make dev FIXTURE=1`. После проверок `custom_direct` / `custom_proxy` и `geo.*_url` вернуть
+как были, `/tmp/mb-uidiff.conf` и `/tmp/mb-upload-*.dat` после прогона — нет.
+
+### Вид
+1. `make ui-diff SCREEN=RoutingModal` (1280, состояния errors / clean), `SCREEN=MobileRoutingModal`
+   (390, errors / direct), `SCREEN=GeoModal`, `SCREEN=MobileGeoModal` — расхождений вне раздела
+   «Шум ui-diff (модалки Routing / Geo)» аудита нет. Хуки сами пишут правила / URL и возвращают их.
+2. Custom rules 1280: две колонки Direct / Via VPN со счётчиками, номера строк, подсказка «One entry
+   per line…»; 390: табы Via VPN / Direct с счётчиком или «N invalid», одна textarea на экран.
+3. Geo databases: строки geoip / geosite с размером и датой, URL-поля, *Upload*, *Update now*.
+4. 1024 / 800 / 721 / 390, Chromium и WebKit, тёмная и светлая — горизонтального скролла нет, Tab
+   ходит по кругу внутри, Esc закрывает, фокус возвращается на *Edit* / *Update…*.
+
+### Custom rules
+1. Набрать в Via VPN `bad one` → через ~400 мс после последней клавиши один `routing_check`; строка
+   подсвечена, номер красный, блок «Line N · …» с причиной, *Save & Apply* неактивна, внизу «Fix the
+   highlighted lines to save». Стереть → кнопка активна.
+2. На 390 ошибка в неоткрытом табе: бейдж «1 invalid» на табе, подпись внизу «1 line needs fixing ·
+   1 on the other tab — fix to save».
+3. Отказ бэкенда: `ubus call monkey-business set_routing '{"direct":"a b","proxy":""}'` →
+   `{"error":"invalid_rules","items":[…]}`, `uci get monkey-business.global.custom_direct` не
+   изменился.
+4. *Save & Apply* при выключенном VPN → «Rules saved. The VPN is off — they will apply when you turn
+   it on.»; при включённом → «Routing rules applied.», pid xray сменился.
+5. Ошибка xray: VPN включён, правило `geosite:nosuch` → «Apply failed: xray rejected the config: …»
+   с текстом xray (не общий «validation failed»), шторка открыта, pid xray прежний (правило уже в UCI —
+   xray живёт на старом конфиге); вернуть правила, VPN поднят.
+6. VPN включён (при выключенном `config_apply` → `skipped: disabled`). `uci set …custom_proxy='bad one';
+   uci commit` в обход UI, затем `ubus call monkey-business
+   config_apply` → конфиг собран без строки, `logread -e 'custom rules skipped'` — «rpcd: custom
+   rules skipped: proxy line 1 (space)»; «последнее событие» на дашборде не меняется.
+
+### Geo databases
+1. *Update now* → «Updating…», затем «Geo databases updated & validated.» / «Already up to date —
+   nothing changed.», модалка закрылась, строка Components обновилась.
+2. *Upload* geoip валидным `.dat` (скопировать `/usr/share/xray/geoip.dat` с роутера) → принят;
+   «geoip.dat installed & validated.»; мусор (текстовый файл) → «Rejected: …», рабочий файл не
+   тронут (`md5sum`).
+3. URL-поля сохраняются при *Update now* («URLs are saved when you update»), переживают
+   перезагрузку страницы; пустое — источник по умолчанию.
 
 ## Оверлеи
 
@@ -365,3 +409,10 @@ Console: ошибок приложения нет; `ERR_CONNECTION_RESET` / `L i
 не срабатывает и на стоковой `status/overview` — переход проверен кликом. Console: плавающие
 `"%s/%s.js%s".format is not a function` и `classes.ui.addNotification is not a function` — ядро
 `luci.js` на прерванной загрузке, при повторе нет.
+Итерация 5 (сессия 7) — Playwright в VM: матрица Chromium и WebKit × тёмная / светлая × 1280 / 1024 /
+800 / 721 / 390 (touch) — 40/40 (гор. скролла нет, Tab-ловушка, Esc, возврат фокуса); живые п. 1–9 —
+Chromium 1280 (debounce ~400 мс, один `routing_check`; Save блок / разблок; Save & Apply при VPN on —
+новый pid xray, при VPN off — «Rules saved…»; `geosite:nosuch` — текст xray, шторка открыта, pid
+прежний; upload мусора — «Rejected: …», md5 рабочего файла прежний; валидный — «installed &
+validated»; Update now — «Already up to date»; warn `rpcd: custom rules skipped` в logread);
+ubus-отказ `set_routing` — через ssh. Не прогнаны: «Только чтение» модалок, Firefox.

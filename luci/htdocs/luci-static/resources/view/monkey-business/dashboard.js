@@ -4,8 +4,6 @@
 'require uci';
 'require view.monkey-business.api as api';
 'require view.monkey-business.store as store';
-'require view.monkey-business.geo as mbgeo';
-'require view.monkey-business.splitlists as mbsplit';
 'require view.monkey-business.kit.style as style';
 'require view.monkey-business.kit.tabs as tabs';
 'require view.monkey-business.model.servers as model';
@@ -13,7 +11,8 @@
 'require view.monkey-business.dash.serverlist as serverlist';
 'require view.monkey-business.dash.routing as routing';
 'require view.monkey-business.dash.components as components';
-'require view.monkey-business.dash.legacy as legacy';
+'require view.monkey-business.dash.rules as rules';
+'require view.monkey-business.dash.geosheet as geosheet';
 
 style.add('dash', [
 	'.mb.mb-dash [hidden]{display:none!important}',
@@ -82,11 +81,15 @@ return view.extend({
 		}
 
 		function openGeo() {
-			legacy.open(_('Geo data'), mbgeo.render(geo), changed);
+			geosheet.open({ geo: geo, onChanged: changed });
 		}
 
 		function openRules() {
-			legacy.open(_('Custom rules'), mbsplit.render(), changed);
+			rules.open({
+				direct: uci.get(store.CONF, 'global', 'custom_direct') || '',
+				proxy: uci.get(store.CONF, 'global', 'custom_proxy') || '',
+				onSaved: changed
+			});
 		}
 
 		card = status.render(data[0] || {}, { readonly: readonly, onGeo: openGeo, onDone: changed });

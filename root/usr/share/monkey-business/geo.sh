@@ -174,10 +174,15 @@ cmd_install() { # install <which> <src>
 
 cmd_status() {
 	st="$(cat "$STATE" 2>/dev/null || echo idle)"
-	gip=0; gst=0
+	gip=0; gst=0; upd=0
+	for f in geoip geosite; do
+		[ -f "$DEST/$f.dat" ] || continue
+		t="$(date -r "$DEST/$f.dat" +%s 2>/dev/null || echo 0)"
+		[ "$t" -gt "$upd" ] && upd="$t"
+	done
 	[ -f "$DEST/geoip.dat" ] && gip="$(wc -c <"$DEST/geoip.dat")"
 	[ -f "$DEST/geosite.dat" ] && gst="$(wc -c <"$DEST/geosite.dat")"
-	printf '{"state":"%s","geoip":%s,"geosite":%s}\n' "$st" "$gip" "$gst"
+	printf '{"state":"%s","geoip":%s,"geosite":%s,"updated":%s}\n' "$st" "$gip" "$gst" "$upd"
 }
 
 case "${1:-}" in
