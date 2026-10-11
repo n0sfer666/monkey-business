@@ -31,18 +31,18 @@ function current(s, r) {
 }
 
 var CONTROLS = {
-	flag: function(id, s, r, edit) {
-		return field.check({ id: id, checked: current(s, r) === '1', onChange: function(on) { edit(on ? '1' : '0'); } });
+	flag: function(id, s, r, edit, ro) {
+		return field.check({ id: id, checked: current(s, r) === '1', disabled: ro, onChange: function(on) { edit(on ? '1' : '0'); } });
 	},
-	select: function(id, s, r, edit) {
-		return field.select({ id: id, value: current(s, r), options: r.options, onChange: edit });
+	select: function(id, s, r, edit, ro) {
+		return field.select({ id: id, value: current(s, r), options: r.options, disabled: ro, onChange: edit });
 	},
-	text: function(id, s, r, edit) {
-		return field.text({ id: id, value: current(s, r), mono: r.mono, placeholder: r.def, onInput: edit });
+	text: function(id, s, r, edit, ro) {
+		return field.text({ id: id, value: current(s, r), mono: r.mono, placeholder: r.def, disabled: ro, onInput: edit });
 	}
 };
 
-function renderRow(s, r, errors, onChange) {
+function renderRow(s, r, errors, onChange, ro) {
 	var id = 'mb-' + s.sid + '-' + r.opt;
 	var key = s.sid + '.' + r.opt;
 	var row;
@@ -65,24 +65,24 @@ function renderRow(s, r, errors, onChange) {
 		brief: r.brief,
 		layout: r.layout,
 		width: r.width,
-		control: CONTROLS[r.kind](id, s, r, edit)
+		control: CONTROLS[r.kind](id, s, r, edit, ro)
 	});
 	return row;
 }
 
-function renderSection(s, errors, onChange) {
+function renderSection(s, errors, onChange, ro) {
 	return E('section', { 'class': 'mb-panel mb-set-sec' }, [
 		E('div', { 'class': 'mb-set-head' }, [
 			E('h2', {}, [ s.title ]),
 			E('span', { 'class': 'mb-muted mb-small' }, field.hint(s.hint, s.brief))
 		])
-	].concat(s.rows.map(function(r) { return renderRow(s, r, errors, onChange); })));
+	].concat(s.rows.map(function(r) { return renderRow(s, r, errors, onChange, ro); })));
 }
 
 return baseclass.extend({
-	render: function(errors, onChange) {
+	render: function(errors, onChange, ro) {
 		return E('div', { 'class': 'mb-set-grid' }, schema.sections.map(function(s) {
-			return renderSection(s, errors, onChange);
+			return renderSection(s, errors, onChange, ro);
 		}));
 	}
 });

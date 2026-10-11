@@ -60,12 +60,13 @@ return baseclass.extend({
 			'placeholder': o.placeholder,
 			'spellcheck': 'false',
 			'autocomplete': 'off',
+			'disabled': o.disabled ? '' : null,
 			'input': onValue(o.onInput, 'value')
 		});
 	},
 
 	select: function(o) {
-		return E('select', { 'id': o.id, 'class': 'mb-input', 'change': onValue(o.onChange, 'value') },
+		return E('select', { 'id': o.id, 'class': 'mb-input', 'disabled': o.disabled ? '' : null, 'change': onValue(o.onChange, 'value') },
 			withCurrent(o.options, o.value).map(function(opt) {
 				return E('option', { 'value': opt.value, 'selected': opt.value === o.value ? '' : null }, [ opt.label ]);
 			}));
@@ -77,6 +78,7 @@ return baseclass.extend({
 			'type': 'checkbox',
 			'class': 'mb-check',
 			'checked': o.checked ? '' : null,
+			'disabled': o.disabled ? '' : null,
 			'change': onValue(o.onChange, 'checked')
 		});
 	},

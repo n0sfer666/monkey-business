@@ -38,7 +38,8 @@ return view.extend({
 	draw: function() {
 		var self = this;
 		var errors = {};
-		var locked = !L.hasViewPermission();
+		var readonly = !L.hasViewPermission();
+		var locked = readonly;
 
 		function act(name) {
 			return ui.createHandlerFn(self, function() {
@@ -63,7 +64,7 @@ return view.extend({
 		dom.content(this.root, [
 			tabs.render('settings'),
 			viewbar.render(_('Settings'), _('Defaults are safe'), [ reset, save, apply ]),
-			sections.render(errors, sync)
+			sections.render(errors, sync, readonly)
 		]);
 		sync();
 	},
