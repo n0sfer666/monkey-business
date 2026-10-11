@@ -34,9 +34,19 @@ function shot(page, box, mask) {
 	return page.screenshot({ clip: box, fullPage: true, scale: 'css', mask, maskColor: '#7f7f7f' });
 }
 
+async function clicks(page, list, label) {
+	for (const sel of list) {
+		await page.locator(sel).first().click({ timeout: 5000 }).catch(e => {
+			throw new Error(`${label}: click ${sel}: ${e.message.split('\n')[0]}`);
+		});
+		await page.evaluate(() => new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r))));
+	}
+}
+
 function renderBoard(browser, entry, dir, height, file) {
 	return within(browser, entry.width, height, 'dark', async page => {
 		await openBoard(page, dir, entry);
+		await clicks(page, entry.boardClick, entry.label);
 		const data = await page.evaluate(collect, { root: entry.boardRoot });
 		if (!data) throw new Error(entry.board + ': nothing collected on the board');
 		const png = await shot(page, data.box, []);
@@ -52,6 +62,7 @@ function renderStand(browser, entry, theme, height, secret, file) {
 		const log = watch(page, scrub);
 		const loaded = await load(page, entry.page, log);
 		if (!loaded.ok) throw new Error(`${entry.page}: stand did not load after ${loaded.attempt} tries: ${scrub(loaded.error)}`);
+		await clicks(page, entry.standClick, entry.label);
 		const data = await page.evaluate(collect, { root: entry.implRoot });
 		if (!data) throw new Error(entry.page + ': nothing collected on the stand');
 		for (let i = 0; i < SHOTS; i++) {

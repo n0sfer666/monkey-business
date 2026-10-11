@@ -24,7 +24,7 @@ make ui-diff SCREEN=servers WIDTH=1280
 - `artifact-type/dc-runtime.js` — в HTML подключается как `./support.js`;
 - `project/<Board>.dc.html` — для каждого борда из `boards.js` и модалок.
 
-Новый экран или состояние (например, борд с `props`) — новая строка в `boards.js`.
+Новый экран или состояние (например, борд с `props`) — новая строка в `boards.js`. Состояние, которое держит логика борда, а не props, задаётся кликами: `boardClick` и `standClick` — CSS-селекторы, по которым кликнуть перед замером, `state` — суффикс имени отчёта (`MobileServers-list`, `MobileServers-arrange`).
 
 ## Что считается
 
