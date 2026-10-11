@@ -5,6 +5,7 @@ import { isTrueByDefault, isIpLike } from "../lib/val.uc";
 import { MATCHER, entries, checkEntry } from "../lib/rules.uc";
 
 const GEOSITE_REGION = { ru: "category-ru", cn: "cn", ir: "category-ir" };
+const GFW_TAG = { cn: "gfw" };
 
 function geositeRegion(region) {
 	return GEOSITE_REGION[region] || region;
@@ -52,8 +53,8 @@ function modeRules(mode, region, other) {
 		];
 	if (mode == "gfwlist") {
 		let rules = [ { type: "field", ip: ["geoip:private"], outboundTag: "direct" } ];
-		if (!other)
-			push(rules, { type: "field", domain: ["geosite:geolocation-!" + region], outboundTag: "proxy" });
+		if (GFW_TAG[region])
+			push(rules, { type: "field", domain: ["geosite:" + GFW_TAG[region]], outboundTag: "proxy" });
 		push(rules, { type: "field", network: "tcp,udp", outboundTag: "direct" });
 		return rules;
 	}

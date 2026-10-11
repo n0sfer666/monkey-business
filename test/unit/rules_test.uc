@@ -26,6 +26,11 @@ test("each invalid entry maps to its code and arg", function() {
 	assertEq(checkEntry("1.2.3"), { code: "ip4", arg: "" });
 	assertEq(checkEntry("10.0.0.0/33"), { code: "prefix", arg: "32" });
 	assertEq(checkEntry("2001:db8::/129"), { code: "prefix", arg: "128" });
+	assertEq(checkEntry("::ffff:1.2.3.0/33"), { code: "prefix", arg: "32" });
+	assertEq(checkEntry("::FFFF:1.2.3.0/120"), { code: "prefix", arg: "32" });
+	assertEq(checkEntry("::ffff:1.2.3.0/24"), null);
+	for (let t in ["0:0:0:0:0:ffff:1.2.3.4", "::0:ffff:1.2.3.4", "0::ffff:1.2.3.4/24", "::ffff:102:304"])
+		assertEq(checkEntry(t), { code: "mapped", arg: "::ffff:1.2.3.4" }, t);
 	assertEq(checkEntry("2001:zz::1"), { code: "ip6", arg: "" });
 	assertEq(checkEntry("1::2::3"), { code: "ip6", arg: "" });
 	for (let t in [":", "1:2:3", "12345::1", "1:2:3:4:5:6:7:8:9", "1:2:3:4::5:6:7:8", "::ffff:1.2.3.256"])

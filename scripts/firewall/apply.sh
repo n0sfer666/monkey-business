@@ -69,6 +69,10 @@ fi
 FORCE_OCT='(25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9]?[0-9])'
 FORCE_RE="^$FORCE_OCT(\.$FORCE_OCT){3}(/(3[0-2]|[12]?[0-9]))?\$|^[0-9A-Fa-f:]*:[0-9A-Fa-f:]*(/(12[0-8]|1[01][0-9]|[1-9]?[0-9]))?\$"
 
+unmap_v4() {
+	awk -F/ 'tolower($1) !~ /^::ffff:[0-9.]+$/ { print; next } NF == 1 { print substr($1, 8); next } NF == 2 && $2 ~ /^[0-9]+$/ && $2 <= 32 { print substr($1, 8) "/" $2 }'
+}
+
 F4=""
 F6=""
 while IFS= read -r entry; do
@@ -77,7 +81,7 @@ while IFS= read -r entry; do
 		*) F4="$F4${F4:+ }$entry" ;;
 	esac
 done <<EOF
-$(echo "$FORCE" | tr ',' '\n' | tr -d ' \t\r' | grep -E "$FORCE_RE")
+$(echo "$FORCE" | tr ',' '\n' | tr -d ' \t\r' | unmap_v4 | grep -E "$FORCE_RE")
 EOF
 
 FORCE_SETS=""

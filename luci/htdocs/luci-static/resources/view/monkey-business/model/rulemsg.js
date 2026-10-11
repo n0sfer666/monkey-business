@@ -9,6 +9,7 @@ var MSG = {
 	slashes: function() { return _('Only one / allowed'); },
 	ip4: function() { return _('Not a valid IPv4 address'); },
 	ip6: function() { return _('Not a valid IPv6 address'); },
+	mapped: function(a) { return _('IPv4-mapped address: write %s').format(a); },
 	prefix: function(a) { return _('Prefix must be 0–%s').format(a); },
 	path: function(a) { return _('Remove the path: write %s').format(a); },
 	wildcard: function() { return _('Wildcard only as *. at the start'); },

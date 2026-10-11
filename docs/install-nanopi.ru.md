@@ -229,7 +229,10 @@ Xray, но и файрвол; панель показывает (✓/✗), чт�
 
 - **Routing mode** — `Bypass local`: ваш локальный регион (RU/CN/IR) и приватные адреса идут
   напрямую, всё остальное — через туннель. Другие режимы: `Only blocked via VPN` (gfwlist) и
-  `Everything via VPN` (global). Вне `Bypass local` правила `geoip:<регион> → direct` нет вообще,
+  `Everything via VPN` (global). `Only blocked via VPN` берёт готовый список заблокированного
+  только для CN (`geosite:gfw` из стандартного geosite.dat Loyalsoldier — учтите это при своём
+  geosite URL); для RU/IR/Other в туннель идёт только ваш список **Via VPN**, остальное — напрямую.
+  Вне `Bypass local` правила `geoip:<регион> → direct` нет вообще,
   и вместе с ним отключаются bypass-сеты в ядре.
 - **Local region** — какой регион считается «локальным» для прямой маршрутизации и для DNS-сплита.
   Выберите **`Other`**, если для вашего региона нет geo-пресета: предопределённой локальной

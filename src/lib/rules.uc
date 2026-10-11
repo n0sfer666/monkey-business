@@ -51,6 +51,13 @@ function cidr(addr, valid, max, code) {
 	return null;
 }
 
+function mappedV4(addr) {
+	let b = iptoarr(split(addr, "/")[0]);
+	if (length(b) != 16 || join(",", slice(b, 0, 12)) != "0,0,0,0,0,0,0,0,0,0,255,255")
+		return null;
+	return join(".", slice(b, 12));
+}
+
 function domain(t) {
 	let d = (substr(t, 0, 2) == "*.") ? substr(t, 2) : t;
 	if (index(d, "*") >= 0)
@@ -89,8 +96,13 @@ function checkEntry(t) {
 	let hp = match(t, /^([^:]+):[0-9]{1,5}$/);
 	if (hp != null)
 		return { code: "port", arg: hp[1] };
-	if (index(t, ":") >= 0)
-		return cidr(t, ipv6, 128, "ip6");
+	if (index(t, ":") >= 0) {
+		let canon = match(t, /^::ffff:[0-9.]+(\/|$)/i) != null;
+		let v4 = canon ? null : mappedV4(t);
+		if (v4 != null)
+			return { code: "mapped", arg: "::ffff:" + v4 };
+		return cidr(t, ipv6, canon ? 32 : 128, "ip6");
+	}
 	if (index(t, "/") >= 0)
 		return { code: "path", arg: split(t, "/")[0] };
 	return domain(t);

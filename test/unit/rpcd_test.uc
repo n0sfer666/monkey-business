@@ -51,7 +51,11 @@ function mockCtx(state) {
 			state.enabledAtApply = state.global.enabled;
 			return state.applyErr;
 		},
-		setCustomRouting: function(d, p) { state.custom = { direct: d, proxy: p }; },
+		setCustomRouting: function(d, p) {
+			state.custom = { direct: d, proxy: p };
+			state.global.custom_direct = d;
+			state.global.custom_proxy = p;
+		},
 		warn: function(m) { push(state.warns, m); },
 		setMode: function(mode, region) {
 			if (state.setModeFail)
@@ -557,6 +561,34 @@ test("setRouting refuses invalid lines and writes nothing", function() {
 	assertEq(st.applied, null);
 });
 
+test("setRouting rolls the lists back when xray rejects the config", function() {
+	let st = freshState();
+	st.global.enabled = "1";
+	st.fetchResult = { body: SUB, userinfo: "" };
+	let ctx = mockCtx(st);
+	hsub.subscriptionUpdate(ctx, {});
+	st.global.custom_direct = "old.example";
+	st.global.custom_proxy = "";
+	st.applyErr = "xray rejected the config: code not found in geosite.dat: NOSUCH";
+	let r = setRouting(ctx, { direct: "a.example", proxy: "geosite:nosuch" });
+	assertEq(r.error, st.applyErr);
+	assertEq(st.custom, { direct: "old.example", proxy: "" });
+});
+
+test("setRouting rolls the lists back on any apply error", function() {
+	let st = freshState();
+	st.global.enabled = "1";
+	st.fetchResult = { body: SUB, userinfo: "" };
+	let ctx = mockCtx(st);
+	hsub.subscriptionUpdate(ctx, {});
+	st.global.custom_direct = "old.example";
+	st.global.custom_proxy = "old.proxy";
+	st.applyErr = "geo databases missing — press \"Update geo databases\" on the Dashboard first";
+	let r = setRouting(ctx, { direct: "a.example", proxy: "b.example" });
+	assertEq(r.error, st.applyErr);
+	assertEq(st.custom, { direct: "old.example", proxy: "old.proxy" });
+});
+
 test("routingCheck returns items and tolerates missing args", function() {
 	assertEq(routingCheck({ direct: "ok.com", proxy: "geoip:" }).items,
 		[ { list: "proxy", line: 1, code: "geo_empty", arg: "geoip" } ]);
@@ -600,12 +632,12 @@ test("setMode commits the pair, applies it and reports the derived bypass", func
 	let ctx = mockCtx(st);
 	hsub.subscriptionUpdate(ctx, {});
 	st.applied = null;
-	let r = h.setMode(ctx, { mode: "gfwlist", region: "ru" });
+	let r = h.setMode(ctx, { mode: "gfwlist", region: "cn" });
 	assertEq(st.global.routing_mode, "gfwlist");
-	assertEq(st.global.local_region, "ru");
+	assertEq(st.global.local_region, "cn");
 	assertEq(r.direct_bypass, false);
 	assert(st.applied != null, "config re-applied");
-	assert(index(st.applied, "geolocation-!ru") >= 0, "new mode is in the applied config");
+	assert(index(st.applied, "geosite:gfw") >= 0, "new mode is in the applied config");
 });
 
 // Мусор отсюда попадает в конфиг именем geo-категории (geoip:<region>) -> `xray -test` валится,

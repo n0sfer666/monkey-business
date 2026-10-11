@@ -232,7 +232,10 @@ firewall as well as the Xray config; the panel lists what the current pair actua
 
 - **Routing mode** — `Bypass local`: your local region (RU/CN/IR) and private addresses go direct,
   everything else through the tunnel. Other modes: `Only blocked via VPN` (gfwlist) and
-  `Everything via VPN` (global). Outside `Bypass local` there is no `geoip:<region> → direct` rule
+  `Everything via VPN` (global). `Only blocked via VPN` uses a ready blocked list only for CN
+  (`geosite:gfw`, present in the default Loyalsoldier geosite.dat — keep it if you set a custom
+  geosite URL); for RU/IR/Other only your **Via VPN** list goes through the tunnel, the rest is
+  direct. Outside `Bypass local` there is no `geoip:<region> → direct` rule
   at all, and the kernel bypass sets are dropped with it.
 - **Local region** — which region is treated as "local" for direct routing and for the DNS split.
   Pick **`Other`** if your region has no geo preset: there is no predefined local geo-category, so

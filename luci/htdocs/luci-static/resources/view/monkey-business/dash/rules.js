@@ -151,7 +151,7 @@ return baseclass.extend({
 					return;
 				}
 				if (res && res.error)
-					return notice.show(_('Apply failed: ') + res.error, 'warning');
+					return notice.show(_('Rules not saved: ') + res.error, 'warning');
 				applied(res);
 				s.close();
 			}, notice.fail(_('Apply failed: '))).finally(function() {

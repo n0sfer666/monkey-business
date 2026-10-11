@@ -7,7 +7,7 @@ const msg = load('view.monkey-business.model.rulemsg');
 const geo = load('view.monkey-business.model.geo');
 
 test('every backend code has its own message', () => {
-	const codes = { space: '', scheme: 'x.com', geo_empty: 'geoip', geo_name: 'geosite', slashes: '', ip4: '', ip6: '', port: 'x.com', matcher_empty: 'full',
+	const codes = { space: '', scheme: 'x.com', geo_empty: 'geoip', geo_name: 'geosite', slashes: '', ip4: '', ip6: '', mapped: '::ffff:1.2.3.4', port: 'x.com', matcher_empty: 'full',
 		prefix: '32', path: 'x.com', wildcard: '', incomplete: '', not_full: 'corp', chars: '', tld: '' };
 	for (const [code, arg] of Object.entries(codes))
 		assert.notStrictEqual(msg.text({ code, arg }), 'Invalid entry', code);

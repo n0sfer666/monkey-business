@@ -22,8 +22,8 @@ function chips(mode, region) {
 		out.push(_('geoip:%s direct').format(region));
 	if (geo && region === 'ru')
 		out.push(_('kernel bypass'));
-	if (mode === 'gfwlist' && local)
-		out.push(_('geolocation-!%s via VPN').format(region));
+	if (mode === 'gfwlist')
+		out.push(region === 'cn' ? _('geosite:gfw via VPN') : _('only your Via VPN list'));
 	if (mode === 'global')
 		out.push(_('everything via VPN'));
 	if (local)
