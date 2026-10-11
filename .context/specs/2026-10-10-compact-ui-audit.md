@@ -6,6 +6,13 @@ QEMU dev-VM (LuCI localhost:8090). Макет — артефакт Qi9eCMkVJJSUM
 Скриншоты и логи лежат локально в `.context/investigations/2026-10-10-compact-ui-audit/` (gitignored):
 `sbs/` — пары «макет | реализация», `impl/`, `mock/`, `ovl/`, `nav/`, `widths/`, `func/`, `*.log`.
 
+**Статус на 2026-10-12 (сессия 8/8, сдача):** компактный UI сдан. Все строки групп 1–7 закрыты (S1 и
+T5 — ошибки аудита), открыт только раздел «Не проверено». Финальный ui-diff после правок сессии 8
+совпадает с эталоном С7 (≤ `2026-10-11-223114`) по всем стемам, ширинам, движкам и темам:
+десктоп — `2026-10-11-233017`, мобилка — `2026-10-11-234328`, модалки — `2026-10-11-235941` /
+`2026-10-12-000732`, Dashboard — `2026-10-12-001822` / `2026-10-12-002413`, Settings после readonly-фикса —
+`2026-10-12-003845` / `2026-10-12-004134`.
+
 **Статус на 2026-10-11 (сессия 7/8, модалки Routing / Geo):** закрыты группы 2, 3, 4, 5, 6, X1–X5,
 D1–D5. S1 и T5 — ошибки аудита. Открытых строк нет.
 
@@ -21,7 +28,7 @@ diff.png проверены глазами. Dashboard 1280 / 390 — `2026-10-11
 
 Колонка «Статус» в таблицах обновляется в коммите, который закрывает строку.
 
-**Вердикт: ни один экран не готов.** По порогу «ноль расхождений» все три вкладки — fail. Поведение
+**Исходный вердикт (2026-10-10): ни один экран не готов.** По порогу «ноль расхождений» все три вкладки — fail. Поведение
 по runbook в основном проходит. Вид расходится с макетом везде, кроме мобильных подтверждений и
 подложки.
 
@@ -30,14 +37,14 @@ diff.png проверены глазами. Dashboard 1280 / 390 — `2026-10-11
 | Экран / борд | Поведение | Макет | Конфликт спеки и макета |
 |---|---|---|---|
 | Dashboard / `Main`, `MobileDashboard` | pass (runbook «Итерация 4», живые действия в VM) | pass — вне шума 0 | — |
-| Servers / `Servers` | pass (staged-шаги) | fail | h1 + подзаголовок — решён: макет |
-| Servers / `MobileServers` | pass (staged-шаги) | fail — строки вместо плиток | — |
-| Settings / `Settings`, `MobileSettings` | pass (staged-шаги) | fail | h1 + подзаголовок — решён: макет |
+| Servers / `Servers` | pass (staged-шаги) | ~~fail~~ pass — ui-diff `2026-10-11-052716` | h1 + подзаголовок — решён: макет |
+| Servers / `MobileServers` | pass (staged-шаги) | ~~fail — строки вместо плиток~~ pass — `MobileServers-list` / `-arrange` | — |
+| Settings / `Settings`, `MobileSettings` | pass (staged-шаги); readonly — сессия 8 | ~~fail~~ pass — `2026-10-11-173419` / `2026-10-11-174059` | h1 + подзаголовок — решён: макет |
 | Routing / Geo (`*RoutingModal`, `*GeoModal`) | pass — сессия 7 | pass — только шум | — |
-| Add subscription / `SubModal`, `MobileSubModal` | fail — фокус после клика по подложке в busy | fail | — |
-| Add / edit server / `ServerModal`, `MobileServerModal` | fail в WebKit (Tab, фокус) | fail | — |
-| Delete / `ConfirmModal`, `MobileConfirmModal` | fail в WebKit (Tab, Esc) | 1280 близко (замер не полный), 390 pass | — |
-| ⋮-меню | fail — после Tab фокус не на ⋮ | pass по снимку | Tab по ARIA — решён |
+| Add subscription / `SubModal`, `MobileSubModal` | ~~fail — фокус после клика по подложке в busy~~ pass — O5 закрыт | ~~fail~~ O7–O9 закрыты (b1e73c7) | — |
+| Add / edit server / `ServerModal`, `MobileServerModal` | ~~fail в WebKit (Tab, фокус)~~ pass — O2 / O4 закрыты (3f27f34) | ~~fail~~ O7, O9, X1 закрыты (b1e73c7) | — |
+| Delete / `ConfirmModal`, `MobileConfirmModal` | ~~fail в WebKit (Tab, Esc)~~ pass — O2 / O3 закрыты (3f27f34) | 1280 близко (замер не полный), 390 pass | — |
+| ⋮-меню | ~~fail — после Tab фокус не на ⋮~~ pass — O6 закрыт (3f27f34) | pass по снимку | Tab по ARIA — решён |
 
 ## Поведение — что прошло
 
