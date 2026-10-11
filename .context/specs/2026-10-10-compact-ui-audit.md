@@ -265,8 +265,9 @@ Update… (geo) с сессии 7 открывают модалки Custom rules
   Это тема LuCI, наблюдение, не дефект приложения.
 - Живой телефон: жалоба «грузится только Settings» в VM не воспроизвелась (см. выше).
 - Servers 1280: вариант ping «1240 ms» (over limit) — в фикстуре нет такого сервера.
-- Dashboard и модалки Routing / Geo readonly (`!L.hasViewPermission()`, ACL `routing_check`): живьём не проверено —
-  нужен пользователь LuCI с ACL только на чтение.
+- ~~Dashboard и модалки Routing / Geo readonly~~ — проверено в сессии 8 логином с ACL только read
+  (runbook, итерация 6): кнопки модалок disabled, `routing_check` доступен, `set_routing`/`set_mode` —
+  Access denied. Найдено и исправлено: поля Settings оставались редактируемыми (`set/sections.js`).
 - Firefox: `field-sizing:content` у поля интервала — есть fallback `@supports` 9ch, в Firefox не гонял.
 
 ## Попутно
@@ -277,9 +278,9 @@ Update… (geo) с сессии 7 открывают модалки Custom rules
 - Тема bootstrap рисует галочку маской на `::after` чекбокса и красит рамку на `:focus` с `!important` —
   кастомный чекбокс должен гасить `mask`, `position`, `background` у `::after`.
 
-- gfwlist при region ru: `src/generator/routing.uc` строит `geosite:geolocation-!ru`, такого тега в
-  geosite.dat нет → «Apply failed: xray rejected the config: …». Чипы `model/routing.js` — тот же тег.
-  Сессия 8 (нужен источник списка заблокированного).
+- ~~gfwlist при region ru: `geosite:geolocation-!ru` нет в geosite.dat~~ — исправлено в сессии 8:
+  cn → `geosite:gfw`, ru/ir — как other (в туннель только custom Via VPN). Свой blocked-список для
+  RU (runetfreedom `ru-blocked` через `ext:`) — не сделан, отдельная задача.
 - ~~`src/runtime/apply.uc` теряет текст ошибки xray~~ — исправлено в сессии 7 (`shell.uc` xrayError).
 
 ## Спеки исправлений — порядок (решение 2026-10-10)

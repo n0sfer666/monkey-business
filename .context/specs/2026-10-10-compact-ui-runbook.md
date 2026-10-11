@@ -278,9 +278,9 @@ IP выхода и ссылки серверов в скриншоты и отч
    сменился (`pgrep -f [x]ray`). Двойной клик — один запрос, строки и *Sort* заблокированы до ответа.
    *Connect* у уже выбранного сервера: VPN включён → «Already on …»; выключен → «… is now first.
    The VPN is off…».
-6. Region → cn → *Save & Apply* → «Routing mode applied.»; вернуть ru. Mode «Only blocked via VPN»
-   при ru сейчас падает «Apply failed: xray rejected the config: …» (`geosite:geolocation-!ru`
-   нет в geosite.dat) — известный баг генератора (сессия 8).
+6. Region → cn → *Save & Apply* → «Routing mode applied.»; вернуть ru. Mode «Only blocked via VPN»:
+   cn → чип «geosite:gfw via VPN», в `/etc/monkey-business/xray.json` правило `geosite:gfw` → proxy;
+   ru/ir/other → чип «only your Via VPN list», geosite-правила режима нет, apply проходит.
 7. *Edit* у Custom rules и *Update…* у geo data → модалки итерации 5; Esc закрывает, фокус на
    кнопке.
 8. Subscription → другая подписка → страница перечитана, выбрана она; вернуть.
@@ -317,9 +317,10 @@ IP выхода и ссылки серверов в скриншоты и отч
    изменился.
 4. *Save & Apply* при выключенном VPN → «Rules saved. The VPN is off — they will apply when you turn
    it on.»; при включённом → «Routing rules applied.», pid xray сменился.
-5. Ошибка xray: VPN включён, правило `geosite:nosuch` → «Apply failed: xray rejected the config: …»
-   с текстом xray (не общий «validation failed»), шторка открыта, pid xray прежний (правило уже в UCI —
-   xray живёт на старом конфиге); вернуть правила, VPN поднят.
+5. Ошибка xray: VPN включён, правило `geosite:nosuch` → «Rules not saved: xray rejected the config: …»
+   с текстом xray (не общий «validation failed»), шторка открыта, pid xray прежний,
+   `uci get monkey-business.global.custom_proxy` — прежнее значение. Откат при ЛЮБОЙ ошибке apply
+   (нет серверов, geo missing, deadline), как у `set_mode`: файрвол читает UCI, xray.json — старый.
 6. VPN включён (при выключенном `config_apply` → `skipped: disabled`). `uci set …custom_proxy='bad one';
    uci commit` в обход UI, затем `ubus call monkey-business
    config_apply` → конфиг собран без строки, `logread -e 'custom rules skipped'` — «rpcd: custom
@@ -333,6 +334,30 @@ IP выхода и ссылки серверов в скриншоты и отч
    тронут (`md5sum`).
 3. URL-поля сохраняются при *Update now* («URLs are saved when you update»), переживают
    перезагрузку страницы; пустое — источник по умолчанию.
+
+## Итерация 6 — routing и readonly (сессия 8)
+
+### ::ffff: в custom Via VPN
+1. VPN включён, Via VPN `::ffff:198.51.100.7` и `::ffff:203.0.113.0/24` → *Save & Apply* →
+   `nft list set inet fw4 mb_force4` содержит `198.51.100.7` и `203.0.113.0/24`; в v6-сет не попали.
+2. `::ffff:1.2.3.0/33` или `/120` → строка подсвечена (prefix, предел 32): xray трактует маску
+   mapped-адреса как IPv4 и отвергает /33+ («invalid network mask»).
+3. Неканоническая запись (`0:0:0:0:0:ffff:1.2.3.4`, `::ffff:102:304`) → «IPv4-mapped address: write
+   ::ffff:1.2.3.4» (код `mapped`).
+
+### Только чтение (Dashboard, Settings)
+1. В VM: `uci add rpcd login; uci set rpcd.@login[-1].username=ro; uci set
+   rpcd.@login[-1].password="$(openssl passwd -1 ro)"` (хэш сгенерировать на Маке);
+   `uci add_list rpcd.@login[-1].read='*'; uci commit rpcd` — без `write`, рестарт rpcd не нужен.
+2. Войти ro/ro (поле логина в теме скрыто — POST формы `luci_username=ro&luci_password=ro` и cookie
+   `sysauth_http`). `L.hasViewPermission()` → `false`.
+3. Dashboard: Turn on, Subscription, Sort by ping, Mode / Region / Save & Apply, Edit, Update…,
+   Install — disabled; Connect «→» — `aria-disabled`; активны только чтение: Check, Ping, Ping all,
+   фильтры групп, Hide traffic.
+4. Settings: все поля и переключатели disabled, Reset / Save / Save & Apply — disabled.
+5. Servers: как «Только чтение» итерации 3.
+6. RPC под ro: `routing_check` — ответ с items; `set_routing`, `set_mode` — `Access denied`
+   (-32002). Console и сеть — без ошибок. Удалить логин ro после проверки.
 
 ## Оверлеи
 
@@ -416,3 +441,8 @@ Chromium 1280 (debounce ~400 мс, один `routing_check`; Save блок / р�
 прежний; upload мусора — «Rejected: …», md5 рабочего файла прежний; валидный — «installed &
 validated»; Update now — «Already up to date»; warn `rpcd: custom rules skipped` в logread);
 ubus-отказ `set_routing` — через ssh. Не прогнаны: «Только чтение» модалок, Firefox.
+Итерация 6 (сессия 8) — Playwright в VM: чипы gfwlist cn / ru и отказ xray («Rules not saved», шторка
+открыта, UCI откатан) — Chromium и WebKit × тёмная / светлая × 1280 / 1024 / 800 / 721 / 390, гор.
+скролла и console нет; ::ffff: — ubus + `nft list set`; только чтение — Chromium и WebKit 1280,
+найден и исправлен дефект: поля Settings оставались редактируемыми. ui-diff всех экранов и модалок —
+совпадает с эталоном С7.
