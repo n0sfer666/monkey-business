@@ -25,7 +25,7 @@ var BASE = [
 	'.mb h1,.mb h2{margin:0;padding:0;border:0;font-weight:600;line-height:normal;color:var(--mb-text);background:none}',
 	'.mb h1{font-size:20px}',
 	'.mb h2{font-size:14px}',
-	'.mb label{margin:0;padding:0;font-weight:inherit;color:inherit;cursor:inherit}',
+	'.mb label{margin:0;padding:0;font-size:inherit;font-weight:inherit;color:inherit;cursor:inherit}',
 	'.mb .mb-muted{color:var(--mb-muted)}',
 	'.mb .mb-small{font-size:12px}',
 	'.mb .mb-mono,.mb .mb-input.mb-mono{font-family:var(--mb-mono)}',

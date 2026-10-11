@@ -6,22 +6,11 @@
 'require view.monkey-business.store as store';
 'require view.monkey-business.kit.style as style';
 'require view.monkey-business.kit.tabs as tabs';
+'require view.monkey-business.kit.viewbar as viewbar';
 'require view.monkey-business.kit.notify as notice';
 'require view.monkey-business.set.sections as sections';
 
-style.add('set-view', [
-	'.mb.mb-set{display:flex;flex-direction:column;gap:14px;padding:4px 0 16px}',
-	'.mb .mb-set-bar{display:flex;align-items:center;gap:12px}',
-	'.mb .mb-set-hint{flex:1;min-width:0}',
-	'.mb .mb-set-acts{display:flex;gap:8px}',
-	style.MOBILE + '{',
-	'.mb.mb-set{padding-bottom:0}',
-	'.mb .mb-set-bar{display:contents}',
-	'.mb .mb-set-acts{order:2;position:sticky;bottom:0;z-index:2;padding:10px 12px;',
-	'background:var(--mb-bar);border-top:1px solid var(--mb-line)}',
-	'.mb .mb-set-acts .mb-btn-primary{flex:1}',
-	'}'
-].join(''));
+style.add('set-view', style.MOBILE + '{.mb.mb-set .mb-vbar-acts .mb-btn-primary{padding-left:0;padding-right:0}}');
 
 function report(res) {
 	if (res && res.error)
@@ -41,7 +30,7 @@ return view.extend({
 	},
 
 	render: function() {
-		this.root = E('div', { 'class': 'mb mb-set' });
+		this.root = E('div', { 'class': 'mb mb-view mb-set' });
 		this.draw();
 		return this.root;
 	},
@@ -73,10 +62,7 @@ return view.extend({
 
 		dom.content(this.root, [
 			tabs.render('settings'),
-			E('div', { 'class': 'mb-set-bar' }, [
-				E('div', { 'class': 'mb-set-hint mb-muted mb-small' }, [ _('Each option has a hint. Defaults are safe.') ]),
-				E('div', { 'class': 'mb-set-acts' }, [ reset, save, apply ])
-			]),
+			viewbar.render(_('Settings'), _('Defaults are safe'), [ reset, save, apply ]),
 			sections.render(errors, sync)
 		]);
 		sync();

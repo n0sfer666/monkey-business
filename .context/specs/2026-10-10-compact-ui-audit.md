@@ -6,14 +6,13 @@ QEMU dev-VM (LuCI localhost:8090). Макет — артефакт Qi9eCMkVJJSUM
 Скриншоты и логи лежат локально в `.context/investigations/2026-10-10-compact-ui-audit/` (gitignored):
 `sbs/` — пары «макет | реализация», `impl/`, `mock/`, `ovl/`, `nav/`, `widths/`, `func/`, `*.log`.
 
-**Статус на 2026-10-11 (сессия 4/8, Servers мобильный 390):** закрыты группы 2, 3, 4, 6, X1, X2, X4,
-X5 в части Servers. S1 — ошибка аудита. Открыто 14 строк (X5 — частично):
-- Dashboard — D1–D5, старый вид;
-- Settings — T1–T7, X3, X5 в части Settings.
+**Статус на 2026-10-11 (сессия 5/8, Settings 1280 + 390):** закрыты группы 2, 3, 4, 5, 6, X1–X5.
+S1 и T5 — ошибки аудита. Открыто 5 строк — Dashboard D1–D5, старый вид.
 
-Servers 1280 сдан по `make ui-diff` (`2026-10-11-052716`): вне классов шума (раздел «Шум ui-diff»)
-расхождений 0, контраст 0, console 0 в chromium и webkit, dark и light; области diff.png проверены
-глазами.
+Servers 1280 сдан по `make ui-diff` (`2026-10-11-052716`), Servers 390 — по `MobileServers-list` /
+`-arrange`, Settings 1280 / 390 — `2026-10-11-173419` / `2026-10-11-174059`: вне классов шума (разделы
+«Шум ui-diff») расхождений 0, контраст 0, console 0 в chromium и webkit, dark и light; области
+diff.png проверены глазами.
 
 Колонка «Статус» в таблицах обновляется в коммите, который закрывает строку.
 
@@ -133,13 +132,13 @@ D3–D5 относятся к старому виду и уйдут вместе
 
 | # | Борд | Ширина | Тема | Браузер | Ожидалось | Есть | Sev | Скриншот | Статус |
 |---|---|---|---|---|---|---|---|---|---|
-| T1 | Settings | 1280 | обе | оба | Три панели на всю ширину | Панели ~285px и не растягиваются (на 1100 растягиваются) | M | `sbs/chromium-1280-dark-settings.png` | открыто |
-| T2 | Settings | 1280 | обе | оба | «DNS mode» в одну строку | Перенос в 2 строки | M | там же | открыто |
-| T3 | Settings | 1280 | обе | оба | Шапка панели h 17, описание — span 15px | h 36, описание — div 35px | m | там же | открыто |
-| T4 | Settings | 1280 | обе | оба | Direct DNS, DoH URL, порт — mono, h 27 | sans, h 30 | m | там же | открыто |
-| T5 | Settings | 1280 | тёмная | оба | Чекбокс XHTTP padding (unchecked) — светлый | тёмный | m | там же | открыто |
-| T6 | Settings | 1280 | обе | оба | Метка «Log level» по центру строки | Выровнена по верху | m | там же | открыто |
-| T7 | MobileSettings | 390 | обе | оба | Поля fs 14, h 32–35, rad 6; метки fs 14; заголовки панелей 15 | 16 / 40 / 8; 13; 14 | m | `sbs/chromium-390-dark-settings.png` | открыто |
+| T1 | Settings | 1280 | обе | оба | Три панели на всю ширину | Панели ~285px и не растягиваются (на 1100 растягиваются) | M | `sbs/chromium-1280-dark-settings.png` | закрыто, ui-diff `2026-10-11-173419` (1280) / `2026-10-11-174059` (390) |
+| T2 | Settings | 1280 | обе | оба | «DNS mode» в одну строку | Перенос в 2 строки | M | там же | закрыто, ui-diff `2026-10-11-173419` (1280) / `2026-10-11-174059` (390) |
+| T3 | Settings | 1280 | обе | оба | Шапка панели h 17, описание — span 15px | h 36, описание — div 35px | m | там же | закрыто, ui-diff `2026-10-11-173419` (1280) / `2026-10-11-174059` (390) |
+| T4 | Settings | 1280 | обе | оба | Direct DNS, DoH URL, порт — mono, h 27 | sans, h 30 | m | там же | закрыто, ui-diff `2026-10-11-173419` (1280) / `2026-10-11-174059` (390) |
+| T5 | Settings | 1280 | тёмная | оба | Чекбокс XHTTP padding (unchecked) — светлый | тёмный | m | там же | ошибка аудита: белый неотмеченный чекбокс в борде — UA-дефолт, у нас K4 |
+| T6 | Settings | 1280 | обе | оба | Метка «Log level» по центру строки | Выровнена по верху | m | там же | закрыто, ui-diff `2026-10-11-173419` (1280) / `2026-10-11-174059` (390) |
+| T7 | MobileSettings | 390 | обе | оба | Поля fs 14, h 32–35, rad 6; метки fs 14; заголовки панелей 15 | 16 / 40 / 8; 13; 14 | m | `sbs/chromium-390-dark-settings.png` | закрыто, ui-diff `2026-10-11-173419` (1280) / `2026-10-11-174059` (390); поля 16px/h 35–37 — решение интервью (зум iOS) |
 
 ### Группа 6. Оверлеи — фокус, скролл, вид
 
@@ -161,9 +160,9 @@ D3–D5 относятся к старому виду и уйдут вместе
 |---|---|---|---|---|---|---|
 | X1 | ServerModal (+Mobile) | 1280, 390 | Метка «Server link», кнопка «Add server» | «Link», «Add» | m | закрыто b1e73c7 |
 | X2 | Servers | 1280 | В трафике «… · [DATE]» | «… · until [DATE]» | m | закрыто, ui-diff `2026-10-11-052716` |
-| X3 | MobileSettings | 390 | Сокращённые подсказки: «Drop LAN traffic instead of leaking it direct», «Nothing leaks around the IPv4 tunnel», «Split: local domains direct, foreign over DoH», «Everything via the VPN resolves here» | Полные десктопные тексты | m | открыто |
+| X3 | MobileSettings | 390 | Сокращённые подсказки: «Drop LAN traffic instead of leaking it direct», «Nothing leaks around the IPv4 tunnel», «Split: local domains direct, foreign over DoH», «Everything via the VPN resolves here» | Полные десктопные тексты | m | закрыто, ui-diff `2026-10-11-173419` (1280) / `2026-10-11-174059` (390) |
 | X4 | MobileServers | 390 | Подсказка внизу как в борде | Другая | m | закрыто, ui-diff `2026-10-11-163714` |
-| X5 | Servers / Settings | 1280, 390 | Подзаголовки «Row order is the connect priority» / «Defaults are safe» | «Changes stay local until Save & Apply.» / «Each option has a hint. Defaults are safe.» (по решению K1 правда — макет) | m | закрыто, ui-diff `2026-10-11-052716` (Servers); Settings открыто |
+| X5 | Servers / Settings | 1280, 390 | Подзаголовки «Row order is the connect priority» / «Defaults are safe» | «Changes stay local until Save & Apply.» / «Each option has a hint. Defaults are safe.» (по решению K1 правда — макет) | m | закрыто, ui-diff `2026-10-11-052716` (Servers); Settings — ui-diff `2026-10-11-173419` |
 
 ## Конфликты спеки и макета — решены (интервью 2026-10-10)
 
@@ -214,6 +213,18 @@ D3–D5 относятся к старому виду и уйдут вместе
 - `aria-label` плитки «N. имя, off, 15 ms» против «N. имя, selected» у борда (выбор — через `aria-pressed`,
   правка ревью); скрытый live-регион «Moving …» 1×1 — лишний a11y-узел;
 - приглушённые ряды и плитки 5/7 поменяны местами — в фикстуре недоступен 5-й, в борде 7-й.
+
+## Шум ui-diff (Settings 1280/390) — не расхождения
+
+- Ширина контейнера темы 1180 против 1232: x и ширина панелей DNS / Anti-DPI; в webkit 1280 подсказка
+  Block IPv6 переносится (колонка 324 против 337 текста в борде), +15 к строке и панели.
+- Шеврон select — CSS-фон, в борде — svg-элемент (нет в реализации ×3).
+- Значение поля против метки в «текстах» input (12345 / 77.88.8.8 / URL) — данные.
+- Чекбоксы: UA-дефолт борда (белый неотмеченный, кегль, margin 3px → строки 70 против 64 на 390), у нас K4.
+- Reset / Save: в борде активны, у нас disabled без правок (цвет, рамка).
+- 390: поля 16px (защита от зума iOS), высота 35–37 против 32–34; шапка LuCI (корень, Menu с иконкой);
+  `{{sec.title}}` в борде даёт и h2, и text — дубли «General / DNS / Anti-DPI».
+- Высоты панелей — производные от строк выше.
 
 ## Не проверено
 

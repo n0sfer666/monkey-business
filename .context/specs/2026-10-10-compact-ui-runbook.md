@@ -29,11 +29,20 @@
 
 ### Раскладка
 1. Окно ≥ 1100px: три панели General / DNS / Anti-DPI в ряд, кнопки Reset / Save / Save & Apply —
-   справа сверху, под вкладками нет заголовка «Settings», футера LuCI с кнопками внизу нет.
+   справа сверху, слева от них — «Settings» и серый подзаголовок «Defaults are safe», футера LuCI с
+   кнопками внизу нет. Рамки строк — снизу, у последней строки панели рамки нет.
 2. Сузить до ~800px: панели переносятся (2 + 1), ничего не обрезано, нет горизонтального скролла.
 3. ≤ 720px (DevTools → iPhone 12/14, и с телефона): одна колонка; селекты Log level / DNS mode /
    TLS fingerprint и поля Direct DNS / DoH URL — под подписью на всю ширину; порт — справа 96px;
-   чекбоксы ~22px; кнопки — липкая панель внизу экрана, Save & Apply растянута.
+   чекбоксы ~22px; кнопки — липкая панель внизу экрана, Save & Apply растянута. Подсказки короткие:
+   Kill-switch — «Drop LAN traffic instead of leaking it direct», Block IPv6 — «Nothing leaks around
+   the IPv4 tunnel», DNS — «Split: local domains direct, foreign over DoH», DoH URL — «Everything via
+   the VPN resolves here». Шире 720 — полные тексты.
+4. Ввести порт 99999 → под строкой порта красная ошибка «Enter a number from 1 to 65535», рамка поля
+   красная, Save и Save & Apply неактивны; исправить на корректный → ошибка исчезла.
+5. Сверка с макетом: `make ui-diff SCREEN=settings WIDTH=1280` и `WIDTH=390` (стенд `make dev
+   FIXTURE=1`) — вне шума 0, контраст 0, console 0; классы шума — в аудите, раздел «Шум ui-diff
+   (Settings 1280/390)».
 
 ### Staged-модель
 1. Открыть Settings без правок: Reset и Save неактивны, Save & Apply активна.

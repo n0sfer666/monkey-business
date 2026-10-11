@@ -2,31 +2,13 @@
 'require view';
 'require view.monkey-business.api as api';
 'require view.monkey-business.store as store';
-'require view.monkey-business.kit.style as style';
 'require view.monkey-business.kit.tabs as tabs';
+'require view.monkey-business.kit.viewbar as viewbar';
 'require view.monkey-business.kit.notify as notice';
 'require view.monkey-business.kit.gesture as gesture';
 'require view.monkey-business.model.subs as submodel';
 'require view.monkey-business.srv.subpanel as subpanel';
 'require view.monkey-business.srv.serverpanel as serverpanel';
-
-style.add('servers-view', [
-	'.mb.mb-srv-view{display:flex;flex-direction:column;gap:14px;padding:4px 0 16px}',
-	'.mb .mb-srv-bar{display:flex;align-items:center;gap:12px}',
-	'.mb .mb-srv-title{display:flex;align-items:center;gap:12px;flex:1;min-width:0}',
-	'.mb .mb-srv-hint{flex:1;min-width:0}',
-	'.mb .mb-srv-acts{display:flex;gap:12px}',
-	style.MOBILE + '{',
-	'.mb.mb-srv-view{gap:12px;padding:0 11px}',
-	'.mb .mb-srv-bar{display:contents}',
-	'.mb .mb-srv-title{flex-direction:column;align-items:flex-start;gap:2px}',
-	'.mb .mb-srv-bar h1{font-size:18px}',
-	'.mb .mb-srv-hint{font-size:13px}',
-	'.mb .mb-srv-acts{order:2;position:sticky;bottom:0;z-index:2;gap:8px;margin:0 -16px;padding:12px 16px;',
-	'background:var(--mb-bar);border-top:1px solid var(--mb-line)}',
-	'.mb .mb-srv-acts .mb-btn-primary{flex:1}',
-	'}'
-].join(''));
 
 function report(res) {
 	if (res && res.error)
@@ -102,15 +84,9 @@ return view.extend({
 			hold: function(work, spare) { return hold(work, null, spare); },
 			onPing: this.servers.onPing
 		});
-		this.root = E('div', { 'class': 'mb mb-srv-view' }, [
+		this.root = E('div', { 'class': 'mb mb-view' }, [
 			tabs.render('servers'),
-			E('div', { 'class': 'mb-srv-bar' }, [
-				E('div', { 'class': 'mb-srv-title' }, [
-					E('h1', {}, [ _('Servers') ]),
-					E('span', { 'class': 'mb-srv-hint mb-muted' }, [ _('Row order is the connect priority') ])
-				]),
-				E('div', { 'class': 'mb-srv-acts' }, [ this.reset, this.save, this.apply ])
-			]),
+			viewbar.render(_('Servers'), _('Row order is the connect priority'), [ this.reset, this.save, this.apply ]),
 			this.subs.node,
 			this.servers.node
 		]);

@@ -4,20 +4,27 @@
 
 style.add('field', [
 	'.mb .mb-row{display:grid;grid-template-columns:minmax(0,1fr) auto;column-gap:12px;row-gap:2px;align-items:center;',
-	'grid-template-areas:"label ctl" "hint ctl" "err err";padding:10px 14px;border-top:1px solid var(--mb-line-soft)}',
-	'.mb .mb-row-label{grid-area:label;min-width:0}',
+	'grid-template-areas:"label ctl" "hint ctl";padding:10px 14px;border-top:1px solid var(--mb-line-soft)}',
+	'.mb .mb-row-bare{grid-template-areas:"label ctl"}',
+	'.mb .mb-row-label{grid-area:label;min-width:0;line-height:16px}',
 	'.mb .mb-row-ctl{grid-area:ctl;width:var(--mb-w,auto);display:flex;justify-content:flex-end}',
 	'.mb .mb-row-hint{grid-area:hint;color:var(--mb-muted);font-size:12px}',
-	'.mb .mb-row-err{grid-area:err;color:var(--mb-err-text);font-size:12px}',
+	'.mb .mb-hint-brief{display:none}',
+	'.mb .mb-row-err{grid-column:1/-1;color:var(--mb-err-text);font-size:12px}',
 	'.mb .mb-row-err:empty{display:none}',
-	'.mb .mb-row-wide{grid-template-columns:minmax(0,1fr);grid-template-areas:"label" "ctl" "hint" "err";row-gap:4px}',
+	'.mb .mb-row-wide{grid-template-columns:minmax(0,1fr);grid-template-areas:"label" "ctl" "hint";row-gap:4px}',
+	'.mb .mb-row-wide.mb-row-bare{grid-template-areas:"label" "ctl"}',
 	'.mb .mb-row-wide .mb-row-ctl{width:100%}',
 	style.MOBILE + '{',
-	'.mb .mb-row{grid-template-areas:"label ctl" "hint hint" "err err";row-gap:6px}',
-	'.mb .mb-row-wide{grid-template-areas:"label" "ctl" "hint" "err"}',
-	'.mb .mb-row-pick{grid-template-columns:minmax(0,1fr);grid-template-areas:"label" "ctl" "hint" "err"}',
+	'.mb .mb-row{grid-template-areas:"label ctl" "hint hint";row-gap:6px}',
+	'.mb .mb-row-bare{grid-template-areas:"label ctl"}',
+	'.mb .mb-row-wide,.mb .mb-row-pick{grid-template-columns:minmax(0,1fr);grid-template-areas:"label" "ctl" "hint"}',
+	'.mb .mb-row-pick.mb-row-bare{grid-template-areas:"label" "ctl"}',
 	'.mb .mb-row-pick .mb-row-ctl{width:100%}',
 	'.mb .mb-row-short .mb-row-ctl{width:96px}',
+	'.mb .mb-row-label{line-height:17px}',
+	'.mb .mb-hint-full{display:none}',
+	'.mb .mb-hint-brief{display:inline}',
 	'}'
 ].join(''));
 
@@ -32,7 +39,18 @@ function withCurrent(options, value) {
 	return [ { value: value, label: value } ].concat(options);
 }
 
+function hintText(full, brief) {
+	if (!brief)
+		return [ full ];
+	return [
+		E('span', { 'class': 'mb-hint-full' }, [ full ]),
+		E('span', { 'class': 'mb-hint-brief' }, [ brief ])
+	];
+}
+
 return baseclass.extend({
+	hint: hintText,
+
 	text: function(o) {
 		return E('input', {
 			'id': o.id,
@@ -66,10 +84,10 @@ return baseclass.extend({
 	row: function(o) {
 		var described = (o.hint ? o.id + '-hint ' : '') + o.id + '-err';
 		o.control.setAttribute('aria-describedby', described);
-		return E('div', { 'class': 'mb-row' + (o.layout ? ' mb-row-' + o.layout : '') }, [
+		return E('div', { 'class': 'mb-row' + (o.layout ? ' mb-row-' + o.layout : '') + (o.hint ? '' : ' mb-row-bare') }, [
 			E('label', { 'class': 'mb-row-label', 'for': o.id }, [ o.label ]),
 			E('div', { 'class': 'mb-row-ctl', 'style': o.width ? '--mb-w:' + o.width : null }, [ o.control ]),
-			o.hint ? E('span', { 'class': 'mb-row-hint', 'id': o.id + '-hint' }, [ o.hint ]) : '',
+			o.hint ? E('span', { 'class': 'mb-row-hint', 'id': o.id + '-hint' }, hintText(o.hint, o.brief)) : '',
 			E('span', { 'class': 'mb-row-err', 'id': o.id + '-err', 'role': 'alert' })
 		]);
 	},

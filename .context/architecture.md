@@ -112,5 +112,7 @@
   без своих keydown / inert. Runbook — раздел «Оверлеи» в `specs/2026-10-10-compact-ui-runbook.md`.
 - Вид шторки — `kit/sheet.js` (варианты `open`: `top`, `mtop`, `foot: 'row' | 'stack'`, `compact`),
   CSS — `kit/sheetcss.js`. Вкладки приложения — `kit/tabs.js` `render(active)` первым в корне `.mb`
-  каждой вьюхи; `#tabmenu` LuCI скрыт. Тема bootstrap на ≤ 720px ставит инпутам 16px, кнопкам 14px
+  каждой вьюхи; `#tabmenu` LuCI скрыт. Шапка вьюхи (h1, подзаголовок, Reset / Save / Save & Apply, на
+  ≤ 720px — липкая панель снизу) — `kit/viewbar.js` `render(title, sub, actions)`, корень `.mb.mb-view`.
+  Строки формы — `kit/field.js` `row()`: `hint` + `brief` (короткая подсказка на ≤ 720px). Тема bootstrap на ≤ 720px ставит инпутам 16px, кнопкам 14px
   через `!important`: инпуты оставлены 16px (iOS зумит при меньшем кегле).
