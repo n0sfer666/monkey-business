@@ -49,6 +49,7 @@ test('ping states follow the backend view', () => {
 	assert.strictEqual(servers.ping({ ms: 100 }).kind, 'fast');
 	assert.strictEqual(servers.ping({ ms: 101 }).kind, 'slow');
 	assert.strictEqual(servers.ping({ ms: 900 }).pct, 100);
+	assert.strictEqual(servers.ping({ ms: 14 }).pct, 7);
 	assert.deepStrictEqual(servers.pingOf({ latency_ms: 40, ping_na: false, auto_disabled: false }), { ms: 40, na: false, off: false });
 	assert.deepStrictEqual(servers.pingOf({ latency_ms: null, na: true }), { ms: null, na: true, off: false });
 });

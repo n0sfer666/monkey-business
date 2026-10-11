@@ -3,12 +3,11 @@
 'require view.monkey-business.kit.style as style';
 
 style.add('seg', [
-	'.mb .mb-seg{display:inline-flex;gap:2px;padding:3px;background:var(--mb-bg);border:1px solid var(--mb-line);border-radius:8px}',
-	'.mb .mb-seg-opt{flex:1;margin:0;padding:4px 12px;background:transparent;color:var(--mb-muted);border:0;border-radius:6px;',
-	'font:inherit;font-weight:500;cursor:pointer;box-shadow:none;white-space:nowrap}',
+	'.mb .mb-seg{display:inline-flex;padding:2px;background:var(--mb-bg);border:1px solid var(--mb-line);border-radius:6px}',
+	'.mb .mb-seg-opt{flex:1;margin:0;padding:4px 10px;background:transparent;color:var(--mb-muted);border:0;border-radius:4px;',
+	'font:inherit;cursor:pointer;box-shadow:none;white-space:nowrap}',
 	'.mb .mb-seg-opt:hover{color:var(--mb-text);box-shadow:none}',
-	'.mb .mb-seg-opt[aria-checked="true"]{background:var(--mb-btn-on);color:var(--mb-text);font-weight:600;',
-	'box-shadow:inset 0 -2px 0 var(--mb-accent)}',
+	'.mb .mb-seg-opt[aria-checked="true"]{background:var(--mb-seg-on);color:var(--mb-text);box-shadow:inset 0 0 0 1px var(--mb-seg-ring)}',
 	style.MOBILE + '{.mb .mb-seg{display:flex}.mb .mb-seg-opt{padding:8px 10px}}'
 ].join(''));
 

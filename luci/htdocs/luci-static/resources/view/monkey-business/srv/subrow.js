@@ -10,17 +10,21 @@
 
 style.add('subrow', [
 	'.mb .mb-sub{display:grid;grid-template-columns:var(--mb-sub-cols);gap:12px;align-items:center;',
-	'padding:6px 12px;min-height:40px;border-top:1px solid var(--mb-line-soft)}',
+	'padding:6px 12px;min-height:51px;border-bottom:1px solid var(--mb-line-soft)}',
 	'.mb .mb-sub-role{justify-self:start;border-radius:4px;padding:1px 8px;font-size:12px;background:var(--mb-line);color:var(--mb-text-2)}',
 	'.mb .mb-sub-role.mb-on{background:var(--mb-ok-tint);color:var(--mb-ok-text)}',
-	'.mb .mb-sub .mb-inl{justify-self:start}',
+	'.mb .mb-sub .mb-sub-name,.mb .mb-sub .mb-sub-url{width:100%}',
 	'.mb .mb-sub-name{font-weight:500}',
-	'.mb .mb-sub-auto{position:relative;justify-self:start}',
+	'.mb .mb-sub-url{color:var(--mb-muted)}',
+	'.mb .mb-sub-url:focus{color:var(--mb-text)}',
+	'.mb .mb-sub-auto{position:relative;display:flex;align-items:center;gap:6px;min-width:0}',
 	'.mb .mb-sub-traf{display:flex;flex-direction:column;gap:3px;min-width:0}',
 	'.mb .mb-sub-bar{height:4px;border-radius:2px;overflow:hidden;background:var(--mb-line)}',
 	'.mb .mb-sub-bar>div{height:100%;background:var(--mb-accent)}',
 	'.mb .mb-sub-bar>.mb-hot{background:var(--mb-warn)}',
 	'.mb .mb-sub-acts{display:flex;gap:6px;justify-content:flex-end}',
+	'.mb .mb-sub-ttext{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}',
+	'.mb .mb-sub-acts .mb-btn{border-radius:5px}',
 	'.mb .mb-sub-acts .mb-btn:not(.mb-icon){padding:4px 10px;white-space:nowrap}',
 	'.mb .mb-icon.mb-sub-del{color:var(--mb-err-text)}',
 	'.mb .mb-sub-del,.mb .mb-sub-del:hover{border-color:var(--mb-err-edge)!important}',
@@ -34,10 +38,12 @@ style.add('subrow', [
 	'.mb .mb-sub-del{grid-area:del}',
 	'.mb .mb-sub-fetch{grid-area:fetch}',
 	'.mb .mb-sub-ping{grid-area:ping}',
+	'.mb .mb-sub-acts .mb-btn{border-radius:8px}',
 	'.mb .mb-sub-acts .mb-btn:not(.mb-icon){padding:6px 10px}',
 	'.mb .mb-sub-bar{grid-area:bar}',
 	'.mb .mb-sub-ttext{grid-area:text}',
-	'.mb .mb-sub-auto{grid-area:auto;justify-self:stretch}',
+	'.mb .mb-sub-auto{grid-area:auto;justify-self:stretch;display:block}',
+	'.mb .mb-sub:last-child{border-bottom:0}',
 	'}'
 ].join(''));
 
@@ -48,7 +54,7 @@ function traffic(s) {
 	return E('div', { 'class': 'mb-sub-traf' }, [
 		E('div', { 'class': 'mb-sub-bar' }, [ E('div', { 'class': t.pct > 80 ? 'mb-hot' : '', 'style': 'width:' + t.pct + '%' }) ]),
 		E('span', { 'class': 'mb-sub-ttext mb-muted mb-small' }, [
-			t.used + ' / ' + t.total + ' GB' + (t.expire ? ' · ' + _('until %s').format(t.expire) : '')
+			t.used + ' / ' + t.total + ' GB' + (t.expire ? ' · ' + t.expire : '')
 		])
 	]);
 }
@@ -74,7 +80,7 @@ return baseclass.extend({
 			'type': 'button', 'class': 'mb-btn mb-icon mb-sub-del', 'aria-label': _('Delete subscription'),
 			'title': _('Delete subscription'), 'aria-haspopup': 'dialog', 'click': function() { o.onDelete(sid); }
 		});
-		del.innerHTML = icons.TRASH;
+		del.innerHTML = icons.TRASH_SM;
 		name.classList.add('mb-sub-name');
 		url.classList.add('mb-sub-url');
 

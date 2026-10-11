@@ -553,7 +553,9 @@ id, `<B>` the other one (`uci show monkey-business | grep =subscription`). Turn 
    Expect, after about 30 s, `автопереключение подписки отложено: watchdog занят` and `active_sub`
    still `<A>`. Release the lock (wait for `sleep`, or `rmdir /tmp/mb-watchdog/lock.d`) and run
    `subupdate.sh` again — now it switches to B. Restore A as in step 6.
-8. **Ping and Off.** Press the *Ping* buttons: cells show `N ms`, `auto-off` or `n/a`. Tick *Off* on a
+8. **Ping and Off.** Press the *Ping* buttons: a desktop cell shows a bar with `N ms`; an unreachable
+   server gets a crossed-out Wi-Fi icon (tooltip: auto-off) and a dimmed row, hysteria2 a circle-dash
+   icon (tooltip: n/a, UDP); on a phone the rows say `N ms`, `auto-off` or `n/a · UDP`. Tick *Off* on a
    server in Servers, *Save & Apply*: its Dashboard row is dimmed and marked *off*, and it is never
    the connected server. On Servers, a subscription's *Ping* and *Ping all* fill the table's
    *Ping* column without a reload. *Sort by ping*, then *Save & Apply*: the rows go fastest-first

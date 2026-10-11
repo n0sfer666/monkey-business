@@ -14,17 +14,40 @@ style.add('tip', [
 var ICON = '<svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">' +
 	'<circle cx="12" cy="12" r="9"></circle><path d="M12 11v5M12 8v.5"></path></svg>';
 
+function make(role, text, svg, before, after) {
+	var icon = E('span', { 'style': 'display:inline-flex' });
+	var tip = E('span', { 'class': 'mb-tip', 'tabindex': '0', 'role': role, 'aria-label': text }, [
+		before || '',
+		icon,
+		after || '',
+		E('span', { 'class': 'mb-tip-b', 'aria-hidden': 'true' }, [ text ])
+	]);
+
+	function open(on) {
+		tip.classList.toggle('mb-open', on);
+		if (role === 'button')
+			tip.setAttribute('aria-expanded', on ? 'true' : 'false');
+	}
+
+	icon.innerHTML = svg;
+	open(false);
+	tip.addEventListener('click', function() { open(!tip.classList.contains('mb-open')); });
+	tip.addEventListener('keydown', function(ev) {
+		if (ev.key !== 'Enter' && ev.key !== ' ')
+			return;
+		ev.preventDefault();
+		open(!tip.classList.contains('mb-open'));
+	});
+	tip.addEventListener('blur', function() { open(false); });
+	return tip;
+}
+
 return baseclass.extend({
 	render: function(text, label) {
-		var icon = E('span', { 'style': 'display:inline-flex' });
-		var tip = E('span', { 'class': 'mb-tip', 'tabindex': '0', 'role': 'note', 'aria-label': text }, [
-			label || '',
-			icon,
-			E('span', { 'class': 'mb-tip-b', 'aria-hidden': 'true' }, [ text ])
-		]);
-		icon.innerHTML = ICON;
-		tip.addEventListener('click', function() { tip.classList.toggle('mb-open'); });
-		tip.addEventListener('blur', function() { tip.classList.remove('mb-open'); });
-		return tip;
+		return make('note', text, ICON, label);
+	},
+
+	icon: function(text, svg, after) {
+		return make('button', text, svg, '', after);
 	}
 });

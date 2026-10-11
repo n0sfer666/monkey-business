@@ -7,13 +7,17 @@
 style.add('pingbar', [
 	'.mb .mb-ping{display:flex;align-items:center;gap:8px;min-width:0;white-space:nowrap}',
 	'.mb .mb-ping-bar{flex-shrink:0;width:56px;height:4px;border-radius:2px;overflow:hidden;background:var(--mb-line)}',
-	'.mb .mb-ping-bar>div{height:100%;background:var(--mb-ok)}',
+	'.mb .mb-ping-bar>div{height:100%;background:var(--mb-ok-text)}',
 	'.mb .mb-ping-slow .mb-ping-bar>div{background:var(--mb-warn)}',
-	'.mb .mb-ping-ms{font-variant-numeric:tabular-nums}',
+	'.mb .mb-ping-ms{font-family:var(--mb-mono)}',
 	'.mb .mb-ping-fast .mb-ping-ms{color:var(--mb-ok-text)}',
-	'.mb .mb-ping-slow .mb-ping-ms{color:var(--mb-warn-text)}',
-	'.mb .mb-ping-off .mb-tip{color:var(--mb-err-text)}',
-	style.MOBILE + '{.mb .mb-ping-bar{display:none}}'
+	'.mb .mb-ping-slow .mb-ping-ms{color:var(--mb-slow)}',
+	'.mb .mb-ping-off .mb-tip{color:var(--mb-err)}',
+	'.mb .mb-ping-na .mb-tip{color:var(--mb-na)}',
+	'.mb .mb-ping-txt{display:none}',
+	'.mb .mb-ping-off .mb-ping-txt{color:var(--mb-err-text)}',
+	'.mb .mb-ping-na .mb-ping-txt{color:var(--mb-muted)}',
+	style.MOBILE + '{.mb .mb-ping-bar{display:none}.mb .mb-ping-txt{display:inline}}'
 ].join(''));
 
 var LIMIT_MS = 1000;
@@ -35,10 +39,7 @@ function label(p) {
 }
 
 function flagged(p) {
-	var t = tip.render(tipText(p), label(p));
-	t.firstElementChild.innerHTML = p.kind === 'na' ? icons.SLASH : icons.ALERT;
-	t.insertBefore(t.firstElementChild, t.firstChild);
-	return t;
+	return tip.icon(tipText(p), p.kind === 'na' ? icons.NA : icons.WIFI_OFF, E('span', { 'class': 'mb-ping-txt' }, [ label(p) ]));
 }
 
 return baseclass.extend({
@@ -49,7 +50,7 @@ return baseclass.extend({
 		if (p.kind === 'na' || p.kind === 'off')
 			box.appendChild(flagged(p));
 		else if (p.kind === 'none')
-			box.appendChild(E('span', { 'class': 'mb-muted' }, [ '—' ]));
+			box.appendChild(E('span', { 'class': 'mb-muted mb-mono' }, [ '—' ]));
 		else
 			box.appendChild(E('div', { 'class': 'mb-ping-bar' }, [ E('div', { 'style': 'width:' + p.pct + '%' }) ]));
 		if (p.kind === 'fast' || p.kind === 'slow')

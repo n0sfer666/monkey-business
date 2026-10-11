@@ -6,7 +6,12 @@
 'require view.monkey-business.model.interval as interval';
 
 style.add('subinterval', [
+	'.mb .mb-sub-iv{field-sizing:content;min-width:0;padding:3px 8px}',
+	'@supports not (field-sizing:content){.mb .mb-sub-iv{width:9ch}}',
 	'.mb .mb-sub-iv.mb-sub-off{color:var(--mb-muted)}',
+	'.mb .mb-sub-iv:focus{field-sizing:fixed;width:64px;padding:4px 8px;color:var(--mb-text);font-family:var(--mb-mono)}',
+	'.mb .mb-sub-min{display:none}',
+	'.mb .mb-sub-iv:focus~.mb-sub-min{display:inline}',
 	'.mb .mb-sub-note{display:none;position:absolute;top:calc(100% + 6px);left:0;z-index:5;white-space:nowrap;',
 	'padding:6px 9px;font-size:12px;background:var(--mb-pop);color:var(--mb-text-2);',
 	'border:1px solid var(--mb-line-strong);border-radius:6px;box-shadow:0 6px 18px var(--mb-shadow)}',
@@ -14,7 +19,7 @@ style.add('subinterval', [
 	'.mb .mb-sub-iv:focus~.mb-sub-note{display:block}',
 	'.mb .mb-sub-mob{display:none}',
 	style.MOBILE + '{',
-	'.mb .mb-sub-iv,.mb .mb-sub-note{display:none!important}',
+	'.mb .mb-sub-iv,.mb .mb-sub-min,.mb .mb-sub-note{display:none!important}',
 	'.mb .mb-sub-mob{display:flex;flex-direction:column;gap:8px;padding:10px;background:var(--mb-bg);',
 	'border:1px solid var(--mb-line);border-radius:8px}',
 	'.mb .mb-sub-mobhead{display:flex;align-items:center;gap:10px}',
@@ -54,7 +59,7 @@ function desk(minutes, commit, readonly) {
 		input.value = interval.digits(input.value);
 		hint();
 	});
-	return [ input, note ];
+	return [ input, E('span', { 'class': 'mb-sub-min mb-muted' }, [ _('min') ]), note ];
 }
 
 function mobile(id, minutes, commit, readonly) {

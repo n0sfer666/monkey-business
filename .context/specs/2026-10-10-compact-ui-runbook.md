@@ -153,7 +153,9 @@ URL подписки в логи, скриншоты и отчёты не поп
 
 ### Ping / Sort / Off
 1. *Ping all* → кнопка «Pinging N servers…», *Sort by ping* неактивна; затем полосы и «N ms»
-   (≤ 100 — зелёный). hysteria2 — «n/a · UDP» с подсказкой; без ответа — «auto-off».
+   (≤ 100 — зелёный). Десктоп: hysteria2 — иконка «круг с чертой», подсказка «hysteria2 runs over UDP…»;
+   без ответа — перечёркнутый Wi-Fi, подсказка «No reply to ping · auto-off…», строка приглушена.
+   ≤ 720px — текстом: «n/a · UDP», «auto-off».
 2. *Sort by ping* → «Sorted by ping. Press “Save & Apply”…», порядок по возрастанию, без замера —
    в конце; повторно — «Already in ping order.». При фильтре ≠ All кнопка неактивна.
 3. Off у строки (клик или Space) → бейдж *off*, *Save* активна, фокус на Off той же строки. Снять Off у сервера, выключенного в UCI → бейдж

@@ -168,11 +168,7 @@ return baseclass.extend({
 				onFilter: function(v) { st.filter = v; st.moving = false; draw(); },
 				onGear: function() { st.moving = !st.moving; st.picked = null; draw(); },
 				onPingAll: pingAll, onSort: sort, onAdd: edit.add
-			}) ].concat(body(servers), [
-				E('div', { 'class': 'mb-srvs-foot mb-muted mb-small' }, [
-					_('The first server that answers is used, top to bottom. Order and Off apply on Save & Apply.')
-				])
-			]));
+			}) ].concat(body(servers)));
 		}
 
 		function relabel() {

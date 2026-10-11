@@ -7,30 +7,33 @@
 'require view.monkey-business.srv.pingbar as pingbar';
 
 style.add('serverrow', [
-	'.mb .mb-srow{display:grid;grid-template-columns:var(--mb-srow-cols);gap:12px;align-items:center;',
-	'padding:4px 12px;min-height:40px;border-top:1px solid var(--mb-line-soft)}',
+	'.mb .mb-srow{display:grid;grid-template-columns:var(--mb-srow-cols);gap:10px;align-items:center;',
+	'padding:3px 12px;min-height:43px;border-bottom:1px solid var(--mb-line-soft)}',
+	'.mb .mb-srow.mb-dim{color:var(--mb-dim)}',
 	'.mb .mb-srow>*{min-width:0}',
-	'.mb .mb-srow-grip{display:flex;align-items:center;justify-content:center;width:20px;height:28px;padding:0;margin:0;',
-	'background:none;border:0;border-radius:4px;color:var(--mb-faint);cursor:grab;box-shadow:none}',
-	'.mb .mb-srow-grip:hover,.mb .mb-srow-grip:focus-visible{color:var(--mb-text);box-shadow:none}',
+	'.mb .mb-srow-grip{display:flex;align-items:center;justify-content:flex-start;width:20px;height:28px;padding:0;margin:0;',
+	'background:none;border:0;border-radius:4px;color:inherit;fill:var(--mb-faint);cursor:grab;box-shadow:none}',
+	'.mb .mb-srow-grip svg{fill:inherit}',
+	'.mb .mb-srow-grip:hover,.mb .mb-srow-grip:focus-visible{fill:var(--mb-text);box-shadow:none}',
 	'.mb .mb-srow-grip:focus-visible{outline:2px solid var(--mb-accent)}',
 	'.mb .mb-srow-grip[aria-disabled="true"]{visibility:hidden}',
-	'.mb .mb-srow-n{color:var(--mb-muted);font-variant-numeric:tabular-nums;text-align:right}',
+	'.mb .mb-srow-n{color:var(--mb-muted);font-family:var(--mb-mono)}',
 	'.mb .mb-srow-name,.mb .mb-srow-line{display:flex;align-items:center;gap:8px;max-width:100%}',
 	'.mb .mb-srow-line>*{min-width:0}',
 	'.mb .mb-srow-title,.mb .mb-srow-cut{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}',
-	'.mb .mb-srow-title{font-weight:500}',
-	'.mb .mb-srow-badge{flex-shrink:0;padding:0 6px;border-radius:4px;font-size:11px;background:var(--mb-line);color:var(--mb-text-2)}',
-	'.mb .mb-srow.mb-off .mb-srow-title{color:var(--mb-muted)}',
+	'.mb .mb-srow-badge{flex-shrink:0;padding:0 6px;border-radius:4px;font-size:11px;background:var(--mb-warn-tint);color:var(--mb-warn-text)}',
+	'.mb .mb-srow-addr{color:var(--mb-text-2)}',
+	'.mb .mb-srow-proto,.mb .mb-srow-src{color:var(--mb-muted)}',
 	'.mb .mb-srow-meta,.mb .mb-srow-more{display:none}',
-	'.mb .mb-srow-acts{display:flex;gap:6px;justify-content:flex-end}',
-	'.mb .mb-icon.mb-srow-del{color:var(--mb-err-text)}',
-	'.mb .mb-srow-del,.mb .mb-srow-del:hover{border-color:var(--mb-err-edge)!important}',
+	'.mb .mb-srow-acts{display:flex;gap:4px;justify-content:flex-end}',
+	'.mb .mb-srow-acts .mb-icon{border-radius:5px}',
+	'.mb .mb-srow-gap{flex-shrink:0;width:28px}',
+	'.mb .mb-icon.mb-srow-del{color:var(--mb-err-icon)}',
 	'.mb .mb-srow-acts svg,.mb .mb-srow-more svg{display:block;margin:auto}',
 	style.MOBILE + '{',
 	'.mb .mb-srow{grid-template-columns:16px minmax(0,1fr) auto 36px;gap:10px;padding:8px 12px;min-height:56px}',
 	'.mb .mb-srow-grip,.mb .mb-srow-addr,.mb .mb-srow-proto,.mb .mb-srow-src,.mb .mb-srow-off,.mb .mb-srow-acts{display:none}',
-	'.mb .mb-srow-n{text-align:left}',
+	'.mb .mb-srow:last-child{border-bottom:0}',
 	'.mb .mb-srow-name{flex-direction:column;align-items:flex-start;gap:2px}',
 	'.mb .mb-srow-meta{display:block;max-width:100%}',
 	'.mb .mb-srow-more{display:inline-flex}',
@@ -74,8 +77,8 @@ function buttons(o, sid, name, manual) {
 	if (o.readonly)
 		return [];
 	return [
-		manual ? iconBtn('mb-srow-edit', icons.EDIT, _('Edit %s').format(name), function() { o.onEdit(sid); }) : '',
-		iconBtn('mb-srow-del', icons.TRASH, _('Delete %s').format(name), function() { o.onDelete(sid); })
+		manual ? iconBtn('mb-srow-edit', icons.PEN, _('Edit %s').format(name), function() { o.onEdit(sid); }) : E('span', { 'class': 'mb-srow-gap' }),
+		iconBtn('mb-srow-del', icons.BIN, _('Delete %s').format(name), function() { o.onDelete(sid); })
 	];
 }
 
@@ -96,7 +99,7 @@ return baseclass.extend({
 		var name = model.title(s);
 		var src = source(o.subName);
 
-		var check = E('input', { 'type': 'checkbox', 'class': 'mb-check mb-srow-check', 'aria-label': _('Off: %s').format(name) });
+		var check = E('input', { 'type': 'checkbox', 'class': 'mb-xbox mb-srow-check', 'title': _('Never used for connecting. Still listed and pinged.'), 'aria-label': _('Off: %s').format(name) });
 		check.checked = off;
 		check.disabled = !!o.readonly;
 		check.addEventListener('change', function() { o.onOff(sid, check.checked); });
@@ -109,7 +112,7 @@ return baseclass.extend({
 		more.setAttribute('aria-haspopup', 'menu');
 		more.setAttribute('aria-expanded', 'false');
 
-		return E('div', { 'class': 'mb-srow' + (off ? ' mb-off' : ''), 'data-sid': sid, 'role': 'listitem' }, [
+		return E('div', { 'class': 'mb-srow' + (off || o.ping.kind === 'off' ? ' mb-dim' : ''), 'data-sid': sid, 'role': 'listitem' }, [
 			grip(o, sid, name),
 			E('span', { 'class': 'mb-srow-n' }, [ String(o.n) ]),
 			E('div', { 'class': 'mb-srow-name' }, [
@@ -119,9 +122,9 @@ return baseclass.extend({
 				]),
 				E('span', { 'class': 'mb-srow-meta mb-srow-cut mb-muted mb-small' }, [ meta(s, src) ])
 			]),
-			E('span', { 'class': 'mb-srow-addr mb-srow-cut mb-mono mb-small', 'title': model.endpoint(s) }, [ model.endpoint(s) ]),
+			E('span', { 'class': 'mb-srow-addr mb-srow-cut mb-mono', 'title': model.endpoint(s) }, [ model.endpoint(s) ]),
 			E('span', { 'class': 'mb-srow-proto mb-srow-cut' }, [ model.protocol(s) ]),
-			E('span', { 'class': 'mb-srow-src mb-srow-cut' + (o.subName ? '' : ' mb-muted'), 'title': src }, [ src ]),
+			E('span', { 'class': 'mb-srow-src mb-srow-cut', 'title': src }, [ src ]),
 			pingbar.render(o.ping),
 			E('label', { 'class': 'mb-srow-off' }, [ check ]),
 			E('div', { 'class': 'mb-srow-acts' }, buttons(o, sid, name, manual)),

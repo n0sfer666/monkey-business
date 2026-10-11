@@ -14,12 +14,12 @@ style.add('servers-view', [
 	'.mb.mb-srv-view{display:flex;flex-direction:column;gap:14px;padding:4px 0 16px}',
 	'.mb .mb-srv-bar{display:flex;align-items:center;gap:12px}',
 	'.mb .mb-srv-hint{flex:1;min-width:0}',
-	'.mb .mb-srv-acts{display:flex;gap:8px}',
+	'.mb .mb-srv-acts{display:flex;gap:12px}',
 	style.MOBILE + '{',
 	'.mb.mb-srv-view{padding-bottom:0}',
 	'.mb .mb-srv-bar{display:contents}',
-	'.mb .mb-srv-hint{display:none}',
-	'.mb .mb-srv-acts{order:2;position:sticky;bottom:0;z-index:2;padding:10px 12px;',
+	'.mb .mb-srv-bar h1,.mb .mb-srv-hint{display:none}',
+	'.mb .mb-srv-acts{order:2;position:sticky;bottom:0;z-index:2;gap:8px;padding:10px 12px;',
 	'background:var(--mb-bar);border-top:1px solid var(--mb-line)}',
 	'.mb .mb-srv-acts .mb-btn-primary{flex:1}',
 	'}'
@@ -102,7 +102,8 @@ return view.extend({
 		this.root = E('div', { 'class': 'mb mb-srv-view' }, [
 			tabs.render('servers'),
 			E('div', { 'class': 'mb-srv-bar' }, [
-				E('div', { 'class': 'mb-srv-hint mb-muted mb-small' }, [ _('Changes stay local until Save & Apply.') ]),
+				E('h1', {}, [ _('Servers') ]),
+				E('span', { 'class': 'mb-srv-hint mb-muted' }, [ _('Row order is the connect priority') ]),
 				E('div', { 'class': 'mb-srv-acts' }, [ this.reset, this.save, this.apply ])
 			]),
 			this.subs.node,

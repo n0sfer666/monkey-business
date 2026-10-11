@@ -5,7 +5,8 @@
 style.add('inline', [
 	'.mb .mb-inl{display:inline-block;width:auto;min-width:4ch;max-width:100%;height:auto;margin:0;padding:3px 7px;',
 	'background:transparent;color:inherit;border:1px dashed var(--mb-line-strong);border-radius:5px;',
-	'font:inherit;line-height:1.3;box-shadow:none}',
+	'font:inherit;line-height:normal;box-shadow:none}',
+	'.mb .mb-inl.mb-mono{font-family:var(--mb-mono)}',
 	'.mb .mb-inl:hover{border-color:var(--mb-muted)!important}',
 	'.mb .mb-inl:focus{outline:none;background:var(--mb-bg);border-style:solid;border-color:var(--mb-accent)!important;box-shadow:none}',
 	'.mb .mb-inl.mb-bad{border-color:var(--mb-err)!important}'

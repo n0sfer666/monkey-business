@@ -3,7 +3,7 @@
 'require view.monkey-business.subs as subs';
 
 var FAST_MS = 100;
-var BAR_MS = 300;
+var BAR_MS = 200;
 var ON = [ '1', 'true', 'yes', 'on' ];
 
 function isOff(s) {
@@ -73,7 +73,7 @@ function ping(p) {
 	return {
 		kind: p.ms <= FAST_MS ? 'fast' : 'slow',
 		ms: p.ms,
-		pct: Math.max(6, Math.min(100, Math.round(p.ms / BAR_MS * 100)))
+		pct: Math.min(100, Math.round(p.ms / BAR_MS * 100))
 	};
 }
 

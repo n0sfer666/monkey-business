@@ -17,19 +17,19 @@
 'require view.monkey-business.srv.subpersist as subpersist';
 
 style.add('subpanel', [
-	'.mb .mb-subs{--mb-sub-cols:72px minmax(96px,1fr) minmax(120px,1.3fr) minmax(96px,140px) minmax(0,180px) auto;display:flex;flex-direction:column}',
-	'.mb .mb-subs-head{display:flex;align-items:center;gap:12px;padding:10px 12px}',
+	'.mb .mb-subs{--mb-sub-cols:80px minmax(80px,1fr) minmax(100px,1.3fr) minmax(96px,130px) minmax(120px,190px) minmax(150px,210px);display:flex;flex-direction:column}',
+	'.mb .mb-subs-head{display:flex;align-items:center;gap:12px;padding:10px 12px;border-bottom:1px solid var(--mb-line)}',
 	'.mb .mb-subs-head .mb-muted{flex:1;min-width:0}',
 	'.mb .mb-subs-cols{display:grid;grid-template-columns:var(--mb-sub-cols);gap:12px;padding:7px 12px;',
-	'border-top:1px solid var(--mb-line);color:var(--mb-muted);font-size:12px}',
-	'.mb .mb-subs-empty{padding:12px;border-top:1px solid var(--mb-line-soft)}',
-	'.mb .mb-subs-short{display:none}',
+	'border-bottom:1px solid var(--mb-line);color:var(--mb-muted);font-size:12px}',
+	'.mb .mb-subs-empty{padding:12px}',
+	'.mb .mb-subs-add::after{content:attr(data-short);display:none}',
 	style.MOBILE + '{',
 	'.mb .mb-subs{border-radius:10px}',
 	'.mb .mb-subs-head .mb-muted{display:none}',
 	'.mb .mb-subs-head h2{flex:1;font-size:15px}',
 	'.mb .mb-subs-cols,.mb .mb-subs-long{display:none}',
-	'.mb .mb-subs-short{display:inline}',
+	'.mb .mb-subs-add::after{display:inline}',
 	'}'
 ].join(''));
 
@@ -158,9 +158,8 @@ return baseclass.extend({
 				E('div', { 'class': 'mb-subs-head' }, [
 					E('h2', {}, [ _('Subscriptions') ]),
 					E('span', { 'class': 'mb-muted' }, [ _('the active one is used first, the rest are a reserve') ]),
-					o.readonly ? '' : E('button', { 'type': 'button', 'class': 'mb-btn mb-btn-tint mb-subs-add', 'click': add }, [
-						E('span', { 'class': 'mb-subs-long' }, [ _('+ Add subscription') ]),
-						E('span', { 'class': 'mb-subs-short' }, [ _('+ Add') ])
+					o.readonly ? '' : E('button', { 'type': 'button', 'class': 'mb-btn mb-btn-sm mb-btn-tint mb-subs-add', 'data-short': _('+ Add'), 'click': add }, [
+						E('span', { 'class': 'mb-subs-long' }, [ _('+ Add subscription') ])
 					])
 				]),
 				rows.length ? E('div', { 'class': 'mb-subs-cols' }, [ _('Role'), _('Name'), _('URL'), _('Auto-update'), _('Traffic'), '' ].map(function(t) {
