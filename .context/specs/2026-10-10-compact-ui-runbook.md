@@ -69,7 +69,8 @@
 2. Turn off → Turn on: подключается, статус Running.
 3. Check exit — показывает IP.
 4. Servers: Ping all, переключение подписки, Fetch у подписки, Save & Apply формы серверов —
-   индикатор «Unsaved Changes» гаснет, конфиг применяется.
+   индикатор «Unsaved Changes» гаснет, конфиг применяется. Save & Apply без правок дважды подряд —
+   оба раза «Applied — connected to…», без «ubus code 5: No data received».
 5. Добавить ручной сервер по ссылке — поля заполнились (parse_uri).
 
 ## Итерация 2 — Servers: подписки
@@ -165,6 +166,8 @@ URL подписки в логи, скриншоты и отчёты не поп
    вторую строку; grip слева декоративный (не в Tab-порядке); у «+» доступное имя «Add server». Под
    непустым списком строка-подсказка «⋮ — Ping, Edit… Gear — reorder…», при пустом её нет. Бар Reset / Save / Save & Apply прилип к низу.
 4. Протокол `vless` без TLS показан как «vless / no TLS», не «none»; hysteria2 — без security.
+5. 320–390px: «N ms» в строке статуса Dashboard и в списках серверов не разрывается переносом между
+   числом и «ms» (между ними неразрывный пробел).
 
 ### Ping / Sort / Off
 1. *Ping all* → кнопка «Pinging N servers…», *Sort by ping* неактивна; затем полосы и «N ms»

@@ -130,10 +130,10 @@ return view.extend({
 		var self = this;
 		var ids = [];
 		return store.save(this.servers.saved).then(function() {
-			return store.changes();
-		}).then(function(changes) {
-			ids = submodel.refetch(changes, store.sections('subscription').map(function(s) { return s['.name']; }));
-			return store.commit();
+			return store.pending();
+		}).then(function(all) {
+			ids = submodel.refetch(store.own(all), store.sections('subscription').map(function(s) { return s['.name']; }));
+			return store.commit(all);
 		}).then(function() {
 			return self.subs.refetch(ids);
 		}).then(function() {

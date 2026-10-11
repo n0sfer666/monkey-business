@@ -43,5 +43,6 @@ return baseclass.extend({
 	geoInstall: mb('geo_install', [ 'which' ]),
 	hysteriaStatus: mb('hysteria_status'),
 	hysteriaInstall: mb('hysteria_install'),
+	uciChanges: rpc.declare({ object: 'uci', method: 'changes', expect: { changes: {} }, reject: true }),
 	uciApply: rpc.declare({ object: 'uci', method: 'apply', params: [ 'rollback' ], reject: true })
 });

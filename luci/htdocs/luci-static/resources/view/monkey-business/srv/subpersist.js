@@ -8,9 +8,7 @@ function saveErr(e) {
 }
 
 function commit() {
-	return store.changes().then(function(c) {
-		return c.length ? store.commit() : null;
-	}).catch(saveErr);
+	return store.commit().catch(saveErr);
 }
 
 return baseclass.extend({

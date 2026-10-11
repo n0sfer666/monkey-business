@@ -35,9 +35,9 @@ return baseclass.extend({
 	sections: function(type, cb) { return uci.sections(CONF, type, cb); },
 
 	dirty: function() { return dirty.pending(uci.state, CONF); },
-	changes: function() {
-		return uci.changes().then(function(c) { return (c && c[CONF]) || []; });
-	},
+	pending: function() { return api.uciChanges(); },
+	own: function(all) { return (all && all[CONF]) || []; },
+	changes: function() { return this.pending().then(this.own); },
 	save: function(named) {
 		var made = Object.assign({}, uci.state.creates[CONF]);
 		var known = Object.assign({}, uci.state.values[CONF]);
@@ -61,8 +61,10 @@ return baseclass.extend({
 		return uci.load(CONF);
 	},
 
-	commit: function() {
-		return api.uciApply(false).then(function() { ui.changes.setIndicator(0); });
+	commit: function(all) {
+		return Promise.resolve(all || this.pending()).then(function(c) {
+			return Object.keys(c).some(function(k) { return c[k].length; }) ? api.uciApply(false) : null;
+		}).then(function() { ui.changes.setIndicator(0); });
 	},
 
 	apply: function() {
