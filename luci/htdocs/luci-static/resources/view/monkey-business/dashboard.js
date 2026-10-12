@@ -7,6 +7,7 @@
 'require view.monkey-business.pingtext as pingtext';
 'require view.monkey-business.kit.style as style';
 'require view.monkey-business.kit.tabs as tabs';
+'require view.monkey-business.kit.viewbar as viewbar';
 'require view.monkey-business.model.servers as model';
 'require view.monkey-business.dash.status as status';
 'require view.monkey-business.dash.serverlist as serverlist';
