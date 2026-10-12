@@ -1,5 +1,5 @@
 function escape(s) {
-	return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
 module.exports = { escape };

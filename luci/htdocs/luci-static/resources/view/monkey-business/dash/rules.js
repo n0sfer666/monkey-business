@@ -13,179 +13,243 @@
 var DEBOUNCE_MS = 400;
 
 function lists() {
-	return [
-		{ key: 'direct', title: _('Direct'), sub: _('bypass VPN'), hint: _('Bypass the VPN, go straight through the ISP'),
-			placeholder: 'example.com\n*.example.org\n10.0.0.0/8\ngeosite:category-ru' },
-		{ key: 'proxy', title: _('Via VPN'), sub: _('always tunnelled'), hint: _('Always tunnelled, even if the region is local'),
-			placeholder: 'blocked.example\n*.example.net\ngeosite:google\ngeoip:telegram' }
-	];
+  return [
+    {
+      key: 'direct',
+      title: _('Direct'),
+      sub: _('bypass VPN'),
+      hint: _('Bypass the VPN, go straight through the ISP'),
+      placeholder: 'example.com\n*.example.org\n10.0.0.0/8\ngeosite:category-ru',
+    },
+    {
+      key: 'proxy',
+      title: _('Via VPN'),
+      sub: _('always tunnelled'),
+      hint: _('Always tunnelled, even if the region is local'),
+      placeholder: 'blocked.example\n*.example.net\ngeosite:google\ngeoip:telegram',
+    },
+  ];
 }
 
 function hint() {
-	var kinds = [ 'domain', '*.domain', 'IP/CIDR', 'geosite:NAME', 'geoip:NAME' ];
-	var out = [ _('One entry per line:') + ' ' ];
-	kinds.forEach(function(k, i) {
-		out.push(E('code', {}, [ k ]));
-		if (i < kinds.length - 1)
-			out.push(', ');
-	});
-	return E('span', { 'class': 'mb-cr-hint' }, out);
+  var kinds = ['domain', '*.domain', 'IP/CIDR', 'geosite:NAME', 'geoip:NAME'];
+  var out = [_('One entry per line:') + ' '];
+
+  kinds.forEach(function (k, i) {
+    out.push(E('code', {}, [k]));
+    if (i < kinds.length - 1) out.push(', ');
+  });
+
+  return E('span', { class: 'mb-cr-hint' }, out);
 }
 
 function applied(res) {
-	if (res && res.skipped === 'disabled')
-		return notice.show(_('Rules saved. The VPN is off — they will apply when you turn it on.'), 'info');
-	notice.show(_('Routing rules applied.'), 'info');
+  if (res && res.skipped === 'disabled')
+    return notice.show(_('Rules saved. The VPN is off — they will apply when you turn it on.'), 'info');
+  notice.show(_('Routing rules applied.'), 'info');
 }
 
 return baseclass.extend({
-	open: function(o) {
-		var defs = lists();
-		var root = E('div', { 'class': 'mb-cr', 'data-tab': 'proxy' });
-		var tabs = E('div', { 'class': 'mb-cr-tabs', 'role': 'tablist', 'aria-label': _('Rule lists') });
-		var thint = E('span', { 'class': 'mb-cr-thint' });
-		var cols = E('div', { 'class': 'mb-cr-cols' });
-		var errs = ruleerrs.render(defs);
-		var fm = E('span', { 'class': 'mb-cr-fm' });
-		var fd = E('span', { 'class': 'mb-cr-fd' });
-		var cancel = E('button', { 'type': 'button', 'class': 'mb-btn' }, [ _('Cancel') ]);
-		var save = E('button', { 'type': 'button', 'class': 'mb-btn mb-btn-primary', 'aria-describedby': errs.id }, [ _('Save & Apply') ]);
-		var items = [];
-		var busy = false;
-		var seq = 0;
-		var timer, s;
+  open: function (o) {
+    var defs = lists();
+    var root = E('div', { class: 'mb-cr', 'data-tab': 'proxy' });
+    var tabs = E('div', { class: 'mb-cr-tabs', role: 'tablist', 'aria-label': _('Rule lists') });
+    var thint = E('span', { class: 'mb-cr-thint' });
+    var cols = E('div', { class: 'mb-cr-cols' });
+    var errs = ruleerrs.render(defs);
+    var fm = E('span', { class: 'mb-cr-fm' });
+    var fd = E('span', { class: 'mb-cr-fd' });
+    var cancel = E('button', { type: 'button', class: 'mb-btn' }, [_('Cancel')]);
+    var save = E('button', { type: 'button', class: 'mb-btn mb-btn-primary', 'aria-describedby': errs.id }, [
+      _('Save & Apply'),
+    ]);
+    var items = [];
+    var busy = false;
+    var seq = 0;
+    var timer, s;
 
-		defs.forEach(function(d) {
-			d.ed = ruleedit.render({ id: 'mb-cr-' + d.key, label: d.title, value: o[d.key], placeholder: d.placeholder });
-			d.count = E('span', { 'class': 'mb-cr-count' });
-			d.tcount = E('span', { 'class': 'mb-cr-count' });
-			d.tab = E('button', {
-				'type': 'button', 'class': 'mb-btn mb-cr-tab', 'role': 'tab', 'id': 'mb-cr-tab-' + d.key,
-				'aria-controls': 'mb-cr-col-' + d.key, 'click': function() { pick(d.key); }
-			}, [ E('span', { 'class': 'mb-cr-dot mb-cr-dot-' + d.key }), ' ' + d.title + ' ', d.tcount ]);
-			cols.appendChild(E('div', { 'class': 'mb-cr-col', 'id': 'mb-cr-col-' + d.key, 'data-list': d.key, 'role': 'tabpanel', 'aria-labelledby': 'mb-cr-tab-' + d.key }, [
-				E('div', { 'class': 'mb-cr-chead' }, [
-					E('span', { 'class': 'mb-cr-dot mb-cr-dot-' + d.key }),
-					E('label', { 'for': 'mb-cr-' + d.key }, [ d.title ]),
-					E('span', { 'class': 'mb-cr-sub' }, [ d.sub ]),
-					d.count
-				]),
-				d.ed.node
-			]));
-			d.ed.textarea.addEventListener('input', changed);
-		});
-		defs.slice().reverse().forEach(function(d) { tabs.appendChild(d.tab); });
+    defs.forEach(function (d) {
+      d.ed = ruleedit.render({ id: 'mb-cr-' + d.key, label: d.title, value: o[d.key], placeholder: d.placeholder });
+      d.count = E('span', { class: 'mb-cr-count' });
+      d.tcount = E('span', { class: 'mb-cr-count' });
+      d.tab = E(
+        'button',
+        {
+          type: 'button',
+          class: 'mb-btn mb-cr-tab',
+          role: 'tab',
+          id: 'mb-cr-tab-' + d.key,
+          'aria-controls': 'mb-cr-col-' + d.key,
+          click: function () {
+            pick(d.key);
+          },
+        },
+        [E('span', { class: 'mb-cr-dot mb-cr-dot-' + d.key }), ' ' + d.title + ' ', d.tcount],
+      );
+      cols.appendChild(
+        E(
+          'div',
+          {
+            class: 'mb-cr-col',
+            id: 'mb-cr-col-' + d.key,
+            'data-list': d.key,
+            role: 'tabpanel',
+            'aria-labelledby': 'mb-cr-tab-' + d.key,
+          },
+          [
+            E('div', { class: 'mb-cr-chead' }, [
+              E('span', { class: 'mb-cr-dot mb-cr-dot-' + d.key }),
+              E('label', { for: 'mb-cr-' + d.key }, [d.title]),
+              E('span', { class: 'mb-cr-sub' }, [d.sub]),
+              d.count,
+            ]),
+            d.ed.node,
+          ],
+        ),
+      );
+      d.ed.textarea.addEventListener('input', changed);
+    });
+    defs
+      .slice()
+      .reverse()
+      .forEach(function (d) {
+        tabs.appendChild(d.tab);
+      });
 
-		function cur() {
-			return root.getAttribute('data-tab');
-		}
+    function cur() {
+      return root.getAttribute('data-tab');
+    }
 
-		function pick(key, focus) {
-			root.setAttribute('data-tab', key);
-			defs.forEach(function(d) {
-				var on = d.key === key;
-				d.tab.setAttribute('aria-selected', on ? 'true' : 'false');
-				d.tab.tabIndex = on ? 0 : -1;
-				if (on && focus)
-					d.tab.focus();
-				if (on)
-					thint.textContent = d.hint;
-			});
-			paint();
-		}
+    function pick(key, focus) {
+      root.setAttribute('data-tab', key);
+      defs.forEach(function (d) {
+        var on = d.key === key;
 
-		function paint() {
-			var total = items.length;
-			var mine = msg.byList(items, cur()).length;
-			defs.forEach(function(d) {
-				var bad = msg.byList(items, d.key);
-				var n = routing.count(d.ed.textarea.value);
-				d.ed.mark(bad, errs.id);
-				d.count.textContent = bad.length ? _('%d entries · %d invalid').format(n, bad.length) : _('%d entries').format(n);
-				d.tcount.textContent = bad.length ? _('%d invalid').format(bad.length) : String(n);
-				d.count.classList.toggle('mb-bad', bad.length > 0);
-				d.tcount.classList.toggle('mb-bad', bad.length > 0);
-			});
-			errs.update(items, function(i) { return defs[i.list === 'direct' ? 0 : 1].ed.textarea.value.split('\n')[i.line - 1]; }, mine === 0);
-			fd.textContent = total ? _('Fix the highlighted lines to save') : _('Applies in split modes only, ignored in “Everything via VPN”');
-			fm.textContent = msg.mobileFoot(total, total - mine);
-			fd.classList.toggle('mb-bad', total > 0);
-			fm.classList.toggle('mb-bad', total > 0);
-			save.disabled = busy || total > 0;
-			cancel.disabled = busy;
-		}
+        d.tab.setAttribute('aria-selected', on ? 'true' : 'false');
+        d.tab.tabIndex = on ? 0 : -1;
+        if (on && focus) d.tab.focus();
+        if (on) thint.textContent = d.hint;
+      });
+      paint();
+    }
 
-		function text(key) {
-			return defs[key === 'direct' ? 0 : 1].ed.textarea.value;
-		}
+    function paint() {
+      var total = items.length;
+      var mine = msg.byList(items, cur()).length;
 
-		function check() {
-			var id = ++seq;
-			return api.routingCheck(text('direct'), text('proxy')).then(function(res) {
-				if (id !== seq || !res || !Array.isArray(res.items))
-					return;
-				items = res.items;
-				paint();
-			}).catch(function() {
-				if (id !== seq)
-					return;
-				items = [];
-				paint();
-			});
-		}
+      defs.forEach(function (d) {
+        var bad = msg.byList(items, d.key);
+        var n = routing.count(d.ed.textarea.value);
 
-		function changed() {
-			clearTimeout(timer);
-			timer = setTimeout(check, DEBOUNCE_MS);
-			paint();
-		}
+        d.ed.mark(bad, errs.id);
+        d.count.textContent = bad.length
+          ? _('%d entries · %d invalid').format(n, bad.length)
+          : _('%d entries').format(n);
+        d.tcount.textContent = bad.length ? _('%d invalid').format(bad.length) : String(n);
+        d.count.classList.toggle('mb-bad', bad.length > 0);
+        d.tcount.classList.toggle('mb-bad', bad.length > 0);
+      });
+      errs.update(
+        items,
+        function (i) {
+          return defs[i.list === 'direct' ? 0 : 1].ed.textarea.value.split('\n')[i.line - 1];
+        },
+        mine === 0,
+      );
+      fd.textContent = total
+        ? _('Fix the highlighted lines to save')
+        : _('Applies in split modes only, ignored in “Everything via VPN”');
+      fm.textContent = msg.mobileFoot(total, total - mine);
+      fd.classList.toggle('mb-bad', total > 0);
+      fm.classList.toggle('mb-bad', total > 0);
+      save.disabled = busy || total > 0;
+      cancel.disabled = busy;
+    }
 
-		function submit() {
-			if (busy || items.length)
-				return;
-			busy = true;
-			paint();
-			api.setRouting(text('direct'), text('proxy')).then(function(res) {
-				if (res && res.error === 'invalid_rules') {
-					items = res.items || [];
-					return;
-				}
-				if (res && res.error)
-					return notice.show(_('Rules not saved: ') + res.error, 'warning');
-				applied(res);
-				s.close();
-			}, notice.fail(_('Apply failed: '))).finally(function() {
-				busy = false;
-				paint();
-				if (!root.isConnected && o.onSaved)
-					o.onSaved();
-			});
-		}
+    function text(key) {
+      return defs[key === 'direct' ? 0 : 1].ed.textarea.value;
+    }
 
-		tabs.addEventListener('keydown', function(ev) {
-			if (ev.key === 'ArrowLeft' || ev.key === 'ArrowRight')
-				pick(cur() === 'proxy' ? 'direct' : 'proxy', true);
-		});
-		cancel.addEventListener('click', function() { if (!busy) s.close(); });
-		save.addEventListener('click', submit);
-		dom.content(root, [ tabs, thint, cols, errs.node, fm ]);
+    function check() {
+      var id = ++seq;
 
-		s = sheet.open({
-			title: _('Custom rules'),
-			hint: hint(),
-			width: '860px',
-			top: '96px',
-			mtop: '96px',
-			foot: 'row',
-			cls: 'mb-cr-sheet',
-			body: root,
-			actions: [ fd, cancel, save ],
-			back: o.back,
-			locked: function() { return busy; },
-			onClose: function() { clearTimeout(timer); seq++; }
-		});
-		pick('proxy');
-		check();
-		return s;
-	}
+      return api
+        .routingCheck(text('direct'), text('proxy'))
+        .then(function (res) {
+          if (id !== seq || !res || !Array.isArray(res.items)) return;
+          items = res.items;
+          paint();
+        })
+        .catch(function () {
+          if (id !== seq) return;
+          items = [];
+          paint();
+        });
+    }
+
+    function changed() {
+      clearTimeout(timer);
+      timer = setTimeout(check, DEBOUNCE_MS);
+      paint();
+    }
+
+    function submit() {
+      if (busy || items.length) return;
+      busy = true;
+      paint();
+      api
+        .setRouting(text('direct'), text('proxy'))
+        .then(
+          function (res) {
+            if (res && res.error === 'invalid_rules') {
+              items = res.items || [];
+
+              return;
+            }
+            if (res && res.error) return notice.show(_('Rules not saved: ') + res.error, 'warning');
+            applied(res);
+            s.close();
+          },
+          notice.fail(_('Apply failed: ')),
+        )
+        .finally(function () {
+          busy = false;
+          paint();
+          if (!root.isConnected && o.onSaved) o.onSaved();
+        });
+    }
+
+    tabs.addEventListener('keydown', function (ev) {
+      if (ev.key === 'ArrowLeft' || ev.key === 'ArrowRight') pick(cur() === 'proxy' ? 'direct' : 'proxy', true);
+    });
+    cancel.addEventListener('click', function () {
+      if (!busy) s.close();
+    });
+    save.addEventListener('click', submit);
+    dom.content(root, [tabs, thint, cols, errs.node, fm]);
+
+    s = sheet.open({
+      title: _('Custom rules'),
+      hint: hint(),
+      width: '860px',
+      top: '96px',
+      mtop: '96px',
+      foot: 'row',
+      cls: 'mb-cr-sheet',
+      body: root,
+      actions: [fd, cancel, save],
+      back: o.back,
+      locked: function () {
+        return busy;
+      },
+      onClose: function () {
+        clearTimeout(timer);
+        seq++;
+      },
+    });
+    pick('proxy');
+    check();
+
+    return s;
+  },
 });

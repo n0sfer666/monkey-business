@@ -11,142 +11,190 @@
 'require view.monkey-business.srv.serverpanel as serverpanel';
 
 function report(res) {
-	if (res && res.error)
-		return notice.show(_('Apply failed: ') + res.error, 'warning');
-	if (res && res.skipped === 'disabled')
-		return notice.show(_('Saved. The VPN is off — the new order will apply when you turn it on.'), 'info');
-	notice.show(_('Applied — connected to: ') + ((res && res.server) || '?'), 'info');
+  if (res && res.error) return notice.show(_('Apply failed: ') + res.error, 'warning');
+  if (res && res.skipped === 'disabled')
+    return notice.show(_('Saved. The VPN is off — the new order will apply when you turn it on.'), 'info');
+  notice.show(_('Applied — connected to: ') + ((res && res.server) || '?'), 'info');
 }
 
 return view.extend({
-	handleSave: null,
-	handleSaveApply: null,
-	handleReset: null,
+  handleSave: null,
+  handleSaveApply: null,
+  handleReset: null,
 
-	load: function() {
-		return Promise.all([ store.load(), api.serversList().catch(function() { return null; }) ]);
-	},
+  load: function () {
+    return Promise.all([
+      store.load(),
+      api.serversList().catch(function () {
+        return null;
+      }),
+    ]);
+  },
 
-	render: function(data) {
-		var self = this;
-		var readonly = !L.hasViewPermission();
-		var busy = false;
+  render: function (data) {
+    var self = this;
+    var readonly = !L.hasViewPermission();
+    var busy = false;
 
-		function usable(el) {
-			return !!(el && el.isConnected && !el.disabled);
-		}
+    function usable(el) {
+      return !!(el && el.isConnected && !el.disabled);
+    }
 
-		function hold(work, back, spare) {
-			busy = true;
-			self.sync();
-			return Promise.resolve().then(work).finally(function() {
-				busy = false;
-				self.sync();
-				var to = usable(back) ? back : spare && spare();
-				if (usable(to))
-					to.focus();
-			});
-		}
+    function hold(work, back, spare) {
+      busy = true;
+      self.sync();
 
-		function act(name) {
-			return function(ev) {
-				var back = ev.currentTarget;
-				if (busy)
-					return;
-				back.classList.add('spinning');
-				return hold(function() { return self[name](); }, back, function() { return self.apply; }).finally(function() {
-					back.classList.remove('spinning');
-				});
-			};
-		}
+      return Promise.resolve()
+        .then(work)
+        .finally(function () {
+          busy = false;
+          self.sync();
+          var to = usable(back) ? back : spare && spare();
 
-		this.reset = E('button', { 'class': 'mb-btn', 'click': act('doReset') }, [ _('Reset') ]);
-		this.save = E('button', { 'class': 'mb-btn', 'click': act('doSave') }, [ _('Save') ]);
-		this.apply = E('button', { 'class': 'mb-btn mb-btn-primary', 'click': act('doApply') }, [ _('Save & Apply') ]);
-		this.sync = function() {
-			var locked = readonly || busy;
-			var dirty = store.dirty();
-			self.root.inert = busy;
-			self.reset.disabled = locked || !dirty;
-			self.save.disabled = locked || !dirty;
-			self.apply.disabled = locked;
-		};
+          if (usable(to)) to.focus();
+        });
+    }
 
-		this.servers = serverpanel.create({ list: data[1], readonly: readonly, onChange: this.sync });
-		this.subs = subpanel.create({
-			onChange: this.sync,
-			onRename: function() { gesture.after(self.servers.relabel); self.sync(); },
-			onRemove: function() { self.servers.draw(); self.sync(); },
-			onFail: function() { self.draw(); },
-			onReload: this.renew.bind(this),
-			onSaved: this.servers.saved,
-			readonly: readonly,
-			hold: function(work, spare) { return hold(work, null, spare); },
-			onPing: this.servers.onPing
-		});
-		this.root = E('div', { 'class': 'mb mb-view' }, [
-			tabs.render('servers'),
-			viewbar.render(_('Servers'), _('Row order is the connect priority'), [ this.reset, this.save, this.apply ]),
-			this.subs.node,
-			this.servers.node
-		]);
-		this.sync();
-		return this.root;
-	},
+    function act(name) {
+      return function (ev) {
+        var back = ev.currentTarget;
 
-	draw: function() {
-		this.subs.draw();
-		this.servers.draw();
-		this.sync();
-	},
+        if (busy) return;
+        back.classList.add('spinning');
 
-	reload: function() {
-		var self = this;
-		return store.reset().then(function() {
-			self.servers.reset();
-			self.draw();
-		});
-	},
+        return hold(
+          function () {
+            return self[name]();
+          },
+          back,
+          function () {
+            return self.apply;
+          },
+        ).finally(function () {
+          back.classList.remove('spinning');
+        });
+      };
+    }
 
-	renew: function() {
-		var self = this;
-		this.servers.forget();
-		return this.reload().then(function() {
-			return self.servers.relist();
-		});
-	},
+    this.reset = E('button', { class: 'mb-btn', click: act('doReset') }, [_('Reset')]);
+    this.save = E('button', { class: 'mb-btn', click: act('doSave') }, [_('Save')]);
+    this.apply = E('button', { class: 'mb-btn mb-btn-primary', click: act('doApply') }, [_('Save & Apply')]);
+    this.sync = function () {
+      var locked = readonly || busy;
+      var dirty = store.dirty();
 
-	doReset: function() {
-		return this.reload().catch(function() {
-			window.location.reload();
-		});
-	},
+      self.root.inert = busy;
+      self.reset.disabled = locked || !dirty;
+      self.save.disabled = locked || !dirty;
+      self.apply.disabled = locked;
+    };
 
-	doSave: function() {
-		return store.save(this.servers.saved).catch(notice.fail(_('Save failed: '))).then(this.draw.bind(this));
-	},
+    this.servers = serverpanel.create({ list: data[1], readonly: readonly, onChange: this.sync });
+    this.subs = subpanel.create({
+      onChange: this.sync,
+      onRename: function () {
+        gesture.after(self.servers.relabel);
+        self.sync();
+      },
+      onRemove: function () {
+        self.servers.draw();
+        self.sync();
+      },
+      onFail: function () {
+        self.draw();
+      },
+      onReload: this.renew.bind(this),
+      onSaved: this.servers.saved,
+      readonly: readonly,
+      hold: function (work, spare) {
+        return hold(work, null, spare);
+      },
+      onPing: this.servers.onPing,
+    });
+    this.root = E('div', { class: 'mb mb-view' }, [
+      tabs.render('servers'),
+      viewbar.render(_('Servers'), _('Row order is the connect priority'), [this.reset, this.save, this.apply]),
+      this.subs.node,
+      this.servers.node,
+    ]);
+    this.sync();
 
-	doApply: function() {
-		var self = this;
-		var ids = [];
-		return store.save(this.servers.saved).then(function() {
-			return store.pending();
-		}).then(function(all) {
-			ids = submodel.refetch(store.own(all), store.sections('subscription').map(function(s) { return s['.name']; }));
-			return store.commit(all);
-		}).then(function() {
-			return self.subs.refetch(ids);
-		}).then(function() {
-			return self.renew();
-		}).then(function() {
-			return api.status();
-		}).then(function(st) {
-			if (st && st.running)
-				return api.configApply().then(report);
-			notice.show(_('Saved. Turn on to connect to the top-priority server.'), 'info');
-		}).catch(function(e) {
-			notice.fail(_('Save & Apply failed: '))(e);
-			self.draw();
-		});
-	}
+    return this.root;
+  },
+
+  draw: function () {
+    this.subs.draw();
+    this.servers.draw();
+    this.sync();
+  },
+
+  reload: function () {
+    var self = this;
+
+    return store.reset().then(function () {
+      self.servers.reset();
+      self.draw();
+    });
+  },
+
+  renew: function () {
+    var self = this;
+
+    this.servers.forget();
+
+    return this.reload().then(function () {
+      return self.servers.relist();
+    });
+  },
+
+  doReset: function () {
+    return this.reload().catch(function () {
+      window.location.reload();
+    });
+  },
+
+  doSave: function () {
+    return store
+      .save(this.servers.saved)
+      .catch(notice.fail(_('Save failed: ')))
+      .then(this.draw.bind(this));
+  },
+
+  doApply: function () {
+    var self = this;
+    var ids = [];
+
+    return store
+      .save(this.servers.saved)
+      .then(function () {
+        return store.pending();
+      })
+      .then(function (all) {
+        ids = submodel.refetch(
+          store.own(all),
+          store.sections('subscription').map(function (s) {
+            return s['.name'];
+          }),
+        );
+
+        return store.commit(all);
+      })
+      .then(function () {
+        return self.subs.refetch(ids);
+      })
+      .then(function () {
+        return self.renew();
+      })
+      .then(function () {
+        return api.status();
+      })
+      .then(function (st) {
+        if (st && st.running) return api.configApply().then(report);
+        notice.show(_('Saved. Turn on to connect to the top-priority server.'), 'info');
+      })
+      .catch(function (e) {
+        notice.fail(_('Save & Apply failed: '))(e);
+        self.draw();
+      });
+  },
 });

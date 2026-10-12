@@ -13,79 +13,92 @@
 style.add('set-view', style.MOBILE + '{.mb.mb-set .mb-vbar-acts .mb-btn-primary{padding-left:0;padding-right:0}}');
 
 function report(res) {
-	if (res && res.error)
-		return notice.show(_('Apply failed: ') + res.error, 'warning');
-	if (res && res.skipped === 'disabled')
-		return notice.show(_('Saved. The VPN is off — settings will apply when you turn it on.'), 'info');
-	notice.show(_('Configuration applied.'), 'info');
+  if (res && res.error) return notice.show(_('Apply failed: ') + res.error, 'warning');
+  if (res && res.skipped === 'disabled')
+    return notice.show(_('Saved. The VPN is off — settings will apply when you turn it on.'), 'info');
+  notice.show(_('Configuration applied.'), 'info');
 }
 
 return view.extend({
-	handleSave: null,
-	handleSaveApply: null,
-	handleReset: null,
+  handleSave: null,
+  handleSaveApply: null,
+  handleReset: null,
 
-	load: function() {
-		return store.load();
-	},
+  load: function () {
+    return store.load();
+  },
 
-	render: function() {
-		this.root = E('div', { 'class': 'mb mb-view mb-set' });
-		this.draw();
-		return this.root;
-	},
+  render: function () {
+    this.root = E('div', { class: 'mb mb-view mb-set' });
+    this.draw();
 
-	draw: function() {
-		var self = this;
-		var errors = {};
-		var readonly = !L.hasViewPermission();
-		var locked = readonly;
+    return this.root;
+  },
 
-		function act(name) {
-			return ui.createHandlerFn(self, function() {
-				locked = true;
-				sync();
-				return self[name]();
-			});
-		}
+  draw: function () {
+    var self = this;
+    var errors = {};
+    var readonly = !L.hasViewPermission();
+    var locked = readonly;
 
-		var reset = E('button', { 'class': 'mb-btn', 'click': act('doReset') }, [ _('Reset') ]);
-		var save = E('button', { 'class': 'mb-btn', 'click': act('doSave') }, [ _('Save') ]);
-		var apply = E('button', { 'class': 'mb-btn mb-btn-primary', 'click': act('doApply') }, [ _('Save & Apply') ]);
+    function act(name) {
+      return ui.createHandlerFn(self, function () {
+        locked = true;
+        sync();
 
-		function sync() {
-			var bad = locked || Object.keys(errors).length > 0;
-			var dirty = store.dirty();
-			reset.disabled = locked || !dirty;
-			save.disabled = bad || !dirty;
-			apply.disabled = bad;
-		}
+        return self[name]();
+      });
+    }
 
-		dom.content(this.root, [
-			tabs.render('settings'),
-			viewbar.render(_('Settings'), _('Defaults are safe'), [ reset, save, apply ]),
-			sections.render(errors, sync, readonly)
-		]);
-		sync();
-	},
+    var reset = E('button', { class: 'mb-btn', click: act('doReset') }, [_('Reset')]);
+    var save = E('button', { class: 'mb-btn', click: act('doSave') }, [_('Save')]);
+    var apply = E('button', { class: 'mb-btn mb-btn-primary', click: act('doApply') }, [_('Save & Apply')]);
 
-	doReset: function() {
-		return store.reset().then(this.draw.bind(this)).catch(function() {
-			window.location.reload();
-		});
-	},
+    function sync() {
+      var bad = locked || Object.keys(errors).length > 0;
+      var dirty = store.dirty();
 
-	doSave: function() {
-		return store.save().catch(function(e) {
-			notice.show(_('Save failed: ') + e, 'error');
-		}).then(this.draw.bind(this));
-	},
+      reset.disabled = locked || !dirty;
+      save.disabled = bad || !dirty;
+      apply.disabled = bad;
+    }
 
-	doApply: function() {
-		return store.apply().then(function() {
-			return api.configApply();
-		}).then(report).catch(function(e) {
-			notice.show(_('Apply failed: ') + e, 'error');
-		}).then(this.draw.bind(this));
-	}
+    dom.content(this.root, [
+      tabs.render('settings'),
+      viewbar.render(_('Settings'), _('Defaults are safe'), [reset, save, apply]),
+      sections.render(errors, sync, readonly),
+    ]);
+    sync();
+  },
+
+  doReset: function () {
+    return store
+      .reset()
+      .then(this.draw.bind(this))
+      .catch(function () {
+        window.location.reload();
+      });
+  },
+
+  doSave: function () {
+    return store
+      .save()
+      .catch(function (e) {
+        notice.show(_('Save failed: ') + e, 'error');
+      })
+      .then(this.draw.bind(this));
+  },
+
+  doApply: function () {
+    return store
+      .apply()
+      .then(function () {
+        return api.configApply();
+      })
+      .then(report)
+      .catch(function (e) {
+        notice.show(_('Apply failed: ') + e, 'error');
+      })
+      .then(this.draw.bind(this));
+  },
 });
