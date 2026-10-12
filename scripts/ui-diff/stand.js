@@ -23,7 +23,7 @@ async function login(page) {
 		if (!res) continue;
 		if (!(await page.locator(field).count())) return;
 		const pass = page.locator(field + ':visible').first();
-		try { await pass.waitFor({ timeout: 20000 }); } catch (e) { continue; }
+		try { await pass.waitFor({ timeout: 20000 }); } catch (_) { continue; }
 		await pass.fill(PASSWORD);
 		await Promise.all([page.waitForLoadState('load'), pass.press('Enter')]);
 		if (!(await page.locator(field + ':visible').count())) return;

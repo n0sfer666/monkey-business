@@ -28,7 +28,7 @@ function stored() {
 	try {
 		return window.localStorage.getItem(KEY) === '1';
 	}
-	catch (e) {
+	catch (_) {
 		return false;
 	}
 }
@@ -37,7 +37,7 @@ function store(on) {
 	try {
 		window.localStorage.setItem(KEY, on ? '1' : '0');
 	}
-	catch (e) {}
+	catch (_) {}
 }
 
 function muted(text) {

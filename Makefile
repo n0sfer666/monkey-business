@@ -3,12 +3,13 @@ INTEG := monkey-business-integ
 ROOT  := $(shell pwd)
 RUN   := docker run --rm -v $(ROOT):/w -w /w $(IMAGE)
 
-.PHONY: help test-image test-build check lint test-unit test-integ test package deploy dev dev-console dev-status dev-ssh dev-down dev-test-split ui-diff clean
+.PHONY: help test-image test-build check lint fmt test-unit test-integ test package deploy dev dev-console dev-status dev-ssh dev-down dev-test-split ui-diff clean
 
 help:
 	@echo "monkey-business — targets:"
 	@echo "  make check       ucode syntax check (types-эквивалент)"
 	@echo "  make lint        shellcheck + ucode syntax + eslint"
+	@echo "  make fmt         eslint --fix + prettier --write по JS (нужен npm ci)"
 	@echo "  make test-unit   ucode unit/snapshot tests (в контейнере)"
 	@echo "  make test-integ  netns integration (Linux/привилегированный контейнер)"
 	@echo "  make test        lint + check + test-unit"
@@ -37,6 +38,9 @@ check: test-image
 
 lint: test-image
 	@$(RUN) sh scripts/lint.sh
+
+fmt: test-image
+	@$(RUN) sh scripts/js-style.sh --fix
 
 test-unit: test-image
 	@$(RUN) sh test/run-unit.sh

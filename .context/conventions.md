@@ -22,6 +22,14 @@
 - POSIX `sh` (не bash). `set -u`. shellcheck-чистый (`-x`).
 - Цикл по `find` — через `while IFS= read -r` + here-doc, не `for in $(...)` (word-splitting).
 
+## JS (LuCI, test/js, scripts/ui-diff)
+- Стиль задают Prettier (ширина 120, 2 пробела, одинарные кавычки, `trailingComma: all`) и ESLint
+  (`eslint.config.mjs`: js/recommended, `eqeqeq` кроме `== null`, пустая строка перед `return` и
+  после объявлений). Руками не выравнивать — `make fmt`.
+- LuCI-вьюхи — скрипты с top-level `return`; имена из `'require x as y'` ESLint берёт как глобалы
+  файла. `var` и `function(){}` в LuCI-коде — норма, не модернизировать.
+- Неиспользуемый параметр/`catch` — имя `_`.
+
 ## Именование
 - ucode-файлы: `snake_case.uc`. Функции: `camelCase`. Константы: `UPPER_SNAKE`.
 - UCI-секции/опции: `snake_case`.

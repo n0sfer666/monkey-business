@@ -13,7 +13,7 @@
 function report(res) {
 	if (res && res.error)
 		return notice.show(_('Apply failed: ') + res.error, 'warning');
-	if (res && res.skipped == 'disabled')
+	if (res && res.skipped === 'disabled')
 		return notice.show(_('Saved. The VPN is off — the new order will apply when you turn it on.'), 'info');
 	notice.show(_('Applied — connected to: ') + ((res && res.server) || '?'), 'info');
 }

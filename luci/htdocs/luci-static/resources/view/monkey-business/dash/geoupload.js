@@ -12,7 +12,7 @@ function send(which, file) {
 		if (!res.ok)
 			throw new Error(res.statusText || _('Upload failed'));
 		var reply = null;
-		try { reply = res.json(); } catch (e) {}
+		try { reply = res.json(); } catch (_) {}
 		if (reply && reply.failure)
 			throw new Error(reply.message || _('Upload failed'));
 	});

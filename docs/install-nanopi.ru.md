@@ -58,6 +58,7 @@
 **Рекомендуется: `make deploy`.** Из каталога репозитория:
 
 ```sh
+npm ci                            # один раз: ESLint + Prettier для проверок JS
 make deploy HOST=root@<router-ip>
 ```
 

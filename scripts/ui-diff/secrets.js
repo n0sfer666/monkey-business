@@ -8,7 +8,7 @@ const DEFAULT_FILE = '.context/notes/vpnon-sub.local';
 function loadSecret(root) {
 	const file = path.resolve(root, process.env.MB_VM_SUB_FILE || DEFAULT_FILE);
 	let text = '';
-	try { text = fs.readFileSync(file, 'utf8'); } catch (e) { text = ''; }
+	try { text = fs.readFileSync(file, 'utf8'); } catch (_) { text = ''; }
 	const m = text.match(/https?:\/\/\S+/);
 	if (!m) throw new Error('no subscription URL to scrub: ' + path.relative(root, file) + ' (MB_VM_SUB_FILE)');
 	return m[0];
@@ -17,7 +17,7 @@ function loadSecret(root) {
 function hostOf(secret) {
 	try {
 		return new URL(secret).hostname.toLowerCase();
-	} catch (e) {
+	} catch (_) {
 		return null;
 	}
 }

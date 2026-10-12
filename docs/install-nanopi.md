@@ -59,6 +59,7 @@ The app needs these packages on the router:
 **Recommended: `make deploy`.** From the repo checkout:
 
 ```sh
+npm ci                            # once: ESLint + Prettier for the JS checks
 make deploy HOST=root@<router-ip>
 ```
 

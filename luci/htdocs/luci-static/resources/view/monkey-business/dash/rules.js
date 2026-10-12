@@ -33,7 +33,7 @@ function hint() {
 }
 
 function applied(res) {
-	if (res && res.skipped == 'disabled')
+	if (res && res.skipped === 'disabled')
 		return notice.show(_('Rules saved. The VPN is off — they will apply when you turn it on.'), 'info');
 	notice.show(_('Routing rules applied.'), 'info');
 }

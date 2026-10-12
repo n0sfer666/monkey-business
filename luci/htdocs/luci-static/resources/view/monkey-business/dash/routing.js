@@ -48,7 +48,7 @@ function field(id, label, el) {
 function applied(res) {
 	if (res && res.error)
 		return notice.show(_('Apply failed: ') + res.error, 'warning');
-	if (res && res.skipped == 'disabled')
+	if (res && res.skipped === 'disabled')
 		return notice.show(_('Saved. The VPN is off — the split applies when you turn it on.'), 'info');
 	notice.show(_('Routing mode applied.'), 'info');
 }
