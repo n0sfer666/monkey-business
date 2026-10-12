@@ -12,5 +12,7 @@ const WD_STATE = '/tmp/mb-watchdog/state';
 // переписывая /etc/config/monkey-business целиком; в застрявшем цикле — раз в BACKOFF, круглые
 // сутки. Теперь это один файл рядом с xray.json, и пишется он только при РЕАЛЬНОЙ смене тега.
 const ACTIVE_FILE = CONF_DIR + '/active';
+const PING_STATE = '/tmp/mb-ping.json';
+const AUTOSWITCH_FILE = '/tmp/mb-autoswitch';
 
-export { CONFIG, CONF_DIR, XRAY_CONF, GEO_DIR, GEO_SCRIPT, WD_STATE, ACTIVE_FILE };
+export { CONFIG, CONF_DIR, XRAY_CONF, GEO_DIR, GEO_SCRIPT, WD_STATE, ACTIVE_FILE, PING_STATE, AUTOSWITCH_FILE };

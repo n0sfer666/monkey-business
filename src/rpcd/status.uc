@@ -3,7 +3,9 @@
 
 import { isTrue } from "../lib/val.uc";
 import { directBypass } from "../lib/bypass.uc";
-import { orderedServers } from "./select.uc";
+import { grouped } from "./select.uc";
+import { pingView } from "./latency.uc";
+import { serverSub, serverId, subId, findSub, activeSubId, subAlive } from "../lib/subs.uc";
 
 function maskUuid(u) {
 	if (u == null || length(u) < 12)
@@ -11,13 +13,23 @@ function maskUuid(u) {
 	return substr(u, 0, 4) + ".." + substr(u, length(u) - 4);
 }
 
+function subscriptionsView(subs, now) {
+	return map(subs, function(sub) {
+		return { id: subId(sub), name: sub.name || subId(sub), alive: subAlive(sub, now) };
+	});
+}
+
 // wd_phase: healthy|reconnecting|down|null(watchdog ещё не тикал / выключен). Фаза `down`
 // означает, что watchdog СНЯЛ туннель и LAN идёт напрямую — без этого UI показывал
 // «Starting…» и выглядел как «сейчас поднимется», хотя ничего уже не поднималось.
+
 function status(ctx) {
 	let g = ctx.getGlobal();
 	let s = ctx.getSelectedServer();
-	let sub = ctx.getSubscription();
+	let subs = ctx.getSubscriptions();
+	let active = activeSubId(subs, g.active_sub);
+	let via = (s != null) ? serverSub(s) : null;
+	let sub = findSub(subs, (via != null) ? via : active) || {};
 	// last_event читается только в проблемных фазах: UI показывает его лишь в плашке
 	// down/reconnecting, а status опрашивается раз в 5с — дампить за ним весь syslog постоянно
 	// значит жечь CPU роутера на строку, которую никто не видит.
@@ -27,6 +39,12 @@ function status(ctx) {
 		enabled: isTrue(g.enabled),
 		running: ctx.serviceRunning(),
 		server: (s != null) ? s.tag : null,
+		server_id: (s != null) ? serverId(s) : null,
+		sub: via,
+		active_sub: active,
+		reserve: via != null && via != active,
+		subscriptions: subscriptionsView(subs, time()),
+		autoswitch: ctx.getAutoswitch ? ctx.getAutoswitch() : null,
 		protocol: (s != null) ? (s.protocol || "vless") : null,
 		routing_mode: g.routing_mode,
 		local_region: g.local_region,
@@ -48,9 +66,21 @@ function status(ctx) {
 function serversList(ctx) {
 	let out = [];
 	let i = 0;
-	for (let s in orderedServers(ctx)) {
+	let subs = ctx.getSubscriptions();
+	let active = activeSubId(subs, ctx.getGlobal().active_sub);
+	let pings = ctx.getPings();
+	for (let s in grouped(ctx.getServers(), subs, active)) {
+		let sub = serverSub(s);
+		let ping = pingView(pings, s);
 		push(out, {
+			id: serverId(s),
 			tag: s.tag,
+			sub: sub,
+			reserve: sub != null && sub != active,
+			disabled: isTrue(s.disabled),
+			auto_disabled: ping.auto_disabled,
+			latency_ms: ping.latency_ms,
+			ping_na: ping.na,
 			protocol: s.protocol || "vless",
 			address: s.address,
 			port: s.port,
@@ -66,7 +96,7 @@ function serversList(ctx) {
 		});
 		i++;
 	}
-	return { servers: out };
+	return { servers: out, active_sub: active };
 }
 
 export { status, serversList, maskUuid };

@@ -106,6 +106,8 @@ make package
 
 1. Вкладка **Servers** — вставьте URL подписки и нажмите *Fetch*, либо добавьте `vless://`- или
    `hysteria2://`-сервер вручную.
+   Второй провайдер — ещё одна *Add subscription*; активная переключается на Dashboard
+   ([несколько подписок](docs/install-nanopi.ru.md#10-несколько-подписок)).
 2. **Dashboard** — *Update geo databases* (скачивает и валидирует geoip/geosite `.dat`).
 3. **Dashboard** — *Install / update hysteria* — только если в списке есть hysteria2-серверы.
 4. **Dashboard** — *Turn on*. *Check exit IP* подтверждает, что трафик уходит через туннель.
@@ -133,7 +135,7 @@ make test-integ  # netns TPROXY-перехват + сгенерированны�
 | `src/lib/` | общие утилиты (разбор URI) |
 | `luci/` | LuCI client-side JS-вьюшки (dashboard / servers / settings) + панель сплита (`routing.js`, рендерится внутри дашборда) + меню + ACL |
 | `root/` | файлы на устройстве: UCI-дефолты, procd-init, рантайм rpcd-плагин |
-| `root/usr/share/monkey-business/` | shell на устройстве: `watchdog.sh` + `probes.sh` + `recovery.sh` + `phases.sh` (самовосстановление), `ruset.sh` (nft-сеты direct-bypass), `geo.sh`, `fetch.sh` (общая загрузка: socks-фолбэк, отсев залипших зеркал по порогу скорости), `boothealth.sh`, `hysteria.sh` (установщик клиента hysteria2), `subupdate.sh` (автообновление подписки по расписанию), `nicfw.sh` + `nicwatch.sh` (USB-сетевуха RTL8153B, см. [гайд §9](docs/install-nanopi.ru.md#9-usb-сетевуха-rtl8153b-прошивка-и-watchdog)) |
+| `root/usr/share/monkey-business/` | shell на устройстве: `watchdog.sh` + `probes.sh` + `recovery.sh` + `phases.sh` + `wdlock.sh` (самовосстановление; лок общий с `subupdate.sh`), `ruset.sh` (nft-сеты direct-bypass), `geo.sh`, `fetch.sh` (общая загрузка: socks-фолбэк, отсев залипших зеркал по порогу скорости), `boothealth.sh`, `hysteria.sh` (установщик клиента hysteria2), `subupdate.sh` (автообновление подписки по расписанию), `nicfw.sh` + `nicwatch.sh` (USB-сетевуха RTL8153B, см. [гайд §9](docs/install-nanopi.ru.md#9-usb-сетевуха-rtl8153b-прошивка-и-watchdog)) |
 | `scripts/firewall/` | nftables TPROXY apply/flush |
 | `scripts/expand-sd.sh` | расширение ext4-раздела SD-карты с macOS ([док](docs/sd-expand-macos.ru.md)) |
 | `test/` | ucode-харнесс + unit/snapshot-тесты + netns-интеграция |
@@ -147,24 +149,44 @@ device-привязан только рантайм rpcd-плагин и shell-�
 Посмотреть приложение на реальной системе ImmortalWrt aarch64 в QEMU до прошивки железа:
 
 ```sh
-make dev-up         # запустить VM headless (при первом запуске скачивает образ)
-make dev-provision  # один раз: DHCP + пароль root + LuCI (~несколько минут)
-make dev-deploy     # установить приложение в VM и перезагрузить rpcd
+make dev            # поднять VM, настроить, задеплоить приложение, добавить подписку
+make dev FIXTURE=1  # то же + засев вариантов UI (вторая подписка, сервер off / ручной / недоступный / hysteria2)
 make dev-test-split # проверить сплит-маршрутизацию: выходной IP/страна через тестовый SOCKS-inbound
+make dev-down       # остановить VM и сбросить её (скачанный образ и geo-базы остаются в кэше)
 ```
 
 Затем откройте **http://localhost:8090** (логин `root` / `root`) → **Services → monkey-business VPN**.
-Переопределите порт через `MB_VM_HTTP_PORT=NNNN make dev-up`, если 8090 занят
-(nushell: `with-env { MB_VM_HTTP_PORT: "NNNN" } { make dev-up }`).
+Переопределите порт через `MB_VM_HTTP_PORT=NNNN make dev`, если 8090 занят
+(nushell: `with-env { MB_VM_HTTP_PORT: "NNNN" } { make dev }`).
+
+`make dev` идемпотентен: каждый шаг выполняется только при необходимости.
+
+- **VM** запускается, если ещё не запущена. При первом запуске образ скачивается в `.dev-vm/cache/`.
+- **Provision** (статический IP 10.0.2.15, пароль root, LuCI) выполняется, если не проходит SSH `root`/`root` или нет `uhttpd`.
+- **Geo**-базы берутся из кэша на хосте `.dev-vm/cache/geo/` (`scripts/dev-geo.sh`), при полном
+  кэше VM их не качает (иначе недостающие скачает deploy в VM). Пустой кэш наполняется с роутера (`root@192.168.1.1`, переопределение: `MB_GEO_R2S`). На
+  каждом запуске кэш сверяется с `.sha256sum` на зеркалах `geo.sh` и перекачивается только при
+  расхождении; без сети берётся как есть. В VM файл копируется, только если его sha256 отличается.
+- **Deploy** выполняется, если хэш `luci/`, `root/`, `src/`, `scripts/` отличается от сохранённого в
+  VM (`/etc/mb-dev-deployed`). Повторный `make dev` после правки кода — это редеплой. Хэш сохраняется
+  только после появления ubus-объекта `monkey-business`.
+- **Подписка** добавляется из `.context/notes/vpnon-sub.local` (переопределяется через
+  `MB_VM_SUB_FILE`), если файл есть, а в VM подписок нет. URL идёт через stdin, в командную
+  строку не попадает и не печатается.
+- **Фикстура** (`FIXTURE=1`): хост отдаёт `scripts/fixture/sub.txt` по HTTP (с
+  `subscription-userinfo`), он добавляется подпиской *Fixture* (автообновление выключено), один сервер
+  выключается, добавляется ручной сервер (`scripts/fixture/seed.uc`). Недоступный сервер смотрит на
+  `127.0.0.1:9` внутри VM и не отвечает при любой сети хоста. Повторный запуск перечитывает фикстуру
+  и ничего не дублирует.
 
 | Команда | Назначение |
 |---------|------------|
-| `make dev-up` | запустить VM (в фоне, headless) |
-| `make dev-provision` | разовая настройка (сеть / пароль / LuCI) |
-| `make dev-deploy` | деплой приложения + рантайм-deps, перезагрузка rpcd |
+| `make dev` | поднять тестовый стенд одной командой (VM, provision, geo, deploy, подписка) |
+| `make dev FIXTURE=1` | то же + засев вариантов UI для сверки с макетом |
 | `make dev-ssh` | SSH в VM (`root` / `root`) |
-| `make dev-rebuild` | полная чистая пересборка VM (если зависает загрузка) |
-| `make dev-down` | остановить VM |
+| `make dev-console` | подключиться к серийной консоли VM |
+| `make dev-status` | статус VM |
+| `make dev-down` | остановить VM и сбросить её; следующий `make dev` — с чистого диска |
 
 > VM использует QEMU user-mode NAT (SSH `:2222→22`, LuCI `:8090→80`) — этого хватает для работы
 > с UI/логикой. Сценарий «LAN-клиент через TPROXY» отрабатывается `make test-integ`, а не этой VM.
@@ -178,24 +200,26 @@ make dev-test-split # проверить сплит-маршрутизацию: 
 На Apple Silicon VM использует **HVF** (почти нативно); на других платформах — медленную TCG-эмуляцию.
 
 - **Загрузка виснет на `procd: - ubus -` (SSH-таймаут «banner exchange») — при reboot ИЛИ при втором
-  `dev-up` уже использованного диска.**
+  загрузке уже использованного диска.**
   Гонка QEMU-эмуляции, при которой `ubusd` не поднимается на любой *не-первой* загрузке
   (openwrt/openwrt#9492, #13600) — **не** приложение и не лечится HVF/virtio-rng. Надёжна только
-  первая загрузка свежескачанного образа. Восстановление — одна команда:
+  первая загрузка свежего диска. `make dev-down` сбрасывает диск, поэтому `make dev` всегда грузит
+  свежий. Если `make dev` упал по таймауту загрузки — сбросьте и начните заново (~5–8 мин):
   ```sh
-  make dev-rebuild   # clean + up + provision + deploy с нуля (~5–8 мин)
+  make dev-down
+  make dev
   ```
-  Чтобы избежать: **держите VM запущенной между сессиями** (не делайте `make dev-down`) и никогда не
-  делайте `reboot` гостя — используйте `make dev-down` / `dev-up`. На реальном NanoPi R2S этой гонки нет.
+  Никогда не делайте `reboot` гостя — используйте `make dev-down` / `make dev`. На реальном NanoPi R2S
+  этой гонки нет.
 
-- **Объект ubus не регистрируется / `Failed to connect to ubus` после `make dev-deploy`.**
+- **Объект ubus не регистрируется / `Failed to connect to ubus` после шага deploy в `make dev`.**
   Обрабатывается текущими скриптами; если столкнулись — исторически было две причины:
   1. **rpcd компилирует ucode-плагины из буфера** (без пути к файлу), поэтому точка входа rpcd
      должна использовать **абсолютный** путь импорта. Относительные `./…`-импорты падают под rpcd
      (но работают через CLI `ucode`, что прячет баг). Транзитивно импортируемые модули `lib/` могут
      оставаться относительными.
   2. **Эмулируемый `ubusd` виснет на `rpcd restart`** (жив, но перестаёт принимать соединения,
-     openwrt#9492). `make dev-deploy` это детектит и **пересоздаёт `ubusd`+`rpcd` свежими** (только
+     openwrt#9492). `make dev` это детектит и **пересоздаёт `ubusd`+`rpcd` свежими** (только
      dev-VM, через `MB_UBUS_RESPAWN=1`; никогда на реальном железе).
   Также macOS `tar` добавляет AppleDouble-файлы `._*` — деплой их вычищает (`COPYFILE_DISABLE=1`);
   иначе они дошли бы и до реального R2S. Проверка на цели:
@@ -203,8 +227,8 @@ make dev-test-split # проверить сплит-маршрутизацию: 
   `ubus call monkey-business status`.
 
 - **Нет интернета в VM / `apk` падает / LuCI не установился.** Гость должен быть на `10.0.2.15`
-  (QEMU SLIRP). `make dev-provision` ставит это статически; проверьте через `make dev-ssh`, затем
-  `ip -4 addr show br-lan`. Если показывает `192.168.1.1` — перезапустите `make dev-provision`.
+  (QEMU SLIRP). Provision в `make dev` ставит это статически; проверьте через `make dev-ssh`, затем
+  `ip -4 addr show br-lan`. Если показывает `192.168.1.1` — `make dev-down`, затем `make dev`.
 
 Для бэкенда (ubus/rpcd/ucode/xray) самая надёжная цель — реальное железо: `deploy-vm.sh` умеет
 целиться в NanoPi R2S по SSH (см. Установка → Вариант A).

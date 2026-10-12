@@ -3,6 +3,7 @@
 import { readfile, writefile } from 'fs';
 import { CONFIG, CONF_DIR, ACTIVE_FILE } from './paths.uc';
 import { reviveServer, flattenServer } from '../lib/servermap.uc';
+import { dropOrphans, subsOrLegacy, findSelected } from '../lib/subs.uc';
 
 function loadSection(cursor, type_) {
 	let res = {};
@@ -10,10 +11,16 @@ function loadSection(cursor, type_) {
 	return res;
 }
 
+function loadSubscriptions(cursor) {
+	let subs = [];
+	cursor.foreach(CONFIG, 'subscription', function(s) { push(subs, s); });
+	return subsOrLegacy(subs);
+}
+
 function loadServers(cursor) {
 	let servers = [];
 	cursor.foreach(CONFIG, 'server', function(s) { push(servers, reviveServer(s)); });
-	return servers;
+	return dropOrphans(servers, loadSubscriptions(cursor));
 }
 
 function storeServers(cursor, servers) {
@@ -25,24 +32,23 @@ function storeServers(cursor, servers) {
 			if (flat[k] != null)
 				cursor.set(CONFIG, name, k, "" + flat[k]);
 	}
-	cursor.commit(CONFIG);
+	return cursor.commit(CONFIG) === true;
+}
+
+function selectedId() {
+	let sel = readfile(ACTIVE_FILE);
+	return (sel != null) ? trim(sel) : '';
 }
 
 function selectedServer(cursor) {
-	let sel = readfile(ACTIVE_FILE);
-	sel = (sel != null) ? trim(sel) : '';
-	let found = null;
-	for (let s in loadServers(cursor))
-		if (s.tag == sel)
-			found = s;
-	return found;
+	return findSelected(loadServers(cursor), selectedId());
 }
 
 // Атомарно и с проверкой: на ro-remounted корне (ровно то состояние, против которого весь этот
 // модуль) молчаливый провал записи оставил бы UI с «Server: none» без единого следа.
-function storeSelected(sh, tag) {
+function storeSelected(sh, id) {
 	let cur = readfile(ACTIVE_FILE);
-	let want = tag + '\n';
+	let want = id + '\n';
 	if (cur == want)
 		return;
 	system('mkdir -p ' + CONF_DIR);
@@ -53,4 +59,4 @@ function storeSelected(sh, tag) {
 	}
 }
 
-export { loadSection, loadServers, storeServers, selectedServer, storeSelected };
+export { loadSection, loadSubscriptions, loadServers, storeServers, selectedId, selectedServer, storeSelected };

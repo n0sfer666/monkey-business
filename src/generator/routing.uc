@@ -2,8 +2,10 @@
 // Порядок здесь — это и есть сплит, поэтому он собран в одном месте.
 
 import { isTrueByDefault, isIpLike } from "../lib/val.uc";
+import { MATCHER, entries, checkEntry } from "../lib/rules.uc";
 
 const GEOSITE_REGION = { ru: "category-ru", cn: "cn", ir: "category-ir" };
+const GFW_TAG = { cn: "gfw" };
 
 function geositeRegion(region) {
 	return GEOSITE_REGION[region] || region;
@@ -12,20 +14,19 @@ function geositeRegion(region) {
 // строки (через \n или ,) -> { domains:[...], ips:[...] }; поддержка geoip:/geosite:
 function classifyList(str) {
 	let domains = [], ips = [];
-	if (str == null || str == "")
-		return { domains: domains, ips: ips };
-	let norm = replace(str, ",", "\n");
-	for (let line in split(norm, "\n")) {
-		let t = trim(line);
-		if (t == "" || substr(t, 0, 1) == "#")
+	for (let e in entries(str)) {
+		let t = e.value;
+		if (checkEntry(t) != null)
 			continue;
-		if (index(t, "geosite:") == 0)
-			push(domains, t);
-		else if (index(t, "geoip:") == 0)
-			push(ips, t);
-		else if (substr(t, 0, 2) == "*." && length(t) > 2)
+		let geo = match(t, /^(geosite|geoip):(.*)$/i);
+		let m = match(t, MATCHER);
+		if (geo != null)
+			push(lc(geo[1]) == "geosite" ? domains : ips, lc(geo[1]) + ":" + geo[2]);
+		else if (m != null)
+			push(domains, lc(m[1]) + ":" + m[2]);
+		else if (substr(t, 0, 2) == "*.")
 			push(domains, "domain:" + substr(t, 2));
-		else if (isIpLike(t))
+		else if (isIpLike(t) || index(t, ":") >= 0)
 			push(ips, t);
 		else
 			push(domains, t);
@@ -52,8 +53,8 @@ function modeRules(mode, region, other) {
 		];
 	if (mode == "gfwlist") {
 		let rules = [ { type: "field", ip: ["geoip:private"], outboundTag: "direct" } ];
-		if (!other)
-			push(rules, { type: "field", domain: ["geosite:geolocation-!" + region], outboundTag: "proxy" });
+		if (GFW_TAG[region])
+			push(rules, { type: "field", domain: ["geosite:" + GFW_TAG[region]], outboundTag: "proxy" });
 		push(rules, { type: "field", network: "tcp,udp", outboundTag: "direct" });
 		return rules;
 	}

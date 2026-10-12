@@ -15,7 +15,7 @@ while IFS= read -r f; do
 		rc=1
 	fi
 done <<EOF
-$(find luci -name '*.js' 2>/dev/null | sort)
+$(find luci scripts/ui-diff -name '*.js' 2>/dev/null | sort)
 EOF
 
 if [ "$rc" -eq 0 ]; then

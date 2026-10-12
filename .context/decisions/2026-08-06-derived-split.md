@@ -79,3 +79,7 @@
   в direct существуют ТОЛЬКО в `bypass-local`.
 
 `make lint && make check && make test-unit` — зелёные. Живая проверка на R2S — за пользователем.
+
+**Обновление 2026-10-12.** Тега `geolocation-!<region>` в geosite.dat нет — gfwlist падал на `xray -test`.
+Теперь в туннель идёт `geosite:gfw` только для cn; ru/ir/other — лишь custom Via VPN (`GFW_TAG` в
+`src/generator/routing.uc`, чипы в `model/routing.js`).

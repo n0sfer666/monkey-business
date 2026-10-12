@@ -10,6 +10,15 @@
 - **Интеграция** (T3): netns-харнесс `test/integ/*.sh` (ip netns + nft + xray + локальный upstream).
   Прогон: `make test-integ` (Linux/привилегированный контейнер).
 - **Snapshot:** golden JSON в `test/fixtures/xray_*.json`; при изменении генератора — обновить.
+- **LuCI JS** (T2): `test/js/*.test.js` под `node --test` (node в образе), гоняется в `make test-unit`.
+  Загрузчик `test/js/luci.js` подменяет `baseclass.extend` и `_()`, резолвит только
+  `view.monkey-business.*`; модуль, тянущий LuCI (`uci`, `ui`, `dom`), падает — так `model/` держится
+  без DOM. Вид и поведение экранов — ручной runbook на R2S (`specs/2026-10-10-compact-ui-runbook.md`).
+- **Приёмка UI** (T3): критерии `specs/2026-10-10-compact-ui-acceptance.md`, последний аудит
+  `specs/2026-10-10-compact-ui-audit.md`. Playwright Chromium + WebKit против dev-VM; борды макета
+  рендерятся локально (`support.js` = dc-runtime, состояния через `window.__dcSetProps`). WebKit
+  обязателен: Safari не фокусирует кнопки по Tab и клику — ловушки фокуса и возврат на триггер
+  ломаются только там.
 
 ## Правило переосмысления тестов
 Шаг, меняющий контракт предыдущего, ОБЯЗАН ревизовать его тесты:
@@ -25,3 +34,5 @@
 
 ## Что НЕ автоматизируется (blocked)
 Реальное подключение к VPNON, прошивка/перф на R2S, визуальная проверка LuCI на живой VM.
+Сверку LuCI с макетом механизирует `make ui-diff` (`scripts/ui-diff/README.md`), но вердикт по
+отчёту выносит человек.

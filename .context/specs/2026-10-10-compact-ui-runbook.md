@@ -1,0 +1,462 @@
+# Компактный UI — runbook ручной проверки
+
+Прогоняется после каждой итерации в dev-VM (`make dev`, LuCI на
+`http://localhost:8090`, ssh `root@localhost -p 2222`); на R2S — только готовая фича. Устаревший шаг
+править в том же коммите, где меняется поведение.
+
+## Подготовка
+1. Деплой: `make dev` (VM, повторный запуск после правок — редеплой) или `make deploy HOST=root@192.168.1.1` (R2S).
+2. На роутере: `cd /www/luci-static/resources/view/monkey-business && ls kit model srv set dash`
+   — 26 / 14 / 13 / 1 / 16 файлов; `ls commit.js subsection.js pinggrid.js serverfields.js serverlink.js
+   serveropt.js hysteria.js routing.js serverlist.js status.js traffic.js substatus.js icons.js` — все
+   «No such file» (на свежем стенде; deploy старые файлы не удаляет).
+3. В браузере жёсткая перезагрузка (Cmd+Shift+R) на каждой странице приложения.
+4. Открыть DevTools → Console: на всех шагах ниже — без красных ошибок.
+   Всплывающее «XHR request aborted by browser» и пустой вид на стенде — обрыв slirp-проброса QEMU
+   (`localhost:8090`), не код: перезагрузить страницу. На R2S не воспроизводится.
+5. Вкладки: на Dashboard, Servers и Settings первой строкой «Monkey Business» и Dashboard · Servers ·
+   Settings. Вкладки — тот же сегментный переключатель (`kit/seg`), что фильтры серверов на Dashboard
+   и Servers: рамка, активный сегмент с фоном и кольцом, вид одинаковый на десктопе и мобилке. На
+   десктопе справа от заголовка, на мобилке на всю ширину под ним, высота 36px. Вкладок LuCI и второго заголовка страницы нет. Переход
+   вкладкой, пунктом меню LuCI (Services → Monkey Business), «Назад» и перезагрузкой открывает
+   нужную страницу, активна её вкладка. 722 — строка, 720 — сегменты.
+
+## Итерация 1 — Settings, тема, api.js
+
+### Тема
+1. System → System → Language and Style → Design: `bootstrap-dark` → Settings тёмная (фон панелей
+   `#212429`, текст светлый).
+2. `bootstrap-light` → светлая палитра «холодный серый» (панели белые, рамки `#dde1e6`, текст
+   `#1c2025`). Контраст подсказок читаемый.
+3. `bootstrap` (auto) → следует системной теме macOS (переключить Appearance — меняется без
+   ошибок после перезагрузки страницы).
+
+### Раскладка
+1. Окно ≥ 1100px: три панели General / DNS / Anti-DPI в ряд, кнопки Reset / Save / Save & Apply —
+   справа сверху, слева от них — «Settings» и серый подзаголовок «Defaults are safe», футера LuCI с
+   кнопками внизу нет. Рамки строк — снизу, у последней строки панели рамки нет.
+2. Сузить до ~800px: панели переносятся (2 + 1), ничего не обрезано, нет горизонтального скролла.
+3. ≤ 720px (DevTools → iPhone 12/14, и с телефона): одна колонка; селекты Log level / DNS mode /
+   TLS fingerprint и поля Direct DNS / DoH URL — под подписью на всю ширину; порт — справа 96px;
+   чекбоксы ~22px; кнопки — липкая панель внизу экрана, Save & Apply растянута. Подсказки короткие:
+   Kill-switch — «Drop LAN traffic instead of leaking it direct», Block IPv6 — «Nothing leaks around
+   the IPv4 tunnel», DNS — «Split: local domains direct, foreign over DoH», DoH URL — «Everything via
+   the VPN resolves here». Шире 720 — полные тексты.
+4. Ввести порт 99999 → под строкой порта красная ошибка «Enter a number from 1 to 65535», рамка поля
+   красная, Save и Save & Apply неактивны; исправить на корректный → ошибка исчезла.
+5. Сверка с макетом: `make ui-diff SCREEN=settings WIDTH=1280` и `WIDTH=390` (стенд `make dev
+   FIXTURE=1`) — вне шума 0, контраст 0, console 0; классы шума — в аудите, раздел «Шум ui-diff
+   (Settings 1280/390)».
+
+### Staged-модель
+1. Открыть Settings без правок: Reset и Save неактивны, Save & Apply активна.
+2. Снять Kill-switch → Reset и Save активны. Вернуть галку → снова неактивны.
+3. Поменять Log level → Reset → значение вернулось, кнопки неактивны.
+4. Поменять Log level → Save → в шапке LuCI появился индикатор «Unsaved Changes: 1»,
+   Save неактивна. На роутере `uci changes monkey-business` показывает правку.
+5. Save & Apply → уведомление «Configuration applied.» (VPN включён) или «Saved. The VPN is off —
+   …» (выключен); индикатор пропал; `uci get monkey-business.global.log_level` = новое значение;
+   `uci changes monkey-business` пусто.
+6. Флаги пишутся явно: снять Block IPv6 → Save & Apply → `uci get monkey-business.global.ipv6_block`
+   = `0`; вернуть → `1`. Вернуть всё к исходным значениям.
+7. Нажать Save & Apply и сразу Reset — Reset и Save неактивны, пока операция идёт.
+
+### Валидация порта
+1. TPROXY port = `0`, `70000`, `abc`, пусто → под строкой красный текст «Enter a number from 1 to
+   65535», рамка поля красная, Save и Save & Apply неактивны.
+2. Вернуть `12345` → ошибка исчезла, кнопки активны.
+
+### Регресс после переноса RPC в api.js
+1. Dashboard: статус, трафик, режим маршрутизации (сменить и вернуть), Split lists (Save),
+   Geo (статус размеров), Hysteria (статус), список серверов с Ping — всё работает.
+2. Turn off → Turn on: подключается, статус Running.
+3. Check exit — показывает IP.
+4. Servers: Ping all, переключение подписки, Fetch у подписки, Save & Apply формы серверов —
+   индикатор «Unsaved Changes» гаснет, конфиг применяется. Save & Apply без правок дважды подряд —
+   оба раза «Applied — connected to…», без «ubus code 5: No data received».
+5. Добавить ручной сервер по ссылке — поля заполнились (parse_uri).
+
+## Итерация 2 — Servers: подписки
+
+URL подписки в логи, скриншоты и отчёты не попадает. `<S>` — id новой подписки
+(`uci show monkey-business | grep =subscription`).
+
+### Панель
+1. Servers ≥ 1100px: над таблицей панель *Subscriptions* — шапка с подписью «the active one is used
+   first…» и кнопкой *+ Add subscription*, строка заголовков Role / Name / URL / Auto-update /
+   Traffic, по строке на подписку (бейдж *active* у активной, *reserve* у остальных). Старой
+   CBI-секции *Subscriptions* с *Fetch subscription* нет.
+2. 722 / 800px: колонки сжимаются, Fetch / Ping не переносятся, горизонтального скролла нет.
+3. ≤ 720px: строка — карточка (бейдж, имя, корзина; URL на всю ширину; полоса трафика; слева две
+   строки: «X / Y GB» и дата окончания без «Updated»; справа Fetch / Ping 13px; *Auto-update* с
+   переключателем и ползунком 10 min…2 h); заголовков колонок нет, кнопка — *+ Add*; корзина 36px с
+   видимой иконкой у правого края, на одной вертикали с правым краем Ping. Подписка без данных о трафике —
+   «—» слева.
+4. Тёмная и светлая тема: панель и строки в палитре Settings.
+5. ≤ 720px, сворачивание: при каждом заходе на Servers панель свёрнута — видна только шапка
+   (шеврон ›, «Subscriptions», под ним сводка «<активная> · +N reserve», справа *+ Add*), высота
+   ~58px. Клик или Enter по шеврону раскрывает (шеврон ⌄, строки видны), повторный сворачивает,
+   фокус остаётся на шевроне. После reload снова свёрнута. Раскрыта сама, если подписок нет, после
+   успешного *+ Add* и при несохранённых правках подписок (переименовать → уйти на 1280 → вернуться
+   на 390: раскрыта; Reset → при следующем заходе свёрнута). ≥ 721px: шеврона нет, панель как в п.1.
+
+### Add
+1. *+ Add subscription* → шторка, имя по умолчанию «Subscription N+1». Пустой URL или `ftp://x` →
+   подсказка под полем, *Add & fetch* неактивна.
+2. URL недоступного хоста (`https://192.0.2.1/nope`) → ~25 с *Fetching…*, затем плашка «Couldn't
+   fetch the subscription — fetch failed — nothing was saved»; `uci show monkey-business | grep
+   =subscription` — новой секции нет (и через минуту тоже нет).
+   Пока идёт *Fetching…*, Esc и клик по подложке шторку не закрывают.
+3. Реальный URL → шторка закрылась без перезагрузки страницы, серверы в таблице, уведомление
+   «Servers fetched for “…”: N»; `uci show monkey-business | grep -c ".sub='<S>'"` = N.
+4. Свежая установка (пустая дефолтная `subscription`): подсказка шторки «Becomes the active
+   subscription», новая строка *active*, `uci get monkey-business.global.active_sub` = `<S>`. Если
+   активная уже с серверами — подсказка «A reserve until…», новая строка *reserve*.
+
+### Инлайн-правки
+1. URL в строке показан как `https://••••••/••••••`; фокус — реальный URL, Esc/blur — снова маска.
+2. Name пустой → красная рамка, не сохраняется; Enter на новом имени — индикатор Unsaved Changes.
+3. Интервал (десктоп): `5` → подсказка «Minimum is 10 min…», после Enter — «every 10 min»; `500` →
+   «every 2 h»; `0` → «off». Легаси 86400 показан как «every 2 h».
+4. *Save & Apply* → `uci get monkey-business.<S>.name / .auto_update / .update_interval` — новые
+   значения (7200 для 2 h, `auto_update=0` при off, интервал при этом сохранён); уведомлений
+   «Servers fetched» нет (URL не менялся).
+5. Мобилка: ползунок на 30 → *Save & Apply* → `update_interval=1800`; переключатель off →
+   `auto_update=0`, `update_interval` остался 1800.
+6. Правка имени → *Reset* → прежнее имя.
+7. Сменить URL подписки → *Save & Apply* → «Servers fetched for “…”», серверы перечитаны без
+   перезагрузки страницы.
+
+### Fetch / Ping / Delete
+1. *Fetch* у подписки без URL → «Enter a subscription URL first.»; с URL → страницу закрывает
+   шторка «Fetching “…”…» (Esc не закрывает), затем «Servers fetched for “…”: N».
+2. Переименовать другую подписку (Enter, без Save) → *Fetch* → `uci get
+   monkey-business.<sid>.name` уже новое, `uci changes monkey-business` пусто, имя в строке осталось.
+3. *Ping* → «Ping: N ok, N auto-off, N n/a», колонка *Ping* таблицы заполнилась.
+4. Корзина у активной → шторка «Delete “…”?» с числом серверов и тем, какая станет активной;
+   *Cancel* — ничего не изменилось. *Delete* → строка и её серверы пропали из таблицы, ручные на
+   месте, следующая подписка *active*; *Save & Apply* → секции нет, `global.active_sub` = следующая,
+   серверов с `.sub='<удалённая>'` нет.
+5. Корзина у подписки → *Delete* → сразу *Fetch* у другой (без Save & Apply) → секции удалённой нет,
+   серверов с `.sub='<удалённая>'` нет (раньше воскресали сиротами).
+6. Добавить ручной сервер (без Save) → *Fetch* у подписки → после ответа список перечитан: сервер
+   на месте, *Save* неактивна, карандаш — его ссылка, фокус на *Fetch* той же подписки. При ошибке
+   скачивания список тоже перечитан. После *Add & fetch* шторка закрыта, фокус на *+ Add subscription*.
+7. Добавить сервер по ссылке, переставить его, подменить `callOrder` (как в «Перестановка 5») →
+   *Fetch* → «Fetch error: Save failed: order not saved: …», строки серверов перерисованы (нет
+   строк с временным sid), карандаш у нового — его ссылка, корзина без ошибок, фокус на *Fetch*.
+8. Сменить интервал или URL подписки и сразу кликнуть Off/карандаш/⋮ у сервера → клик срабатывает
+   с первого раза (панель серверов не перерисовывается). Переименовать подписку и, не нажимая Enter,
+   кликнуть Off у сервера или сегмент фильтра этой подписки → клик срабатывает, колонка
+   *Subscription*, подпись под именем (мобилка) и фильтр — с новым именем. Переименовать в заметно
+   более длинное имя и, не нажимая Enter, кликнуть сегмент правее (*Manual*) → он выбран с первого
+   клика (подписи обновляются после отпускания кнопки мыши; по Tab/Enter — сразу). На маке: правый
+   клик (или ctrl+click) по странице → Esc → Tab в имя подписки, переименовать, Enter → подписи
+   обновились сразу, без следующего клика.
+
+### Подписка в фоне
+`subupdate.sh` раз в минуту по cron: интервал < 600 c поднимается до 600, > 7200 опускается до 7200
+(тесты `subupdate_test.sh` 6/6a/6b).
+
+## Итерация 3 — Servers: серверы
+
+Ссылки серверов в логи, скриншоты и отчёты не попадают. `<M>` — имя секции ручного сервера
+(`uci -X show monkey-business | grep =server`; у легаси-ручного опции `source` нет).
+
+### Грид
+1. 1280px: под подписками панель *Servers* — фильтр All / <подписки> / Manual, *Ping all*, *Sort by
+   ping*, *+ Add server*; колонки # / Name / Address / Protocol / Subscription / Ping / Off; у ручного —
+   карандаш и корзина, у подписочного — только корзина. Старого CBI-грида нет.
+2. 800 / 722px: колонки Address нет, имя обрезается многоточием и не наезжает на Protocol, бейдж
+   *off* виден; горизонтального скролла нет.
+3. ≤ 720px: строка высотой ~51px — grip / «N. имя» + «протокол · подписка» / пинг / ⋮; пинг —
+   мс цветом, auto-off и n/a — только иконка с подсказкой (без текста). Шапка: шестерёнка слева,
+   справа квадратные 36px Ping all / Sort / «+» (только иконки); фильтр — тот же переключатель, что вкладки, в режиме
+   compact (сегменты 32px на всю ширину; так же группы серверов на Dashboard). Не влезает — одна
+   строка с прокруткой по горизонтали, по краям стрелки ‹ › без рамки на фейде, центр по высоте; у
+   начала ‹ нет, у конца › нет; клик по стрелке прокручивает; выбранный сегмент при открытии виден; grip слева декоративный (не в Tab-порядке); у «+» доступное имя «Add server». Под
+   непустым списком строка-подсказка «⋮ — Ping, Edit… Gear — reorder…», при пустом её нет. Бар Reset / Save / Save & Apply прилип к низу.
+4. Протокол `vless` без TLS показан как «vless / no TLS», не «none»; hysteria2 — без security.
+5. 320–390px: «N ms» в строке статуса Dashboard и в списках серверов не разрывается переносом между
+   числом и «ms» (между ними неразрывный пробел).
+
+### Ping / Sort / Off
+1. *Ping all* → кнопка «Pinging N servers…», *Sort by ping* неактивна; затем полосы и «N ms»
+   (≤ 100 — зелёный). Десктоп: hysteria2 — иконка «круг с чертой», подсказка «hysteria2 runs over UDP…»;
+   без ответа — перечёркнутый Wi-Fi, подсказка «No reply to ping · auto-off…», строка приглушена.
+   ≤ 720px — текстом: «n/a · UDP», «auto-off».
+2. *Sort by ping* → «Sorted by ping. Press “Save & Apply”…», порядок по возрастанию, без замера —
+   в конце; повторно — «Already in ping order.». При фильтре ≠ All кнопка неактивна.
+3. Off у строки (клик или Space) → бейдж *off*, *Save* активна, фокус на Off той же строки. Снять Off у сервера, выключенного в UCI → бейдж
+   пропал, *Save & Apply* → `uci get monkey-business.<sid>.disabled` = `0`.
+4. Фильтр стрелками и кликом → фокус на выбранном сегменте. *Ping all* с клавиатуры (Enter) → во
+   время пинга и после фокус на *Ping all*; то же у *Ping* и *Fetch* подписки. Пока идёт *Ping all*,
+   Off у строки не снимает «Pinging N servers…», *Sort by ping* неактивна, повторный Enter не шлёт
+   второй `servers_ping`.
+
+### Перестановка
+1. Десктоп: перетащить строку за grip — порядок сменился; фокус на grip + ArrowDown / ArrowUp —
+   строка сдвинулась, фокус остался на её grip. При фильтре ≠ All grip скрыт и не в Tab-порядке.
+2. Мобилка: шестерёнка (становится зелёной) → плитки 3 в ряд («N» + бейдж off, имя, пинг) и
+   подсказка; тап по плитке — она залита синим с рамкой 2px и кольцом, остальные с пунктирной
+   рамкой, подсказка синяя «Moving "…" — tap the tile whose place it takes»; тап по другой — заняла
+   её место; шестерёнка — снова строки. Скринридер: плитка читается «N. имя, off, 15 ms», выбор —
+   через pressed; «Moving …» объявляется скрытым live-регионом, который не пересоздаётся при перерисовке.
+   С клавиатуры фокус остаётся на плитке, по которой нажали.
+3. *Reset* возвращает порядок. Пока идёт *Save* / *Save & Apply*, страница неактивна (клики и Tab
+   не проходят), после — фокус на прежней кнопке, если она ещё активна; *Save* после сохранения
+   неактивна. *Save & Apply* → `uci show monkey-business | grep =server` в новом
+   порядке, xray перезапущен (pid сменился), если VPN включён.
+4. В одном Save: удалить ручной сервер, добавить два по ссылкам, перетащить строку наверх → *Save*:
+   порядок в UI тот же, карандаш у каждого нового — своя ссылка (placeholder — его тег);
+   *Save & Apply* → `uci -X show monkey-business` в том же порядке, удалённого нет.
+5. Сбой перестановки на бэкенде (в DevTools: `L.require('uci').then(u => u.callOrder = () =>
+   Promise.reject(new Error('x')))`) → перетащить строку → *Save* → «Save failed: …», порядок в UI
+   на месте, *Save* активна; вернуть `callOrder` (перезагрузкой нельзя — правки пропадут), *Save*
+   → после перезагрузки страницы порядок тот же. Если в том же Save был добавлен сервер по ссылке —
+   «Save failed: order not saved: …», карандаш у нового сервера показывает его ссылку.
+
+### ⋮-меню (мобилка)
+1. ⋮ (раскрытый — с синей рамкой) → Ping / Edit (у ручных) / разделитель / Turn off|on / Delete,
+   у каждого пункта иконка слева; с клавиатуры у пункта в фокусе синее кольцо; Ping только у серверов, известных бэкенду
+   (только что добавленный до Save — без Ping); фокус на первом пункте; стрелки ходят; Esc закрывает
+   и возвращает фокус на ⋮; тап или свайп вне меню только закрывают его — страница этим жестом не
+   прокручивается, кнопка под пальцем не срабатывает; клик мышью вне меню закрывает и срабатывает.
+   ⋮ у последней строки
+   внизу экрана открывает меню, а не закрывает его сразу. Открыть ⋮ во время *Ping all* → по
+   окончании пинга меню закрыто, фокус на ⋮ той же строки.
+2. *Turn on* у выключенного → бейдж пропал, в меню теперь *Turn off*, фокус на ⋮ той же строки.
+
+### Шторка сервера
+1. *+ Add server* → шторка (на мобилке снизу): поле Link, Name · optional. `vmess://abc` →
+   «Protocol vmess is not supported», *Add* неактивна.
+2. Валидная vless-ссылка → «Valid link», чипы VLESS / host:port / Reality / XHTTP, placeholder Name
+   = тег из ссылки. Ссылка уже в списке → «Valid, but this server is already in the list as “…”».
+3. *Add* → строка *manual* в конце. Пробел в конце ссылки не гасит *Add*. Карандаш (до Save) →
+   ссылка предзаполнена, имя — текущее; задать Name, *Save*, снова карандаш → placeholder — новое имя.
+   Двойной клик по карандашу открывает одну шторку. Открыть карандаш или корзину во время *Ping
+   all*, дождаться конца пинга, Esc / Cancel → фокус на той же кнопке строки.
+4. *Save* (без Apply), Off у любой строки, *Reset* → карандаш у добавленного: ссылка на месте,
+   имя — заданное. Перезагрузка страницы до Apply → карандаш: «The router has no saved link for
+   this server yet. Paste its link again.»
+5. После *Save & Apply* карандаш у `<M>` → ссылка пришла с бэкенда (`server_link`), вердикт
+   «Valid link»; новая ссылка заменяет сервер, `uci show monkey-business.<M>` — плоские поля, без
+   `transport` / `reality` / `obfs`.
+6. Бэкенд: `ubus call monkey-business server_link '{"section":"<M>"}'` → `{ok, link}`; у
+   подписочного → `not_manual`; несуществующий → `not_found`.
+
+### Удаление
+1. Корзина у ручного → «Delete “…”? It is a manual server, so it is removed for good…», кнопки
+   Cancel / Delete. *Delete* → строка пропала, фокус на корзине следующей строки (у последней —
+   предыдущей); *Save & Apply* → секции нет. Удалить единственную подписку → фокус на
+   *+ Add subscription*.
+2. Корзина у подписочного → «It comes back with the next update of “…”…», кнопки Cancel /
+   Turn off / Delete; *Turn off* → бейдж *off*, строка на месте.
+
+### Только чтение
+Логин с одним read-ACL: `uci add rpcd login; uci set rpcd.@login[-1].username=ro; uci set
+rpcd.@login[-1].password='$p$root'; uci add_list rpcd.@login[-1].read='*'; uci commit rpcd;
+/etc/init.d/rpcd reload`, войти как `ro`. После проверки — `uci delete rpcd.@login[-1]` и commit.
+1. Reset / Save / Save & Apply неактивны. Нет *+ Add subscription*, *Fetch* и корзины у подписок,
+   имя, URL и интервал подписки — только чтение (поля `readonly`, ползунок и переключатель
+   `disabled`, но видны скринридеру); *Ping* подписки работает.
+2. Нет *Sort by ping*, *+ Add server*, шестерёнки, grip, карандаша и корзины; Off не переключается.
+   Фильтр и *Ping all* работают. На мобилке в ⋮ только *Ping*; у сервера без Ping ⋮ скрыт.
+
+## Итерация 4 — Dashboard (сессия 6)
+
+Модалки Routing / Geo — итерация 5.
+IP выхода и ссылки серверов в скриншоты и отчёты не попадают.
+
+### Вид
+1. `make ui-diff SCREEN=dashboard WIDTH=1280` — состояния `Main` default / missing / unlimited /
+   hidden; `WIDTH=390` — `MobileDashboard` default / missing. Хуки ssh сами прячут geosite.dat и
+   снимают лимит трафика и возвращают всё назад (`ls /usr/share/xray/*.uidiff` и
+   `/tmp/mb-uidiff.conf` после прогона — нет). Расхождений вне раздела «Шум ui-diff (Dashboard)»
+   аудита нет.
+2. 1280: слева Status (заголовок, строка фазы, Turn on/off, Subscription, Exit IP + *Check*,
+   Traffic + *Hide*), Routing (Mode / Region, чипы, Custom rules *Edit*), Components (geo data,
+   hysteria2); справа Servers — фильтр-группы, *Ping all*, *Sort by ping*, строки 45px с *Connect*.
+3. ≤ 1000px — одна колонка; подпись подписки короткая («+N reserve»), не наезжает на Exit IP.
+   1024 / 800 / 721 / 390, Chromium и WebKit, тёмная и светлая — горизонтального скролла нет.
+4. ≤ 720px: Exit IP и *Check* в одну строку, кнопка Turn on/off на всю ширину.
+
+### Действия (VPN выключен → включён)
+1. *Ping all* → у строк «N ms» цветом.
+2. *Sort by ping* при выключенном VPN → «Sorted by ping. The VPN is off — the order applies when
+   you turn it on.»; включён → «Sorted by ping.»; повтор → «Already sorted by ping.». Несохранённые
+   правки на вкладке Servers → отказ «the Servers tab has unsaved changes…», порядок не тронут.
+3. *Turn on* → «Connecting…» → заголовок Connected; *Turn off* → Off.
+4. *Check* → «checking…» → `<IP> · <код страны>`.
+5. *Connect* у неактивной строки → «Connected to <имя>.», строка помечена активной; pid xray
+   сменился (`pgrep -f [x]ray`). Двойной клик — один запрос, строки и *Sort* заблокированы до ответа.
+   *Connect* у уже выбранного сервера: VPN включён → «Already on …»; выключен → «… is now first.
+   The VPN is off…».
+6. Region → cn → *Save & Apply* → «Routing mode applied.»; вернуть ru. Mode «Only blocked via VPN»:
+   cn → чип «geosite:gfw via VPN», в `/etc/monkey-business/xray.json` правило `geosite:gfw` → proxy;
+   ru/ir/other → чип «only your Via VPN list», geosite-правила режима нет, apply проходит.
+7. *Edit* у Custom rules и *Update…* у geo data → модалки итерации 5; Esc закрывает, фокус на
+   кнопке.
+8. Subscription → другая подписка → страница перечитана, выбрана она; вернуть.
+9. hysteria2 *Update* / *Install* → «installing…», затем «hysteria client installed.»; загрузка
+   дольше ~16 мин → «The download is still running…», строка остаётся installed (если был).
+   Перезагрузка страницы во время загрузки → строка снова «updating…», ссылка неактивна. Повтор после
+   ошибки (`echo "error: x" > /tmp/mb-hysteria.state`) → старая ошибка не всплывает.
+10. Нет geosite.dat (`mv /usr/share/xray/geosite.dat{,.bak}`) → плашка «Can't turn on: geo data is missing (geosite.dat)…»,
+    *Turn on* неактивна; вернуть файл.
+
+## Итерация 5 — модалки Routing / Geo (сессия 7)
+
+Стенд `make dev FIXTURE=1`. После проверок `custom_direct` / `custom_proxy` и `geo.*_url` вернуть
+как были, `/tmp/mb-uidiff.conf` и `/tmp/mb-upload-*.dat` после прогона — нет.
+
+### Вид
+1. `make ui-diff SCREEN=RoutingModal` (1280, состояния errors / clean), `SCREEN=MobileRoutingModal`
+   (390, errors / direct), `SCREEN=GeoModal`, `SCREEN=MobileGeoModal` — расхождений вне раздела
+   «Шум ui-diff (модалки Routing / Geo)» аудита нет. Хуки сами пишут правила / URL и возвращают их.
+2. Custom rules 1280: две колонки Direct / Via VPN со счётчиками, номера строк, подсказка «One entry
+   per line…»; 390: табы Via VPN / Direct с счётчиком или «N invalid», одна textarea на экран.
+3. Geo databases: строки geoip / geosite с размером и датой, URL-поля, *Upload*, *Update now*.
+4. 1024 / 800 / 721 / 390, Chromium и WebKit, тёмная и светлая — горизонтального скролла нет, Tab
+   ходит по кругу внутри, Esc закрывает, фокус возвращается на *Edit* / *Update…*.
+
+### Custom rules
+1. Набрать в Via VPN `bad one` → через ~400 мс после последней клавиши один `routing_check`; строка
+   подсвечена, номер красный, блок «Line N · …» с причиной, *Save & Apply* неактивна, внизу «Fix the
+   highlighted lines to save». Стереть → кнопка активна.
+2. На 390 ошибка в неоткрытом табе: бейдж «1 invalid» на табе, подпись внизу «1 line needs fixing ·
+   1 on the other tab — fix to save».
+3. Отказ бэкенда: `ubus call monkey-business set_routing '{"direct":"a b","proxy":""}'` →
+   `{"error":"invalid_rules","items":[…]}`, `uci get monkey-business.global.custom_direct` не
+   изменился.
+4. *Save & Apply* при выключенном VPN → «Rules saved. The VPN is off — they will apply when you turn
+   it on.»; при включённом → «Routing rules applied.», pid xray сменился.
+5. Ошибка xray: VPN включён, правило `geosite:nosuch` → «Rules not saved: xray rejected the config: …»
+   с текстом xray (не общий «validation failed»), шторка открыта, pid xray прежний,
+   `uci get monkey-business.global.custom_proxy` — прежнее значение. Откат при ЛЮБОЙ ошибке apply
+   (нет серверов, geo missing, deadline), как у `set_mode`: файрвол читает UCI, xray.json — старый.
+6. VPN включён (при выключенном `config_apply` → `skipped: disabled`). `uci set …custom_proxy='bad one';
+   uci commit` в обход UI, затем `ubus call monkey-business
+   config_apply` → конфиг собран без строки, `logread -e 'custom rules skipped'` — «rpcd: custom
+   rules skipped: proxy line 1 (space)»; «последнее событие» на дашборде не меняется.
+
+### Geo databases
+1. *Update now* → «Updating…», затем «Geo databases updated & validated.» / «Already up to date —
+   nothing changed.», модалка закрылась, строка Components обновилась.
+2. *Upload* geoip валидным `.dat` (скопировать `/usr/share/xray/geoip.dat` с роутера) → принят;
+   «geoip.dat installed & validated.»; мусор (текстовый файл) → «Rejected: …», рабочий файл не
+   тронут (`md5sum`).
+3. URL-поля сохраняются при *Update now* («URLs are saved when you update»), переживают
+   перезагрузку страницы; пустое — источник по умолчанию.
+
+## Итерация 6 — routing и readonly (сессия 8)
+
+### ::ffff: в custom Via VPN
+1. VPN включён, Via VPN `::ffff:198.51.100.7` и `::ffff:203.0.113.0/24` → *Save & Apply* →
+   `nft list set inet fw4 mb_force4` содержит `198.51.100.7` и `203.0.113.0/24`; в v6-сет не попали.
+2. `::ffff:1.2.3.0/33` или `/120` → строка подсвечена (prefix, предел 32): xray трактует маску
+   mapped-адреса как IPv4 и отвергает /33+ («invalid network mask»).
+3. Неканоническая запись (`0:0:0:0:0:ffff:1.2.3.4`, `::ffff:102:304`) → «IPv4-mapped address: write
+   ::ffff:1.2.3.4» (код `mapped`).
+
+### Только чтение (Dashboard, Settings)
+1. В VM: `uci add rpcd login; uci set rpcd.@login[-1].username=ro; uci set
+   rpcd.@login[-1].password="$(openssl passwd -1 ro)"` (хэш сгенерировать на Маке);
+   `uci add_list rpcd.@login[-1].read='*'; uci commit rpcd` — без `write`, рестарт rpcd не нужен.
+2. Войти ro/ro (поле логина в теме скрыто — POST формы `luci_username=ro&luci_password=ro` и cookie
+   `sysauth_http`). `L.hasViewPermission()` → `false`.
+3. Dashboard: Turn on, Subscription, Sort by ping, Mode / Region / Save & Apply, Edit, Update…,
+   Install — disabled; Connect «→» — `aria-disabled`; активны только чтение: Check, Ping, Ping all,
+   фильтры групп, Hide traffic.
+4. Settings: все поля и переключатели disabled, Reset / Save / Save & Apply — disabled.
+5. Servers: как «Только чтение» итерации 3.
+6. RPC под ro: `routing_check` — ответ с items; `set_routing`, `set_mode` — `Access denied`
+   (-32002). Console и сеть — без ошибок. Удалить логин ro после проверки.
+
+## Оверлеи
+
+Шторки Sub, Server (add / edit), Confirm ×4 (delete-active-sub, delete-sub, delete-server-manual,
+delete-server-sub), progress (*Fetch* подписки), ⋮-меню (мобилка). Медленный progress — *Fetch* у
+подписки с недоступным URL (`https://192.0.2.1/…`). 1280 и 390, Chromium и Safari.
+1. Каждый оверлей открывается кликом / тапом и с клавиатуры (фокус на триггере, Enter); фокус внутри.
+   ⋮ → *Edit* / *Delete* открывают шторку и подтверждение.
+2. Tab и Shift+Tab ходят по кругу через все кнопки и поля оверлея и не выходят наружу — в Safari
+   тоже, хотя он сам кнопки по Tab не фокусирует.
+3. Esc закрывает любой оверлей, кроме progress и Sub во время «Fetching…». Esc в наборе через IME
+   (кандидаты открыты) отменяет набор, оверлей не закрывает; Esc в открытом ⋮-меню закрывает только меню.
+4. Клик / тап по подложке и × закрывают; под подложкой при этом ничего не нажимается. Нажать на
+   подложке и отпустить на шторке (и наоборот) — не закрывает.
+5. После закрытия любым путём фокус на триггере — в Safari тоже (не на `body` и не в шапке LuCI).
+   Если строку перерисовали (пинг, Fetch) — на той же кнопке новой строки.
+6. Под открытым оверлеем страница не скроллится ни колесом, ни пальцем — ни над подложкой, ни над
+   шторкой; после закрытия скролл работает, позиция прежняя. С постоянными скроллбарами (Windows,
+   macOS «Показывать полосы прокрутки: всегда») раскладка при открытии не сдвигается.
+7. **iPhone (Safari, живой):** то же, что п. 6, — свайп по подложке и по шторке страницу не
+   двигает. Сдвигает → лок не держит, нужен fallback `position:fixed` (спека, O1).
+8. Sub → URL `https://192.0.2.1/x` → *Add & fetch* → во время «Fetching…» клик по подложке и Esc
+   не закрывают; после ошибки Tab ходит по кругу внутри, Esc закрывает.
+9. ⋮-меню: Tab и Shift+Tab закрывают меню, фокус на ⋮ той же строки.
+10. Оверлей поверх оверлея (progress над Sub): пока открыт верхний, нижний и страница не кликаются;
+    закрылся нижний раньше верхнего — фокус остаётся в верхнем, страница по-прежнему заблокирована;
+    закрылись все — страница кликается.
+11. Вид, 1280, тёмная — сверить с бордами `SubModal` / `ServerModal` / `ConfirmModal`. Sub шириной
+    542, сверху 140, × 28×28, подвал с линией, кнопки справа. Server шириной 560, сверху 160, метка
+    «Server link», кнопка «Add server»; в edit — слева прозрачная *Delete* с иконкой, красный текст
+    и рамка. Confirm шириной 440, сверху 250, без линий в шапке и подвале, кнопки справа.
+12. Вид, 390 — сверить с бордами `Mobile*`. Sub от 96px сверху до низа, полоска-хват 40×4, × 36,
+    подвал рядом: *Cancel* + растянутая основная кнопка. Server от 240px сверху, в edit внизу тела
+    *Delete server* на всю ширину, подвал рядом без линии. Confirm по высоте контента, кнопки
+    стопкой на всю ширину. Поля ввода 16px вместо 15 в макете (тема LuCI, против зума iOS; принято).
+13. Sub → URL `https://127.0.0.1:1/x` → *Add & fetch* → плашка ошибки первой в теле, над Name:
+    ⓘ слева, красный жирный заголовок, причина моноширинным шрифтом.
+14. Светлая тема, шаги 11–13: весь текст читается, серые подписи тоже (контраст ≥ 4.5); *Delete*
+    красная.
+15. Ширины 1440 / 1100 / 800 / 722 / 720 / 360: шторки помещаются в экран, горизонтального скролла
+    нет; на 722 — десктопная шторка, на 720 — мобильная.
+16. Низкий экран: окно 1280×390 (или телефон боком, 844×390) и 390×375 / 640×360 — Sub, Server
+    add / edit и Confirm целиком в экране, кнопки подвала нажимаются, поля Sub / Server видны (тело
+    скроллится). На десктопе отступ сверху ужимается до 35% высоты окна; на мобилке шторка не ниже
+    своей высоты из борда, но не выше 92% экрана.
+17. VoiceOver (iPhone или macOS Safari): шаг 13 — плашка озвучивается целиком («Couldn't fetch the
+    subscription» + причина) сразу после её появления; повторный *Add & fetch* озвучивает снова.
+18. Dashboard на iPhone / Safari 360 и 390: страница не сдвигается пальцем вбок; длинный пункт
+    *Routing mode* в закрытом select обрезан многоточием, в раскрытом списке виден целиком.
+19. Свежий стенд (`make dev-down`, затем `make dev` без `FIXTURE=1`): в панели *Subscriptions* одна строка — VPNON с
+    бейджем *active*; пустой строки *reserve* без URL нет (`uci show monkey-business | grep
+    =subscription` — одна секция `sub_…`).
+
+## Результат
+Итерация 1 — 30/30, итерация 2 — 52/52 (Playwright в VM: 1280 / 800 / 722 / мобилка, тёмная и
+светлая). Итерация 3 — Playwright в VM, 1280 / 800 / 722 / 390, тёмная и светлая; не прогнаны:
+Перестановка 3 (pid xray — VPN был выключен), Ping / Sort / Off 3 (`disabled=0` после Apply); Шторка
+2 «already in the list» и Шторка 5 (плоские поля) — только node-тестами (`test/js/servers.test.js`),
+Шторка 4 «перезагрузка до Apply». Фиксы ревью (Перестановка 1/3, ⋮-меню 1/2, Шторка 3/4) — тем же
+Playwright, второй раунд (Перестановка 3/4) — тоже, третий (Перестановка 5, Fetch / Ping / Delete
+6) и четвёртый (Только чтение 1/2 на 1280 и 390) — тоже, пятый (Ping / Sort / Off 3/4, Только
+чтение 1) и шестой (Ping / Sort / Off 4, Перестановка 2, Удаление 1), седьмой (Перестановка 5, ⋮-меню 1,
+Шторка 3), восьмой–одиннадцатый (Fetch / Ping / Delete 7/8, 1280 и 390; правый клик — синтетическими событиями) — тоже; Firefox (drag за grip-span) не прогнан —
+в окружении только Chromium.
+Оверлеи 1–6, 8–10 — Playwright в VM: Chromium и WebKit, 1280 и 390 (touch), тёмная; колесо — везде,
+кроме мобильного WebKit, палец — CDP-touch в Chromium; компенсация скроллбара — в Chromium без
+`--hide-scrollbars`; IME-Esc (п. 3), drag подложка↔шторка (п. 4) и п. 10 — прямыми вызовами
+`kit/sheet` из страницы. Оверлеи 7 (живой iPhone) — за пользователем.
+Console: ошибок приложения нет; `ERR_CONNECTION_RESET` / `L is not defined` при загрузке
+страницы — сбросы slirp-проброса QEMU (`luci.js` не догрузился), на R2S не воспроизводятся.
+Сессия 2 (вид) — Playwright в VM, Chromium и WebKit, 1280 и 390, тёмная и светлая: Оверлеи 11–16,
+Подготовка 5 (Д.4 — 6 переходов вкладками, 6 меню LuCI, прямая ссылка + перезагрузка ×3, назад ×2),
+регресс Оверлеи 1–6, 8–10 — fails 0. Тап по выпадающему меню LuCI в мобильном WebKit Playwright
+не срабатывает и на стоковой `status/overview` — переход проверен кликом. Console: плавающие
+`"%s/%s.js%s".format is not a function` и `classes.ui.addNotification is not a function` — ядро
+`luci.js` на прерванной загрузке, при повторе нет.
+Итерация 5 (сессия 7) — Playwright в VM: матрица Chromium и WebKit × тёмная / светлая × 1280 / 1024 /
+800 / 721 / 390 (touch) — 40/40 (гор. скролла нет, Tab-ловушка, Esc, возврат фокуса); живые п. 1–9 —
+Chromium 1280 (debounce ~400 мс, один `routing_check`; Save блок / разблок; Save & Apply при VPN on —
+новый pid xray, при VPN off — «Rules saved…»; `geosite:nosuch` — текст xray, шторка открыта, pid
+прежний; upload мусора — «Rejected: …», md5 рабочего файла прежний; валидный — «installed &
+validated»; Update now — «Already up to date»; warn `rpcd: custom rules skipped` в logread);
+ubus-отказ `set_routing` — через ssh. Не прогнаны: «Только чтение» модалок, Firefox.
+Итерация 6 (сессия 8) — Playwright в VM: чипы gfwlist cn / ru и отказ xray («Rules not saved», шторка
+открыта, UCI откатан) — Chromium и WebKit × тёмная / светлая × 1280 / 1024 / 800 / 721 / 390, гор.
+скролла и console нет; ::ffff: — ubus + `nft list set`; только чтение — Chromium и WebKit 1280,
+найден и исправлен дефект: поля Settings оставались редактируемыми. ui-diff всех экранов и модалок —
+совпадает с эталоном С7.

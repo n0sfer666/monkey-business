@@ -44,10 +44,9 @@ function applyRuntime(sh) {
 			system('rm -f ' + tmp);
 			return 'failed to write config (disk full?)';
 		}
-		let v = sh.runCapture('xray run -test -c ' + tmp + ' 2>/tmp/mb-xray.err');
+		let v = sh.runCapture('xray run -test -c ' + tmp + ' 2>&1');
 		if (!v.ok) {
-			let err = readfile('/tmp/mb-xray.err');
-			let msg = sh.firstLine(err != null ? err : v.out);
+			let msg = sh.xrayError(v.out);
 			system('rm -f ' + tmp);
 			return (msg != '') ? msg : 'xray config validation failed';
 		}

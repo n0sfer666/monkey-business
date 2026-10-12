@@ -84,6 +84,17 @@ rc="$(run MB_TEST_SIZE=1000000 MB_TEST_FREE_KB=900000 MB_TEST_FETCH_RC=1)"
 check    "код возврата 1"     "$rc" "1"
 contains "статус про зеркала"  "$(state)" "все зеркала недоступны"
 
+echo "=== status -> updated = mtime самой свежей базы, без баз = 0 ==="
+rm -f "$T/dest"/*.dat
+st="$(env MB_GEO_DIR="$T/dest" MB_GEO_STATE="$STATEF" sh "$GEO" status)"
+contains "без баз updated 0" "$st" '"updated":0}'
+echo a > "$T/dest/geoip.dat"; echo bb > "$T/dest/geosite.dat"
+touch -t 202601020304.05 "$T/dest/geoip.dat"
+touch -t 202602030405.06 "$T/dest/geosite.dat"
+want="$(date -r "$T/dest/geosite.dat" +%s)"
+st="$(env MB_GEO_DIR="$T/dest" MB_GEO_STATE="$STATEF" sh "$GEO" status)"
+contains "updated от geosite" "$st" "\"updated\":$want}"
+
 echo
 echo "geo_test: $pass passed, $fail failed"
 [ "$fail" = 0 ]

@@ -6,13 +6,18 @@
 | Что | Команда | Уровень |
 |-----|---------|---------|
 | Синтаксис ucode (types-эквивалент) | `make check` | T1 |
-| Линт (shellcheck + ucode + eslint) | `make lint` | T1 |
-| Unit/snapshot тесты | `make test-unit` | T2/T4 |
+| Линт (shellcheck + ucode + синтаксис JS + ESLint + Prettier) | `make lint` | T1 |
+| Автоформат JS (eslint --fix + prettier --write) | `make fmt` | — |
+| Unit/snapshot тесты (ucode, sh, node:test) | `make test-unit` | T2/T4 |
 | Интеграция (netns) | `make test-integ` | T3 |
 | Всё разом | `make test` | — |
 | Обновить образ проверок | `make test-build` | — (нужна сеть) |
 | Сборка ipk | `make package` | T2 (нужен OpenWrt SDK) |
-| Dev-VM | `make dev-up` / `make dev-ssh` | T2 (нужен qemu) |
+| Сверка UI с макетом (pixel diff + замер, А.2) | `make ui-diff SCREEN=servers WIDTH=1280` | T3 (стенд, глобальный Playwright; на хосте) |
+| Dev-стенд | `make dev` (поднять) / `make dev FIXTURE=1` (с вариантами UI) / `make dev-down` (погасить и сбросить) / `make dev-ssh` | T2 (нужен qemu, sshpass) |
+
+ESLint и Prettier берутся из `node_modules` (`npm ci` на хосте один раз, нужна сеть); контейнер
+видит их через монтирование `/w`. Нет `node_modules` — `make lint` падает с подсказкой.
 
 Перед коммитом минимум: `make lint && make check && make test-unit` зелёные.
 Записать `.claude/.verify-state.json` с актуальным tier/result.

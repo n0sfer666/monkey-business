@@ -23,7 +23,7 @@
 │  boothealth (mb-boothealth)                   │  ext4-rootfs: детект unclean/ro-remount, 0 периодики
 │  cron watchdog (watchdog+probes+recovery+phases)│ 1/мин; лестница soft→hard→failover→full→direct
 │  cron nicwatch (nicwatch.sh) + nicfw.sh       │  1/мин; залипание TX eth1 (RTL8153B) → bounce/re-bind
-│  cron subupdate (subupdate.sh)                │  1/мин, гейт по update_interval; ubus subscription_update
+│  cron subupdate (subupdate.sh)                │  1/мин, по подпискам; ubus subscription_update/_autoswitch
 │  nftables TPROXY (scripts/firewall/)          │  перехват TCP+UDP; :53 → dns-in (не tproxy)
 │  nft direct-bypass (ruset.sh → mb_ru4/mb_ru6) │  RU-CIDR минуют tproxy в ядре (быстрый путь)
 │  Xray transparent DNS (dns-in :5300 + split)  │  клиентский :53 редиректится в dns-модуль
@@ -32,16 +32,33 @@
 
 ## Потоки данных
 1. **Подписка:** URL → `subscription.uc` (auto-detect формата) → нормализованный список серверов → UCI.
-   Тот же путь по расписанию: `subupdate.sh` (cron 1/мин) при `auto_update=1` раз в `update_interval`
-   (не чаще 300с) зовёт ubus `subscription_update`; после неудачи пауза 900с. Состояние — в tmpfs,
-   конфиг xray скрипт не переприменяет: это делает Apply или watchdog.
+   Тот же путь по расписанию: `subupdate.sh` (cron 1/мин) для каждой секции `subscription` (имена из `uci -X show`, анонимные тоже) при её
+   `auto_update=1` раз в её `update_interval` (не чаще 300с) зовёт ubus `subscription_update {sub}`;
+   после неудачи пауза 900с. Состояние — в tmpfs (`/tmp/mb-subupdate/<id>`), провал одной подписки
+   не блокирует остальные; конфиг xray обновление не переприменяет: это делает Apply или watchdog.
+   При ≥ 2 подписках тот же тик зовёт `subscription_autoswitch {check}` (только чтение); если активная
+   мертва и есть живая — берёт лок watchdog (`/tmp/mb-watchdog/lock`, общий `wdlock.sh`; занят дольше 30с — тик
+   пропускается) и зовёт `subscription_autoswitch {deadline}`: событийная запись `active_sub`, причина
+   в `/tmp/mb-autoswitch`, apply — только если туннель шёл через мёртвую подписку.
+   Сервер подписки несёт опцию `sub` (id секции `subscription`); `source=subscription` без `sub`
+   при чтении приписывается легаси-подписке `subscription` (`lib/subs.uc` `serverSub`). Merge
+   работает по срезу `sub`: чужие подписки и ручные серверы остаются на своих позициях.
+   Спека: `.context/specs/2026-10-08-multi-subscription.md`.
 1a. **Ссылка из формы:** тот же `normalizeUri` + строгий `validate.uc` (ubus `parse_uri`) → сервер
    раскладывается по полям формы и сохраняется как `source: manual`. В UCI поля лежат плоско
    (`tr_*`, `pbk`/`sid`/`spx`, `obfs_*`) — маппинг в контракт держит `lib/servermap.uc`, чтение
    понимает и прежнюю JSON-схему. Ручные серверы обновление подписки не трогает.
    Решение: `.context/decisions/2026-08-07-server-form-link-import.md`.
-2. **Apply / connect:** UCI → `selectWorking` (пробует серверы по порядку списка, первый рабочий →
-   тег в `/etc/monkey-business/active`) → `xray.uc` → Xray JSON → procd restart → nftables TPROXY.
+2. **Apply / connect:** UCI → `selectWorking` (параллельный TCP-пинг кандидатов → результат в
+   tmpfs `/tmp/mb-ping.json`, ответившие дольше 1с или не ответившие авто-отключены; не прошёл ни
+   один — берутся все; затем пробы по порядку, первый рабочий →
+   идентичность `<sub>/<tag>`, у ручного `<tag>`, в `/etc/monkey-business/active`) → `xray.uc` →
+   Xray JSON → procd restart → nftables TPROXY. Кандидаты (`select.uc` `candidates`): серверы
+   `global.active_sub` (пусто/нет секции → первая подписка) + ручные в drag-порядке, затем серверы
+   остальных живых подписок по порядку подписок; ручной `disabled='1'` и мёртвые резервные подписки
+   (`subAlive`: трафик исчерпан / `expire` прошёл) — не кандидаты. Серверы удалённой подписки
+   (сироты) отбрасываются при чтении (`loadServers`) и выпадают при следующей записи списка.
+   Смена подписки — `subscription_select` (запись → apply → откат при ошибке).
 2a. **Протоколы.** `vless` (Reality/XHTTP/ws) идёт аутбаундом самого xray; `hysteria2` — отдельным
    процессом рядом, а аутбаунд `proxy` превращается в `socks → 127.0.0.1:10810`. Ниже этой точки
    (маршрутизация, DNS, kill-switch, ядерный обход) о протоколе никто не знает — direct-трафик до
@@ -65,8 +82,8 @@
 5. **Отказоустойчивость:** watchdog (cron 1/мин) — liveness через socks + сверка exit-IP ≠ домашнего.
    3 провала → лестница восстановления (`recovery.sh`), по ступени на тик: soft bounce (`kill` xray,
    procd поднимает) → hard restart (SIGTERM → подтверждённая смерть → SIGKILL → `init.d start`,
-   `apply.sh` пересобирает nft/policy-routing) → failover (`ubus config_apply` → `selectWorking`
-   выберет другой сервер) → full stop/start (аналог ручного Off/On). На первых трёх kill-switch
+   `apply.sh` пересобирает nft/policy-routing) → failover (`ubus config_apply {deadline}` →
+   `selectWorking` выберет другой сервер, не начиная пробу, которая не успеет до дедлайна) → full stop/start (аналог ручного Off/On). На первых трёх kill-switch
    держится. Исчерпали → `init.d stop` (LAN на direct) + backoff-попытки восстановления с failover.
    Решение: `.context/decisions/2026-08-06-recovery-ladder.md`.
 6. **Железо (LAN):** `eth1` = USB-адаптер RTL8153B (r8152) и единственный член `br-lan`. Пакетная
@@ -88,3 +105,14 @@
 
 ## Ключевые решения
 Полная спецификация и обоснования: `.context/specs/2026-06-05-monkey-business-vpn-client.md`.
+- LuCI-оверлеи (`luci/…/monkey-business/kit/`): `layers.js` — стек слоёв (Esc / Tab на document, inert
+  страницы и нижних слоёв за верхним, IME и `defaultPrevented` пропускает), `scrolllock.js` — лок
+  скролла со счётчиком и компенсацией скроллбара, `trigger.js` — триггер по клику (Safari кнопки не
+  фокусирует), `focusable.js` — Tab по кругу. Новый оверлей — через `layers.push` + `scrolllock.lock`,
+  без своих keydown / inert. Runbook — раздел «Оверлеи» в `specs/2026-10-10-compact-ui-runbook.md`.
+- Вид шторки — `kit/sheet.js` (варианты `open`: `top`, `mtop`, `foot: 'row' | 'stack'`, `compact`),
+  CSS — `kit/sheetcss.js`. Вкладки приложения — `kit/tabs.js` `render(active)` первым в корне `.mb`
+  каждой вьюхи; `#tabmenu` LuCI скрыт. Шапка вьюхи (h1, подзаголовок, Reset / Save / Save & Apply, на
+  ≤ 720px — липкая панель снизу) — `kit/viewbar.js` `render(title, sub, actions)`, корень `.mb.mb-view`.
+  Строки формы — `kit/field.js` `row()`: `hint` + `brief` (короткая подсказка на ≤ 720px). Тема bootstrap на ≤ 720px ставит инпутам 16px, кнопкам 14px
+  через `!important`: инпуты оставлены 16px (iOS зумит при меньшем кегле).

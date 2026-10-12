@@ -132,6 +132,15 @@ ok "force.bad_prefix6"  "$(hascall '2a03::/999')" n
 ok "force.good_survives" "$(hascall 'mb_force4 { 203.0.113.7 }')" y
 ok "force.per_element"  "$(ncalls)" 2
 
+runf '::ffff:198.51.100.7, ::FFFF:198.51.100.0/24, ::ffff:10.0.0.0/120, ::ffff:10.9.0.0/33, ::ffff:1.2.3.4/24/5, ::ffff:999.1.1.1, 2a03:e2c0::/32'
+ok "force.mapped_v4"       "$(hascall 'mb_force4 { 198.51.100.7 }')" y
+ok "force.mapped_prefix"   "$(hascall 'mb_force4 { 198.51.100.0/24 }')" y
+ok "force.mapped_v6_mask"  "$(hascall '10.0.0.0')" n
+ok "force.mapped_mask33"   "$(hascall '10.9.0.0')" n
+ok "force.mapped_slashes"  "$(hascall '1.2.3.4')" n
+ok "force.mapped_bad_oct"  "$(hascall '999')" n
+ok "force.mapped_not_v6"   "$(hascall 'ffff')" n
+
 # только v4 в списке -> сета и правила v6 нет (лишний lookup на каждый пакет), и наоборот
 runf '10.20.30.40/29'
 ok "force.v4only_no_v6"  "$(has x 'mb_force6')" n

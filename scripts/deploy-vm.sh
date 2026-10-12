@@ -79,6 +79,8 @@ cpf root/usr/share/monkey-business/recovery.sh "$stage/usr/share/monkey-business
 chmod 644 "$stage/usr/share/monkey-business/recovery.sh"
 cpf root/usr/share/monkey-business/phases.sh "$stage/usr/share/monkey-business/phases.sh"
 chmod 644 "$stage/usr/share/monkey-business/phases.sh"
+cpf root/usr/share/monkey-business/wdlock.sh "$stage/usr/share/monkey-business/wdlock.sh"
+chmod 644 "$stage/usr/share/monkey-business/wdlock.sh"
 cpf root/usr/share/monkey-business/watchdog.sh "$stage/usr/share/monkey-business/watchdog.sh"
 chmod 755 "$stage/usr/share/monkey-business/watchdog.sh"
 cpf root/usr/share/monkey-business/boothealth.sh "$stage/usr/share/monkey-business/boothealth.sh"
@@ -97,7 +99,7 @@ chmod 755 "$stage/etc/init.d/mb-boothealth"
 
 # LuCI views + menu + acl
 mkdir -p "$stage/www/luci-static/resources/view/monkey-business"
-cp luci/htdocs/luci-static/resources/view/monkey-business/*.js \
+cp -R luci/htdocs/luci-static/resources/view/monkey-business/. \
 	"$stage/www/luci-static/resources/view/monkey-business/"
 cpf luci/root/usr/share/luci/menu.d/luci-app-monkey-business.json \
 	"$stage/usr/share/luci/menu.d/luci-app-monkey-business.json"
@@ -134,6 +136,7 @@ $SSH $SSH_OPTS -p "$PORT" "$HOST" "MB_RESPAWN='$RESPAWN' MB_ALLOW_MISSING='$ALLO
 	set -e
 	# сохранить пользовательский UCI-конфиг (url/серверы/выбор) между деплоями — как conffile
 	[ -f /etc/config/monkey-business ] && cp /etc/config/monkey-business /tmp/mb-cfg.keep
+	rm -rf /www/luci-static/resources/view/monkey-business
 	tar -C / -xzf /tmp/mb-deploy.tgz
 	[ -f /tmp/mb-cfg.keep ] && mv /tmp/mb-cfg.keep /etc/config/monkey-business
 	# подчистить возможные macOS AppleDouble-остатки (BusyBox find без -delete, поэтому rm по glob)
@@ -167,6 +170,7 @@ $SSH $SSH_OPTS -p "$PORT" "$HOST" "MB_RESPAWN='$RESPAWN' MB_ALLOW_MISSING='$ALLO
 		/usr/share/monkey-business/nicwatch.sh /usr/share/monkey-business/nicfw.sh \
 		/usr/share/monkey-business/subupdate.sh
 	rm -f /tmp/mb-deploy.tgz /tmp/luci-indexcache* 2>/dev/null || true
+	touch -c /lib/apk/db/installed /usr/lib/opkg/status 2>/dev/null || true
 	# распакованное должно дойти до карты ДО рестартов ниже: если rpcd подвесит ubusd и роутер
 	# уедет в жёсткий сброс, недописанные файлы останутся обрезанными в журнале ext4.
 	sync

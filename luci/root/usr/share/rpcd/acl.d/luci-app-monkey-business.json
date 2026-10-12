@@ -7,9 +7,12 @@
 					"status",
 					"servers_list",
 					"servers_ping",
+					"subscription_ping",
+					"server_ping",
 					"geo_status",
 					"hysteria_status",
-					"check_exit"
+					"check_exit",
+					"routing_check"
 				]
 			},
 			"uci": [
@@ -20,7 +23,11 @@
 			"ubus": {
 				"monkey-business": [
 					"subscription_update",
+					"subscription_add",
+					"subscription_select",
+					"server_connect",
 					"parse_uri",
+					"server_link",
 					"config_apply",
 					"service_toggle",
 					"geo_update",

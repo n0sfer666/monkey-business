@@ -58,6 +58,7 @@
 **Рекомендуется: `make deploy`.** Из каталога репозитория:
 
 ```sh
+npm ci                            # один раз: ESLint + Prettier для проверок JS
 make deploy HOST=root@<router-ip>
 ```
 
@@ -113,7 +114,7 @@ with-env { MB_VM_SSH_HOST: "root@<router-ip>", MB_VM_SSH_PORT: "22" } { sh scrip
   - LuCI-вьюшки → `/www/luci-static/resources/view/monkey-business/`, меню + ACL,
   - `/etc/config/monkey-business` (UCI), `/etc/init.d/monkey-business` (procd),
   - firewall-скрипты → `/usr/share/monkey-business/firewall/`, geo-скрипт → `/usr/share/monkey-business/geo.sh`,
-  - watchdog → `/usr/share/monkey-business/watchdog.sh` + `probes.sh` + `recovery.sh` + `phases.sh`, сборщик bypass-сетов →
+  - watchdog → `/usr/share/monkey-business/watchdog.sh` + `probes.sh` + `recovery.sh` + `phases.sh` + `wdlock.sh`, сборщик bypass-сетов →
     `ruset.sh`, общая загрузка → `fetch.sh`,
   - прошивка USB-сетевухи → `nicfw.sh` + `firmware/rtl8153b-2.fw`, её watchdog → `nicwatch.sh`.
 - **Проверяет рантайм-зависимости** (`xray-core`, `kmod-nft-tproxy`, `curl`, ucode/rpcd-модули) и
@@ -138,7 +139,7 @@ with-env { MB_VM_SSH_HOST: "root@<router-ip>", MB_VM_SSH_PORT: "22" } { sh scrip
 > ненулевым кодом, так что собирать пока нечего («Альтернатива» ниже — задел на будущее).
 
 > **Не ставьте `MB_UBUS_RESPAWN=1` для реального железа.** Этот флаг (используется только
-> `make dev-deploy` для QEMU dev-VM) принудительно пересоздаёт `ubusd`/`rpcd` для обхода бага
+> `make dev` для QEMU dev-VM) принудительно пересоздаёт `ubusd`/`rpcd` для обхода бага
 > эмулятора. R2S это не нужно, и убивать `ubusd` на живом роутере не стоит.
 
 > **Деплой с macOS:** `deploy-vm.sh` уже вычищает AppleDouble-файлы `._*` (`COPYFILE_DISABLE=1`).
@@ -189,9 +190,11 @@ Xray не стартует без `geoip.dat` и `geosite.dat`. Проще вс�
 
 В **LuCI → … → Servers**:
 
-- **Подписка:** вставьте URL провайдера и нажмите *Fetch*. Серверы импортируются (формат
-  определяется автоматически: base64-список или список URI). Порядок списка — это ваш
+- **Подписка:** *+ Add subscription*, вставьте URL провайдера, *Add & fetch*. Серверы импортируются
+  (формат определяется автоматически: base64-список или список URI); если скачать не вышло, ничего
+  не сохраняется. На свежей установке новая подписка становится активной вместо пустой по умолчанию. Порядок списка — это ваш
   приоритет; перетаскивайте для сортировки, первый сервер — активный. Re-fetch сохраняет ваш ручной порядок.
+  Больше одного провайдера: добавьте ещё одну — см. [§10](#10-несколько-подписок).
 - **Вручную:** добавьте `vless://…` (Reality/VLESS/XHTTP) или `hysteria2://…` (алиас `hy2://`).
 
 Оба протокола лежат в одном списке — протокол это свойство сервера, поэтому приоритет задаётся
@@ -227,7 +230,10 @@ Xray, но и файрвол; панель показывает (✓/✗), чт�
 
 - **Routing mode** — `Bypass local`: ваш локальный регион (RU/CN/IR) и приватные адреса идут
   напрямую, всё остальное — через туннель. Другие режимы: `Only blocked via VPN` (gfwlist) и
-  `Everything via VPN` (global). Вне `Bypass local` правила `geoip:<регион> → direct` нет вообще,
+  `Everything via VPN` (global). `Only blocked via VPN` берёт готовый список заблокированного
+  только для CN (`geosite:gfw` из стандартного geosite.dat Loyalsoldier — учтите это при своём
+  geosite URL); для RU/IR/Other в туннель идёт только ваш список **Via VPN**, остальное — напрямую.
+  Вне `Bypass local` правила `geoip:<регион> → direct` нет вообще,
   и вместе с ним отключаются bypass-сеты в ядре.
 - **Local region** — какой регион считается «локальным» для прямой маршрутизации и для DNS-сплита.
   Выберите **`Other`**, если для вашего региона нет geo-пресета: предопределённой локальной
@@ -443,3 +449,117 @@ transmit queue 0 timed out`, пакеты теряются, соединения
 # cat /tmp/mb-nicwatch/state         # tx_errors tx_packets страйки
 # logread -e mb-nicwatch
 ```
+
+---
+
+## 10. Несколько подписок
+
+**Servers → Subscriptions → + Add subscription** добавляет второго (третьего, …) провайдера: шторка
+спрашивает имя и URL и сразу скачивает; неудачное скачивание ничего не оставляет. В строке подписки
+*Name*, *URL* (скрыт маской до фокуса) и *Auto-update* правятся на месте — интервал в минутах,
+10–120, `0` выключает (на телефоне — переключатель и ползунок). *Fetch* и *Ping* работают с этой
+подпиской; корзина после подтверждения удаляет её вместе с её серверами (ручные остаются; при
+удалении активной активной становится следующая). Правки копятся до *Save & Apply*; изменённый URL
+тогда скачивается заново. *Fetch* и *+ Add subscription* сначала коммитят накопленные правки (*Reset* их
+уже не откатит) и блокируют страницу до конца скачивания. Существующий конфиг с одной
+подпиской работает как есть — без миграции.
+
+- **Одна подписка активная, остальные — резерв.** Порядок кандидатов: серверы активной подписки
+  вместе с ручными (в порядке перетаскивания), затем остальные подписки по порядку. Failover может
+  сам уйти в резерв, активная при этом не меняется, и следующее применение снова начинает с неё.
+  Сама активная меняется только когда умирает (ниже); обратно — только вручную.
+- **Переключение:** при двух и более подписках в **Dashboard → Status** появляется селект
+  *Subscription*. Выбор применяется сразу (при выключенном VPN — только сохраняется) и откатывается,
+  если применить не удалось. *now via reserve: B* — трафик сейчас идёт через резервную подписку.
+- **Мёртвая подписка** (истёк срок или кончился трафик по userinfo провайдера) помечена в селекте и
+  не используется как резерв. Если умерла **активная**, в течение минуты активной становится
+  следующая живая, а Dashboard показывает *Switched automatically: A expired.* Ручной выбор мёртвой
+  подписки отклоняется, пока есть живая, — сначала обновите её (*Fetch*), потом выбирайте.
+- **Плашка трафика** показывает подписку, через которую идёт туннель.
+- **Пинг:** *Test latency* (все), *Ping* у группы подписки и в строке сервера на Dashboard, *Ping*
+  в строке подписки на Servers. В таблице Servers есть своя колонка *Ping* (последние замеры,
+  обновляются по *Ping* подписки и *Ping all* над таблицей); *Sort by ping* поднимает самые быстрые
+  строки наверх, недоступные и неизмеренные — вниз. Порядок строк — это приоритет подключения, поэтому
+  сортировка вступает в силу по *Save & Apply*. Сервер медленнее 1 с или недоступный помечается *auto-off* и
+  пропускается при подключении до следующего успешного пинга (результаты — в RAM). hysteria2 (UDP)
+  TCP-пингом не измерить — *n/a*. Колонка **Off** в таблице Servers исключает сервер насовсем; в
+  списках он остаётся и пингуется.
+
+### Ручная проверка на роутере
+
+Прогонять после деплоя изменений, затрагивающих подписки. `<A>` — id секции активной подписки,
+`<B>` — второй (`uci show monkey-business | grep =subscription`). Сначала включите VPN.
+
+0. **Свежий UI.** Откройте Servers обычной перезагрузкой, без сброса кэша. Ожидание: на Servers панель
+   *Subscriptions* — по строке на подписку с *Fetch*, *Ping* и корзиной, в шапке *+ Add subscription*, —
+   в таблице колонки *Subscription* и *Off*. Форма с кнопками *Fetch subscription* — браузер взял старые скрипты
+   из кэша: деплой обязан делать touch `/lib/apk/db/installed`, его mtime входит в `?v=` всех
+   скриптов LuCI.
+
+1. **Две подписки.** Добавьте B и нажмите *Fetch*. Ожидание: на Dashboard появился селект
+   *Subscription*, таблица серверов разбита на *Active: A* и *Reserve: B*.
+2. **Переключение.** Выберите B на Dashboard. Ожидание: страница перезагрузилась подключённой, и
+
+   ```sh
+   # ubus call monkey-business status | grep -E '"(active_sub|sub|reserve)"'   # active_sub = <B>
+   # cat /etc/monkey-business/active                                            # <B>/<tag>
+   ```
+
+   Ручной сервер выше серверов B выбирается первым: тогда в `active` голый `<tag>`, а `sub` = null.
+   Проверяйте с ручными серверами ниже или выключенными (*Off*). Перед следующими шагами снова
+   выберите A.
+3. **Автопереключение.** Сделайте A истёкшей и выключите её обновление (fetch вернул бы настоящий
+   срок):
+
+   ```sh
+   # uci set monkey-business.<A>.auto_update=0
+   # uci set monkey-business.<A>.expire=1
+   # uci commit monkey-business
+   # sh /usr/share/monkey-business/subupdate.sh      # или дождаться следующей минуты cron
+   # logread -e mb-subupdate | tail -n 3
+   # uci get monkey-business.global.active_sub       # <B>
+   # cat /tmp/mb-autoswitch                           # <A> expired
+   ```
+
+   Ожидание: строка лога `подписка <A> expired: активной стала <B>`, плашка на Dashboard
+   *Switched automatically: A expired.*, в селекте выбрана B, A помечена мёртвой. Исчерпанный трафик —
+   так же: `uci set monkey-business.<A>.total=1` и `uci set monkey-business.<A>.used_download=1`
+   вместо `expire`; плашка тогда пишет *ran out of traffic*.
+4. **Без повторных записей.** Запустите `subupdate.sh` ещё раз: новой строки `mb-subupdate` нет, и
+   `date -r /etc/config/monkey-business` не меняется.
+5. **Отказ выбора мёртвой.** Выберите A на Dashboard. Ожидание: предупреждение *Subscription not
+   switched: subscription is expired: update it or pick an alive one*; селект возвращается на B.
+6. **Вернуть A.**
+
+   ```sh
+   # uci set monkey-business.<A>.expire=''
+   # uci set monkey-business.<A>.total=''
+   # uci set monkey-business.<A>.used_download=''
+   # uci set monkey-business.<A>.auto_update=1
+   # uci commit monkey-business
+   ```
+
+   *Fetch* у A на Servers, выбрать A на Dashboard. Ожидание: плашка пропала (`/tmp/mb-autoswitch`
+   удалён).
+7. **Общий лок с watchdog.** Займите лок watchdog и сделайте A истёкшей, как в шаге 3:
+
+   ```sh
+   # flock /tmp/mb-watchdog/lock sleep 60 &          # без flock: mkdir /tmp/mb-watchdog/lock.d
+   # uci set monkey-business.<A>.auto_update=0
+   # uci set monkey-business.<A>.expire=1
+   # uci commit monkey-business
+   # sh /usr/share/monkey-business/subupdate.sh
+   # logread -e mb-subupdate | tail -n 1
+   ```
+
+   Ожидание: примерно через 30 с — `автопереключение подписки отложено: watchdog занят`, `active_sub`
+   по-прежнему `<A>`. Отпустите лок (дождитесь конца `sleep` или `rmdir /tmp/mb-watchdog/lock.d`) и
+   запустите `subupdate.sh` снова — теперь переключается на B. Верните A, как в шаге 6.
+8. **Пинг и Off.** Нажмите кнопки *Ping*: на десктопе в ячейке полоса и `N ms`; недоступный сервер —
+   иконка перечёркнутого Wi-Fi (подсказка: auto-off) и приглушённая строка, hysteria2 — круг с чертой
+   (подсказка: n/a, UDP); на телефоне в строках `N ms`, `auto-off` или `n/a · UDP`. Отметьте *Off* у
+   сервера на Servers, *Save & Apply*: его строка на Dashboard приглушена и помечена *off*, и он
+   никогда не становится подключённым сервером. На Servers *Ping* подписки и *Ping all*
+   заполняют колонку *Ping* таблицы без перезагрузки. *Sort by ping*, затем *Save & Apply*: строки
+   идут от быстрых к медленным (`down`/`n/a` в конце), приоритеты на Dashboard следуют за ними, туннель
+   подключается к самому быстрому серверу активной подписки.

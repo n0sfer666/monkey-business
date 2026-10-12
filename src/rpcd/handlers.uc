@@ -6,32 +6,46 @@
 // Контракт ctx:
 //   getGlobal() -> { enabled, routing_mode, local_region, tproxy_port, custom_direct, custom_proxy, ... }
 //   getDns() -> { mode, direct_dns, doh_url }   getAntiDpi() -> { default_fingerprint, xhttp_padding }
-//   getSubscription() -> { url, used_upload, used_download, total, expire, ... }
-//   getServers() -> [server, ...]      setServers(arr)
-//   getSelectedServer() -> server|null   setSelected(tag) — рантайм-состояние, НЕ uci-commit
-//   fetchSubscription(url) -> { body, userinfo }|null   pingServer(server) -> int(ms)|null
+//   getSubscriptions() -> [{ ".name", name, url, used_upload, used_download, total, expire, ... }]
+//   getSubscription(id) -> subscription|null   setActiveSub(id) -> bool (легло ли в UCI)
+//   setSubscriptionUrl(id, url)   setUserinfo(id, { used_upload, used_download, total, expire })
+//   getAutoswitch() -> { from, reason }|null   setAutoswitch(from, reason)   clearAutoswitch() (tmpfs)
+//   getServers() -> [server, ...]      setServers(arr) -> bool
+//   getSelectedServer() -> server|null   getSelectedId() -> string   setSelected(id) — рантайм-состояние,
+//     НЕ uci-commit
+//   fetchSubscription(url) -> { body, userinfo }|null
+//   pingServers([server], limitMs) -> [int(ms)|null] (параллельно, тот же порядок)   now() -> int (epoch, сек)
+//   getPings() -> { "<serverId>": { ms } } (tmpfs)   setPings(map)
 //   applyConfig(jsonStr, intentOn?) -> errString|null (валидирует + запускает; intentOn=true обходит
 //     гейт по enabled в init-скрипте — только для пути включения)   stopService()
 //   serviceRunning() -> bool   setEnabled(bool) -> bool (легло ли в UCI)   updateGeo(args) -> { status }
 //   failoverCap() -> int (сколько кандидатов пробовать в selectWorking; 0 = все)
 //   watchdogPhase() -> "healthy"|"reconnecting"|"down"|null   lastEvent() -> string
-//   setCustomRouting(direct, proxy)   setMode(mode, region) -> bool (легло ли в UCI)
-//   directBypassActive() -> bool (ФАКТ из nft, не намерение)   geoStatus() -> { state, geoip, geosite }
+//   setCustomRouting(direct, proxy)   setMode(mode, region) -> bool (легло ли в UCI)   warn(msg) -> syslog
+//   directBypassActive() -> bool (ФАКТ из nft, не намерение)   geoStatus() -> { state, geoip, geosite, updated }
 //   geoInstall(which) -> { ok, detail }   checkExit(domain) -> { ip, country, code }|{ error }
 //   hysteriaInstalled() -> bool   applyHysteria(jsonStr|null) -> errString|null
 
 import { isTrue } from "../lib/val.uc";
+import { validateRules } from "../lib/rules.uc";
 import { generateJson } from "../generator/xray.uc";
-import { selectWorking } from "./select.uc";
+import { selectWorking, listedServers } from "./select.uc";
 import { directBypass } from "../lib/bypass.uc";
 import { prepareHysteria } from "./hysteria.uc";
+import { serverId, activeSubId, selectError } from "../lib/subs.uc";
 
 const ROUTING_MODES = ["bypass-local", "gfwlist", "global"];
 const LOCAL_REGIONS = ["ru", "cn", "ir", "other"];
 
 function genConfig(ctx, server) {
+	let g = ctx.getGlobal();
+	let bad = map(validateRules(g.custom_direct, g.custom_proxy), function(e) {
+		return sprintf("%s line %d (%s)", e.list, e.line, e.code);
+	});
+	if (length(bad))
+		ctx.warn("rpcd: custom rules skipped: " + join(", ", bad));
 	return {
-		global: ctx.getGlobal(),
+		global: g,
 		server: server,
 		dns: ctx.getDns(),
 		anti_dpi: ctx.getAntiDpi(),
@@ -43,12 +57,21 @@ function genConfig(ctx, server) {
 // При выключенном VPN рантайм не трогаем вообще: init-скрипт всё равно не поднимет xray (гейт по
 // enabled), а без раннего выхода мы бы зря поднимали эфемерный xray на пробу серверов и меняли
 // активный сервер. `skipped` нужен UI, чтобы не врать «applied», когда ничего не применялось.
-function configApply(ctx) {
+function noServers(ctx, hint) {
+	if (length(listedServers(ctx)) > 0)
+		return "no usable servers — all are disabled or in expired subscriptions; enable a server or switch the subscription";
+	return "no servers — " + hint;
+}
+
+function configApply(ctx, args) {
 	if (!isTrue(ctx.getGlobal().enabled))
 		return { ok: true, skipped: "disabled" };
-	let sel = selectWorking(ctx);
+	let deadline = (args != null) ? int(args.deadline) : 0;
+	if (deadline > 0 && ctx.now() >= deadline)
+		return { error: "deadline passed before config_apply started" };
+	let sel = selectWorking(ctx, deadline);
 	if (sel == null)
-		return { error: "no servers — add a subscription or a manual server first" };
+		return { error: noServers(ctx, "add a subscription or a manual server first") };
 	let hErr = prepareHysteria(ctx, sel.server);
 	if (hErr != null)
 		return { error: hErr };
@@ -56,7 +79,8 @@ function configApply(ctx) {
 	let err = ctx.applyConfig(jsonStr);
 	if (err != null)
 		return { error: err };
-	return { ok: true, server: sel.server.tag, probed: sel.probed, bytes: length(jsonStr) };
+	return { ok: true, server: sel.server.tag, server_id: serverId(sel.server), probed: sel.probed,
+		bytes: length(jsonStr) };
 }
 
 function serviceToggle(ctx, args) {
@@ -68,7 +92,7 @@ function serviceToggle(ctx, args) {
 	}
 	let sel = selectWorking(ctx);
 	if (sel == null)
-		return { error: "no servers — add a subscription first", enabled: false };
+		return { error: noServers(ctx, "add a subscription first"), enabled: false };
 	let hErr = prepareHysteria(ctx, sel.server);
 	if (hErr != null)
 		return { error: hErr, enabled: isTrue(ctx.getGlobal().enabled) };
@@ -88,24 +112,16 @@ function serviceToggle(ctx, args) {
 		ctx.stopService();
 		return { error: "could not save the toggle state (read-only config?)", enabled: false };
 	}
-	return { enabled: true, server: sel.server.tag, probed: sel.probed };
+	return { enabled: true, server: sel.server.tag, server_id: serverId(sel.server), probed: sel.probed };
 }
 
 function geoUpdate(ctx, args) {
 	return ctx.updateGeo(args);
 }
 
-// Записать custom direct/proxy в UCI (commit на стороне сервера, без LuCI-стейджинга) и применить.
-function setRouting(ctx, args) {
-	let direct = (args != null && args.direct != null) ? args.direct : "";
-	let proxy = (args != null && args.proxy != null) ? args.proxy : "";
-	ctx.setCustomRouting(direct, proxy);
-	return configApply(ctx);
-}
-
 // Режим маршрутизации + регион переехали из формы Settings на дашборд: они меняют не только конфиг
 // xray, но и файрвол (ядерный обход), а форма LuCI умеет только стейджить UCI — «сохранил и ничего
-// не изменилось» здесь особенно дорого. Пишем и применяем сразу, как setRouting. Пустое значение =
+// не изменилось» здесь особенно дорого. Пишем и применяем сразу, как setRouting (src/rpcd/routing.uc). Пустое значение =
 // «не трогать»: UI шлёт оба поля, но ubus-контракт допускает частичный вызов.
 function setMode(ctx, args) {
 	let g = ctx.getGlobal();
@@ -136,6 +152,31 @@ function setMode(ctx, args) {
 	return res;
 }
 
+function subscriptionSelect(ctx, args) {
+	let want = (args != null) ? args.sub : null;
+	let subs = ctx.getSubscriptions();
+	let err = selectError(subs, want, ctx.now());
+	if (err != null)
+		return { error: err };
+	let prev = ctx.getGlobal().active_sub || "";
+	if (activeSubId(subs, prev) == want) {
+		ctx.clearAutoswitch();
+		return { ok: true, active_sub: want, unchanged: true };
+	}
+	let prevId = ctx.getSelectedId();
+	if (!ctx.setActiveSub(want))
+		return { error: "could not save the subscription choice (read-only config?)" };
+	let res = configApply(ctx);
+	if (res.error != null) {
+		ctx.setActiveSub(prev);
+		ctx.setSelected(prevId);
+		return res;
+	}
+	ctx.clearAutoswitch();
+	res.active_sub = want;
+	return res;
+}
+
 function geoStatus(ctx) {
 	return ctx.geoStatus();
 }
@@ -154,4 +195,5 @@ function checkExit(ctx, args) {
 	return ctx.checkExit(domain);
 }
 
-export { configApply, serviceToggle, geoUpdate, setRouting, setMode, geoStatus, geoInstall, checkExit };
+export { configApply, serviceToggle, geoUpdate, setMode, subscriptionSelect, geoStatus, geoInstall,
+	checkExit };

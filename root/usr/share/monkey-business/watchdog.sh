@@ -4,9 +4,10 @@
 # Reconnect-first: сперва bounce xray (kill-switch держится), и лишь потом init.d stop → direct.
 # Env-override (дефолты боевые): FAIL_LIMIT(3) RECONNECT_LIMIT(4) POLL(60) BACKOFF(600)
 # EXIT_EVERY(5) REC_TRIES(3) RECOVERY_TRIES(2) RECONNECT_WAIT(5) KILL_WAIT(8) TIMEOUT(10)
-# REC_TIMEOUT(6) UBUS_TIMEOUT(90) DOWN_BUDGET(240) FAILOVER_RESERVE(150) DOWN_BACKOFF0(60) — с префиксом
-# MB_WD_. MB_WD_NOW(epoch), MB_WD_LIB(каталог probes.sh/phases.sh), MB_WD_ACTIVE(файл тега),
-# MB_WD_XRAY_MATCH(cmdline боевого xray), MB_WD_SOURCED=1(тест зовёт tick без main).
+# REC_TIMEOUT(6) UBUS_TIMEOUT(90) APPLY_MARGIN(15) DOWN_BUDGET(240) FAILOVER_RESERVE(150)
+# DOWN_BACKOFF0(60) — с префиксом MB_WD_. MB_WD_NOW(epoch), MB_WD_LIB(каталог probes.sh/phases.sh),
+# MB_WD_ACTIVE(файл тега), MB_WD_XRAY_MATCH(cmdline боевого xray), MB_WD_SOURCED=1(тест зовёт tick
+# без main).
 set -u
 
 CONFIG=monkey-business
@@ -36,6 +37,7 @@ TIMEOUT="${MB_WD_TIMEOUT:-10}"
 REC_TIMEOUT="${MB_WD_REC_TIMEOUT:-6}"
 # дефолтные 30с ubus рвали config_apply на середине перебора кандидатов
 UBUS_TIMEOUT="${MB_WD_UBUS_TIMEOUT:-90}"
+APPLY_MARGIN="${MB_WD_APPLY_MARGIN:-15}"
 # Потолок на весь tick_down: пока он идёт, kill-switch поднят и LAN заперт.
 DOWN_BUDGET="${MB_WD_DOWN_BUDGET:-240}"
 # Хвост бюджета, неприкосновенный для повторов сохранённого конфига: только failover. Без него
@@ -49,9 +51,9 @@ FAILOVER_RESERVE="${MB_WD_FAILOVER_RESERVE:-150}"
 DOWN_BACKOFF0="${MB_WD_DOWN_BACKOFF0:-60}"
 XRAY_MATCH="${MB_WD_XRAY_MATCH:-xray run -c $XRAY_CONF}"
 MB_WD_LIB="${MB_WD_LIB:-$(dirname "$0")}"
-# Проверяем ВСЕ три: `.` на отсутствующем файле валит скрипт молча, и watchdog умирал бы на каждом
+# Проверяем ВСЕ четыре: `.` на отсутствующем файле валит скрипт молча, и watchdog умирал бы на каждом
 # тике, ничего не оставляя в logread. Достижимо в окне деплоя и при частичном обновлении.
-for f in probes.sh recovery.sh phases.sh; do
+for f in probes.sh recovery.sh phases.sh wdlock.sh; do
 	[ -f "$MB_WD_LIB/$f" ] || { MB_WD_LIB=/usr/share/monkey-business; break; }
 done
 # shellcheck source=root/usr/share/monkey-business/probes.sh disable=SC1091
@@ -62,6 +64,8 @@ done
 . "$MB_WD_LIB/recovery.sh"
 # shellcheck source=root/usr/share/monkey-business/phases.sh disable=SC1091
 . "$MB_WD_LIB/phases.sh"
+# shellcheck source=root/usr/share/monkey-business/wdlock.sh disable=SC1091
+. "$MB_WD_LIB/wdlock.sh"
 
 now() { echo "${MB_WD_NOW:-$(date +%s)}"; }
 sig() { printf '%s' "${1:-}" | cksum | cut -d' ' -f1; }
@@ -160,24 +164,8 @@ tick() {
 }
 
 main() {
-	mkdir -p "$STATE_DIR" 2>/dev/null || true
-	if command -v flock >/dev/null 2>&1; then
-		exec 9>"$LOCK"
-		flock -n 9 || exit 0
-	else
-		# Без flock cron-тики наслаивались (tick спит до ~90с) и гонка портила state.
-		# mkdir атомарен; протухший лок (>15 мин) снимаем, иначе watchdog умрёт навсегда.
-		# Гонка на снятии протухшего лока безопасна: тики раз в минуту, а победитель сразу
-		# обновляет mtime каталога — второй претендент уже не увидит его протухшим.
-		if ! mkdir "$LOCK.d" 2>/dev/null; then
-			age=$(stat -c %Y "$LOCK.d" 2>/dev/null || echo 0)
-			[ "$(( $(date +%s) - age ))" -gt 900 ] || exit 0
-			rmdir "$LOCK.d" 2>/dev/null
-			mkdir "$LOCK.d" 2>/dev/null || exit 0
-		fi
-		trap 'rmdir "$LOCK.d" 2>/dev/null' EXIT
-		trap 'rmdir "$LOCK.d" 2>/dev/null; exit 143' INT TERM
-	fi
+	# Без лока cron-тики наслаивались (tick спит до ~90с) и гонка портила state.
+	wd_lock "$LOCK" || exit 0
 	tick
 }
 
