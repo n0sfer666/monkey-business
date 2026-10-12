@@ -5,16 +5,16 @@
 'require view.monkey-business.store as store';
 'require view.monkey-business.subs as subs';
 'require view.monkey-business.kit.drag as drag';
-'require view.monkey-business.kit.notify as notice';
 'require view.monkey-business.kit.refocus as refocus';
 'require view.monkey-business.kit.menu as menu';
 'require view.monkey-business.model.servers as model';
 'require view.monkey-business.model.subs as submodel';
-'require view.monkey-business.model.order as order';
 'require view.monkey-business.srv.serverrow as serverrow';
 'require view.monkey-business.srv.servertiles as servertiles';
 'require view.monkey-business.srv.serveredit as serveredit';
 'require view.monkey-business.srv.serverhead as serverhead';
+'require view.monkey-business.srv.serverping as serverping';
+'require view.monkey-business.srv.serverorder as serverorder';
 
 var FOCUS = /^mb-(srow|srvs|seg)-|^mb-tile$/;
 
@@ -35,6 +35,8 @@ return baseclass.extend({
         return refocus.near(root, 'data-sid', sid, [cls, 'mb-srow-more'], '.mb-srvs-add');
       },
     });
+    var ping = serverping.create(st, draw);
+    var arrange = serverorder.create({ st: st, ids: ids, pingOf: ping.of, changed: changed, draw: draw });
 
     function subList() {
       return store.sections('subscription').map(function (s) {
@@ -63,89 +65,9 @@ return baseclass.extend({
       });
     }
 
-    function pingOf(s) {
-      return st.pings[subs.serverId(s)];
-    }
-
     function changed() {
       draw();
       o.onChange();
-    }
-
-    function update(results) {
-      (results || []).forEach(function (r) {
-        st.pings[r.id] = model.pingOf(r);
-        st.known[r.id] = true;
-      });
-    }
-
-    function move(sid, target, after) {
-      store.move(sid, target, after);
-    }
-
-    function place(sid, target) {
-      var r = order.place(ids(), sid, target);
-
-      if (r) move(sid, target, r.after);
-      changed();
-    }
-
-    function step(sid, dir) {
-      var target = order.neighbour(ids(), sid, dir);
-
-      if (!target) return;
-      move(sid, target, dir > 0);
-      changed();
-    }
-
-    function tap(sid) {
-      var from = st.picked;
-
-      st.picked = from == null ? sid : null;
-      if (from != null && from !== sid) return place(from, sid);
-      draw();
-    }
-
-    function sort() {
-      var now = ids();
-      var want = order.sorted(now, function (sid) {
-        return model.rank(pingOf(store.get(sid)));
-      });
-
-      if (want.join() === now.join()) return notice.show(_('Already in ping order.'), 'info');
-      order.chain(want, move);
-      changed();
-      notice.show(_('Sorted by ping. Press “Save & Apply” to connect in this order.'), 'info');
-    }
-
-    function pingAll() {
-      if (st.pinging) return Promise.resolve();
-      st.pinging = true;
-
-      return api
-        .serversPing()
-        .then(function (res) {
-          if (res && res.error) return notice.show(_('Latency test failed: ') + res.error, 'warning');
-          update(res && res.results);
-        })
-        .catch(notice.fail(_('Latency test failed: ')))
-        .finally(function () {
-          st.pinging = false;
-        })
-        .then(draw);
-    }
-
-    function pingOne(sid) {
-      var id = subs.serverId(store.get(sid));
-
-      return api
-        .serverPing(id)
-        .then(function (r) {
-          if (r && r.error) return notice.show(_('Ping failed: ') + r.error, 'warning');
-          update([r]);
-          draw();
-        })
-        .catch(notice.fail(_('Ping failed: ')));
     }
 
     function setOff(sid, on) {
@@ -163,13 +85,13 @@ return baseclass.extend({
             server: s,
             n: servers.indexOf(s) + 1,
             subName: subName(s),
-            ping: model.ping(pingOf(s)),
+            ping: model.ping(ping.of(s)),
             movable: movable,
             pingable: !!st.known[subs.serverId(s)],
             readonly: o.readonly,
-            onStep: step,
+            onStep: arrange.step,
             onOff: setOff,
-            onPing: pingOne,
+            onPing: ping.one,
             onEdit: edit.edit,
             onDelete: edit.remove,
           });
@@ -190,9 +112,9 @@ return baseclass.extend({
         return servertiles.render({
           servers: servers,
           picked: st.picked,
-          onTap: tap,
+          onTap: arrange.tap,
           ping: function (s) {
-            return model.ping(pingOf(s));
+            return model.ping(ping.of(s));
           },
         });
 
@@ -217,7 +139,7 @@ return baseclass.extend({
     function relist() {
       return api.serversList().then(
         function (res) {
-          update(res && res.servers);
+          ping.update(res && res.servers);
           draw();
         },
         function () {},
@@ -255,8 +177,8 @@ return baseclass.extend({
               st.picked = null;
               draw();
             },
-            onPingAll: pingAll,
-            onSort: sort,
+            onPingAll: ping.all,
+            onSort: arrange.sort,
             onAdd: edit.add,
           }),
         ].concat(body(servers), o.readonly || !servers.length ? [] : serverhead.foot()),
@@ -270,8 +192,8 @@ return baseclass.extend({
       serverhead.relabel(root, model.filters(all(), subList()));
     }
 
-    drag.attach(list, { handle: '.mb-srow-grip', key: 'data-sid', onDrop: place });
-    update(o.list && o.list.servers);
+    drag.attach(list, { handle: '.mb-srow-grip', key: 'data-sid', onDrop: arrange.place });
+    ping.update(o.list && o.list.servers);
     draw();
 
     return {
@@ -283,7 +205,7 @@ return baseclass.extend({
       reset: edit.reset,
       relist: relist,
       onPing: function (res) {
-        update(res && res.results);
+        ping.update(res && res.results);
         draw();
       },
     };
