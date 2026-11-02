@@ -20,13 +20,14 @@ mkdir -p "$T/bin"
 cat >"$T/bin/curl" <<EOF
 #!/bin/sh
 echo "\$*" >> "$T/curl.log"
+IFS= read -r config || exit 2
 out=""; prev=""
 for a in "\$@"; do
 	[ "\$prev" = "-o" ] && out="\$a"
 	prev="\$a"
 done
 case "\$*" in
-	*-I\ *)    [ -f "$T/direct_ok" ] || exit 28
+	*-I*)    [ -f "$T/direct_ok" ] || exit 28
 	           printf 'HTTP/1.1 200 OK\r\nContent-Length: 4242\r\n'; exit 0 ;;
 	*socks5h*) [ -f "$T/socks_ok" ] || exit 7
 	           printf 'via-socks' > "\$out"; exit 0 ;;
@@ -43,13 +44,14 @@ chmod +x "$T/bin/curl" "$T/bin/pgrep"
 # PATH внутри прогона — только мок-каталог (иначе command -v нашёл бы системный curl),
 # поэтому реальные утилиты, которые нужны самому fetch.sh, кладём туда же
 ln -sf /bin/rm "$T/bin/rm"
+ln -sf "$(command -v ucode)" "$T/bin/ucode"
 ln -sf "$(command -v awk)" "$T/bin/awk"
 
 # fetch.sh проверяет наличие curl через command -v -> PATH только из мок-каталога
 run() {
 	rm -f "$T/curl.log" "$T/out"
 	rc=0
-	PATH="$T/bin" /bin/sh -c ". '$LIB'; mb_fetch http://x/f '$T/out'" 2>"$T/err" || rc=$?
+	PATH="$T/bin" /bin/sh -c ". '$LIB'; mb_fetch https://x/f '$T/out'" 2>"$T/err" || rc=$?
 	echo "$rc"
 }
 body()    { cat "$T/out" 2>/dev/null || echo "<нет файла>"; }
@@ -85,7 +87,7 @@ echo "=== socks-адрес переопределяется через MB_FETCH_
 : >"$T/socks_ok"
 rm -f "$T/curl.log" "$T/out"
 PATH="$T/bin" MB_FETCH_SOCKS="10.0.0.9:1080" \
-	/bin/sh -c ". '$LIB'; mb_fetch http://x/f '$T/out'" 2>/dev/null
+	/bin/sh -c ". '$LIB'; mb_fetch https://x/f '$T/out'" 2>/dev/null
 check "использован заданный socks" "$(grep -c 'socks5h://10.0.0.9:1080' "$T/curl.log")" "1"
 
 # Зеркало, которое соединилось и отдаёт по ~140 байт/с, connect-timeout не ловит: без порога
@@ -102,7 +104,7 @@ check "socks-вызов тоже с порогом"       "$(grep -c -- '--speed
 echo "=== порог настраивается через env ==="
 rm -f "$T/curl.log" "$T/out"; : >"$T/direct_ok"
 PATH="$T/bin" MB_FETCH_MIN_RATE=4096 MB_FETCH_STALL=5 \
-	/bin/sh -c ". '$LIB'; mb_fetch http://x/f '$T/out'" 2>/dev/null
+	/bin/sh -c ". '$LIB'; mb_fetch https://x/f '$T/out'" 2>/dev/null
 check "порог из env" "$(grep -c -- '--speed-limit 4096 --speed-time 5' "$T/curl.log")" "1"
 
 # hysteria.sh временно урезает MB_FETCH_TIMEOUT ради мелкого файла сумм: лимит обязан читаться в
@@ -110,16 +112,16 @@ check "порог из env" "$(grep -c -- '--speed-limit 4096 --speed-time 5' "$
 echo "=== урезанный MB_FETCH_TIMEOUT доезжает до curl, порог сохраняется ==="
 rm -f "$T/curl.log" "$T/out"
 PATH="$T/bin" MB_FETCH_TIMEOUT=30 \
-	/bin/sh -c ". '$LIB'; mb_fetch http://x/f '$T/out'" 2>/dev/null
+	/bin/sh -c ". '$LIB'; mb_fetch https://x/f '$T/out'" 2>/dev/null
 check "лимит из env"        "$(grep -c -- '-m 30' "$T/curl.log")" "1"
 check "порог на месте"       "$(grep -c -- '--speed-limit 1024' "$T/curl.log")" "1"
 
 echo "=== mb_remote_size: HEAD с теми же лимитами ==="
 rm -f "$T/curl.log"; : >"$T/direct_ok"
-sz="$(PATH="$T/bin" /bin/sh -c ". '$LIB'; mb_remote_size http://x/f" 2>/dev/null)"
+sz="$(PATH="$T/bin" /bin/sh -c ". '$LIB'; mb_remote_size https://x/f" 2>/dev/null)"
 check "размер из Content-Length" "$sz" "4242"
 check "HEAD с порогом"           "$(grep -c -- '--speed-limit 1024 --speed-time 20' "$T/curl.log")" "1"
-check "это именно HEAD"          "$(grep -c -- '-I http://x/f' "$T/curl.log")" "1"
+check "это именно HEAD"          "$(grep -c -- '-I' "$T/curl.log")" "1"
 
 echo "=== curl отсутствует, есть wget -> direct через wget, socks невозможен ==="
 rm -f "$T/bin/curl" "$T/out"
@@ -129,9 +131,9 @@ printf 'via-wget' > "$T/out"
 EOF
 chmod +x "$T/bin/wget"
 rc=0
-PATH="$T/bin" /bin/sh -c ". '$LIB'; mb_fetch http://x/f '$T/out'" 2>/dev/null || rc=$?
-check "код возврата 0" "$rc" "0"
-check "файл от wget" "$(body)" "via-wget"
+PATH="$T/bin" /bin/sh -c ". '$LIB'; mb_fetch https://x/f '$T/out'" 2>/dev/null || rc=$?
+check "curl dependency missing" "$rc" "1"
+check "no unbounded wget fallback" "$(body)" "<нет файла>"
 
 echo "=== mb_content_length: регистронезависимо (busybox awk без IGNORECASE) ==="
 # shellcheck source=/dev/null

@@ -2,6 +2,7 @@
 # Юнит-тест geo.sh cmd_download: перебор зеркал, превентивная проверка места, говорящие статусы.
 # fetch.sh подменяется фейком (mb_fetch/mb_remote_size), xray/df/uci — стабами через PATH,
 # состояние читаем из изолированного STATE-файла (MB_GEO_STATE). Реальная сеть/xray не нужны.
+# shellcheck disable=SC2016
 set -u
 
 SELF_DIR=$(dirname "$0")
@@ -77,13 +78,42 @@ rc="$(run MB_GEO_MIRRORS="$M" MB_TEST_OK="good.mirror" MB_TEST_FREE_KB=900000)"
 check    "код возврата 0"        "$rc" "0"
 check    "статус ok"             "$(state)" "ok"
 check    "установлены обе базы"   "$(dat_n)" "2"
-contains "скачано с живого зеркала" "$(out)" "good.mirror"
+contains "скачано с живого зеркала" "$(out)" "fetched and verified"
 
 echo "=== места хватает, но сеть падает -> проходим precheck и упираемся в зеркала ==="
 rc="$(run MB_TEST_SIZE=1000000 MB_TEST_FREE_KB=900000 MB_TEST_FETCH_RC=1)"
 check    "код возврата 1"     "$rc" "1"
 contains "статус про зеркала"  "$(state)" "все зеркала недоступны"
 
+echo "=== status -> updated = mtime самой свежей базы, без баз = 0 ==="
+rm -f "$T/dest"/*.dat
+st="$(env MB_GEO_DIR="$T/dest" MB_GEO_STATE="$STATEF" sh "$GEO" status)"
+contains "без баз updated 0" "$st" '"updated": 0'
+echo a > "$T/dest/geoip.dat"; echo bb > "$T/dest/geosite.dat"
+touch -t 202601020304.05 "$T/dest/geoip.dat"
+touch -t 202602030405.06 "$T/dest/geosite.dat"
+want="$(date -r "$T/dest/geosite.dat" +%s)"
+st="$(env MB_GEO_DIR="$T/dest" MB_GEO_STATE="$STATEF" sh "$GEO" status)"
+contains "updated от geosite" "$st" "\"updated\": $want"
+
 echo
 echo "geo_test: $pass passed, $fail failed"
-[ "$fail" = 0 ]
+[ "$fail" = 0 ] || exit 1
+
+# A second authorized upload during validation must not change installed bytes.
+printf '#!/bin/sh\n[ -z "${MB_TEST_SWAP_SOURCE:-}" ] || printf changed > "$MB_TEST_SWAP_SOURCE"\nexit 0\n' > "$T/bin/xray"
+printf original > "$T/upload.dat"
+env PATH="$T/bin:$PATH" MB_TEST_SWAP_SOURCE="$T/upload.dat" MB_GEO_STATE="$STATEF" MB_GEO_DIR="$T/dest" \
+ sh "$GEO" install geoip "$T/upload.dat" >/dev/null || exit 1
+[ "$(cat "$T/dest/geoip.dat")" = original ] || { echo 'unvalidated source swap installed'; exit 1; }
+printf foreign > "$T/foreign.dat"
+ln -s "$T/foreign.dat" "$T/link.dat"
+if env PATH="$T/bin:$PATH" MB_GEO_STATE="$STATEF" MB_GEO_DIR="$T/dest" sh "$GEO" install geoip "$T/link.dat" >/dev/null 2>&1; then
+ echo 'symlink source accepted'; exit 1
+fi
+[ "$(cat "$T/dest/geoip.dat")" = original ] || exit 1
+truncate -s 67108865 "$T/large.dat"
+if env PATH="$T/bin:$PATH" MB_GEO_STATE="$STATEF" MB_GEO_DIR="$T/dest" sh "$GEO" install geoip "$T/large.dat" >/dev/null 2>&1; then
+ echo 'oversized source accepted'; exit 1
+fi
+echo 'PASS: immutable validated geo bytes, rejected symlink and oversized sources'

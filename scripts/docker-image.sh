@@ -26,7 +26,8 @@ fresh() {
 
 build() {
 	mkdir -p "$(dirname "$STAMP")"
-	docker build -q -t "$IMAGE" -f "$FILE" . >/dev/null || return 1
+	# These test Dockerfiles do not COPY workspace files; stdin supplies an empty context.
+	docker build -q -t "$IMAGE" - < "$FILE" >/dev/null || return 1
 	touch "$STAMP"
 }
 

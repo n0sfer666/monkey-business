@@ -6,11 +6,16 @@
 # tx_errors недостаточно (счётчик растёт и от безобидных ошибок), иначе watcher ронял бы живой LAN.
 #
 # Эскалация: 1-й страйк — bounce линка; 2-й и далее — re-bind USB-устройства к драйверу.
-# Env-override: MB_NIC_IFACE(eth1) MB_NIC_STATE_DIR(/tmp/mb-nicwatch) MB_NIC_SYSNET MB_NIC_USBDRV.
+# Env-override: MB_NIC_IFACE(eth1) MB_NIC_STATE_DIR(/tmp/mb-runtime/nicwatch) MB_NIC_SYSNET MB_NIC_USBDRV.
 set -u
+umask 077
+MB_PRIVATE_LIB="$(dirname "$0")"
+# shellcheck source=root/usr/share/monkey-business/private.sh disable=SC1091
+. "$MB_PRIVATE_LIB/private.sh"
 
 IFACE="${MB_NIC_IFACE:-eth1}"
-STATE_DIR="${MB_NIC_STATE_DIR:-/tmp/mb-nicwatch}"
+STATE_DIR="${MB_NIC_STATE_DIR:-/tmp/mb-runtime/nicwatch}"
+mb_private_dir "$STATE_DIR" || exit 1
 SYSNET="${MB_NIC_SYSNET:-/sys/class/net}"
 USBDRV="${MB_NIC_USBDRV:-/sys/bus/usb/drivers/r8152}"
 STATE="$STATE_DIR/state"

@@ -1,4 +1,11 @@
 .DS_Store
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.pfx
 *.ipk
 *.bin
 build/
@@ -13,3 +20,9 @@ __pycache__/
 .claude/
 .context/notes/
 .context/investigations/
+
+# Private working material for the routing/availability rollout; retain locally.
+.context/audits/2026-11-02-*.md
+.context/decisions/2026-11-01-*.md
+.context/decisions/2026-11-02-*.md
+.context/specs/2026-11-01-*.md

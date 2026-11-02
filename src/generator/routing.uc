@@ -2,8 +2,12 @@
 // Порядок здесь — это и есть сплит, поэтому он собран в одном месте.
 
 import { isTrueByDefault, isIpLike } from "../lib/val.uc";
+import { MATCHER, entries, checkEntry } from "../lib/rules.uc";
+
+import { normalizeRules, orderedRules } from "../lib/corporate.uc";
 
 const GEOSITE_REGION = { ru: "category-ru", cn: "cn", ir: "category-ir" };
+const GFW_TAG = { cn: "gfw" };
 
 function geositeRegion(region) {
 	return GEOSITE_REGION[region] || region;
@@ -12,20 +16,19 @@ function geositeRegion(region) {
 // строки (через \n или ,) -> { domains:[...], ips:[...] }; поддержка geoip:/geosite:
 function classifyList(str) {
 	let domains = [], ips = [];
-	if (str == null || str == "")
-		return { domains: domains, ips: ips };
-	let norm = replace(str, ",", "\n");
-	for (let line in split(norm, "\n")) {
-		let t = trim(line);
-		if (t == "" || substr(t, 0, 1) == "#")
+	for (let e in entries(str)) {
+		let t = e.value;
+		if (checkEntry(t) != null)
 			continue;
-		if (index(t, "geosite:") == 0)
-			push(domains, t);
-		else if (index(t, "geoip:") == 0)
-			push(ips, t);
-		else if (substr(t, 0, 2) == "*." && length(t) > 2)
+		let geo = match(t, /^(geosite|geoip):(.*)$/i);
+		let m = match(t, MATCHER);
+		if (geo != null)
+			push(lc(geo[1]) == "geosite" ? domains : ips, lc(geo[1]) + ":" + geo[2]);
+		else if (m != null)
+			push(domains, lc(m[1]) + ":" + m[2]);
+		else if (substr(t, 0, 2) == "*.")
 			push(domains, "domain:" + substr(t, 2));
-		else if (isIpLike(t))
+		else if (isIpLike(t) || index(t, ":") >= 0)
 			push(ips, t);
 		else
 			push(domains, t);
@@ -52,8 +55,8 @@ function modeRules(mode, region, other) {
 		];
 	if (mode == "gfwlist") {
 		let rules = [ { type: "field", ip: ["geoip:private"], outboundTag: "direct" } ];
-		if (!other)
-			push(rules, { type: "field", domain: ["geosite:geolocation-!" + region], outboundTag: "proxy" });
+		if (GFW_TAG[region])
+			push(rules, { type: "field", domain: ["geosite:" + GFW_TAG[region]], outboundTag: "proxy" });
 		push(rules, { type: "field", network: "tcp,udp", outboundTag: "direct" });
 		return rules;
 	}
@@ -66,7 +69,7 @@ function modeRules(mode, region, other) {
 	];
 }
 
-function buildRouting(g, directDns) {
+function buildRouting(g, directDns, corporate, localAddresses) {
 	let region = g.local_region || "ru";
 	let mode = g.routing_mode || "bypass-local";
 	// local_region "other": нет geo-категории региона (geosite:other/geoip:other невалидны,
@@ -74,6 +77,17 @@ function buildRouting(g, directDns) {
 	// private всегда direct, судьба «остального» — по routing_mode.
 	let other = (region == "other");
 	let rules = [];
+	// Only LAN interception receives corporate overrides. Bootstrap and diagnostic
+	// inbounds must retain independent routing even for the same destination IP.
+	let normalized = normalizeRules(corporate == null ? [] : corporate, localAddresses);
+	if (length(normalized.errors)) die("invalid corporate rules");
+	for (let rule in orderedRules(normalized.rules)) {
+		let field = { type: "field", inboundTag: ["tproxy-in"],
+			ip: [rule.address + "/32"], network: "tcp,udp",
+			outboundTag: rule.enabled ? "proxy" : "direct" };
+		if (rule.port != "") field.port = rule.port;
+		push(rules, field);
+	}
 
 	// custom direct/proxy — только в split-tunnel (не в global), ПЕРЕД правилами режима.
 	// Должны идти ДО ipv6-block: явный whitelist (в т.ч. IPv6) перекрывает блок ::/0.

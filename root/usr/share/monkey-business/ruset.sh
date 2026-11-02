@@ -7,9 +7,13 @@
 #   ruset.sh status   # JSON: state/v4/v6 (количество элементов)
 # Идемпотентность: build пропускает перегенерацию, если sha256 источника не изменился и файлы на месте.
 set -u
+umask 077
+MB_PRIVATE_LIB="$(dirname "$0")"
+# shellcheck source=root/usr/share/monkey-business/private.sh disable=SC1091
+. "$MB_PRIVATE_LIB/private.sh"
 
 DIR="${MB_RUSET_DIR:-/usr/share/monkey-business}"
-STATE="/tmp/mb-ruset.state"
+STATE="/tmp/mb-runtime/ruset.state"
 TABLE="inet monkey_business"
 DEFAULT_URL="https://raw.githubusercontent.com/Loyalsoldier/geoip/release/text/ru.txt"
 RU4="$DIR/ru4.nft"
@@ -25,7 +29,8 @@ else
 fi
 
 uci_get() { uci -q get "monkey-business.geo.$1" 2>/dev/null || echo ""; }
-set_state() { echo "$1" >"$STATE"; }
+mb_private_dir "$(dirname "$STATE")" && mb_private_file "$STATE" || exit 1
+set_state() { mb_state_write "$STATE" "$1"; }
 
 sha_of() { sha256sum "$1" 2>/dev/null | awk '{print $1}'; }
 
@@ -72,13 +77,13 @@ cmd_build() {
 	url="$(uci_get ru_set_url)"
 	[ -n "$url" ] || url="${MB_RUSET_URL:-$DEFAULT_URL}"
 	tmp="$(mktemp "${TMPDIR:-/tmp}/mb-ru.dl.XXXXXX")" || { set_state "error: mktemp failed"; return 1; }
-	if ! mb_fetch "$url" "$tmp"; then set_state "error: download failed"; rm -f "$tmp"; return 1; fi
+	if ! MB_FETCH_MAX_BYTES=4194304 mb_fetch "$url" "$tmp"; then set_state "error: download failed"; rm -f "$tmp"; return 1; fi
 	if [ ! -s "$tmp" ]; then set_state "error: empty source"; rm -f "$tmp"; return 1; fi
 	new="$(sha_of "$tmp")"
 	if [ -n "$new" ] && [ "$new" = "$old" ] && [ -f "$RU4" ]; then
 		rm -f "$tmp"
 		c4="$(count_elems mb_ru4 "$RU4")"; c6="$(count_elems mb_ru6 "$RU6")"
-		printf 'state=ok\nsha=%s\nv4=%s\nv6=%s\n' "$new" "$c4" "$c6" >"$STATE"
+		mb_state_write "$STATE" "$(printf 'state=ok\nsha=%s\nv4=%s\nv6=%s' "$new" "$c4" "$c6")"
 		reload_live
 		echo "ru-set: up to date (sha256 match)"
 		return 0
@@ -86,7 +91,7 @@ cmd_build() {
 	if ! generate "$tmp"; then set_state "error: no valid CIDR in source"; rm -f "$tmp"; return 1; fi
 	rm -f "$tmp"
 	c4="$(count_elems mb_ru4 "$RU4")"; c6="$(count_elems mb_ru6 "$RU6")"
-	printf 'state=ok\nsha=%s\nv4=%s\nv6=%s\n' "$new" "$c4" "$c6" >"$STATE"
+	mb_state_write "$STATE" "$(printf 'state=ok\nsha=%s\nv4=%s\nv6=%s' "$new" "$c4" "$c6")"
 	reload_live
 	echo "ru-set built: v4=$c4 v6=$c6"
 }

@@ -4,18 +4,20 @@
 # new Function(body): компилирует без выполнения, ловит синтаксис, не требует L/ui/rpc.
 set -u
 
+errors=$(mktemp)
+trap 'rm -f "$errors"' EXIT
 rc=0
 found=0
 while IFS= read -r f; do
 	[ -n "$f" ] || continue
 	found=$((found + 1))
-	if ! node -e "new Function(require('fs').readFileSync(process.argv[1],'utf8'))" "$f" 2>/tmp/js-err; then
+	if ! node -e "new Function(require('fs').readFileSync(process.argv[1],'utf8'))" "$f" 2>"$errors"; then
 		echo "JS SYNTAX ERROR: $f"
-		cat /tmp/js-err
+		cat "$errors"
 		rc=1
 	fi
 done <<EOF
-$(find luci -name '*.js' 2>/dev/null | sort)
+$(find luci scripts/ui-diff -name '*.js' 2>/dev/null | sort)
 EOF
 
 if [ "$rc" -eq 0 ]; then

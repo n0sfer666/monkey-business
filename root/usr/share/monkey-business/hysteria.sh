@@ -9,11 +9,15 @@
 # запуском -> атомарно поставить. Отличие от geo.sh: там данные, тут исполняемое под root, поэтому
 # сумма обязательна и без неё установка отменяется — сбор суммы и голосование по ней в hysum.sh.
 set -u
+umask 077
+MB_PRIVATE_LIB="$(dirname "$0")"
+# shellcheck source=root/usr/share/monkey-business/private.sh disable=SC1091
+. "$MB_PRIVATE_LIB/private.sh"
 
 DEST="${MB_HY_BIN:-/usr/bin/hysteria}"
 CONF="${MB_HY_CONF:-/etc/monkey-business/hysteria.json}"
-STATE="${MB_HY_STATE:-/tmp/mb-hysteria.state}"
-LOCK="${MB_HY_LOCK:-/tmp/mb-hysteria.lock}"
+STATE="${MB_HY_STATE:-/tmp/mb-runtime/hysteria.state}"
+LOCK="${MB_HY_LOCK:-/tmp/mb-runtime/hysteria.lock}"
 # Суммы апстрим публикует ОДНИМ файлом на релиз, строкой на ассет; отдельных <asset>.sha256 у него
 # нет (404). За ними скрипт и ходил — и отменял установку «сумма не опубликована» на каждом прогоне.
 HASHES="${MB_HY_HASHES:-hashes.txt}"
@@ -47,7 +51,8 @@ else
 	collect_sha() { echo "hysum.sh not found in $SELF_DIR" >&2; return 4; }
 fi
 
-set_state() { echo "$1" >"$STATE"; }
+mb_private_dir "$(dirname "$STATE")" && mb_private_file "$STATE" || exit 1
+set_state() { mb_state_write "$STATE" "$1"; }
 
 mirrors() {
 	m="$(uci -q get monkey-business.hysteria.mirrors 2>/dev/null || echo "")"
@@ -157,7 +162,7 @@ cmd_install() {
 		chmod 755 "$DEST.new"
 		if ! mv -f "$DEST.new" "$DEST"; then last_err="install move failed"; rm -f "$DEST.new"; continue; fi
 		set_state "ok"
-		echo "hysteria installed from $url"
+		echo "hysteria installed and verified"
 		return 0
 	done
 	case "$last_err" in

@@ -31,32 +31,39 @@ MB_FETCH_SOCKS="${MB_FETCH_SOCKS:-127.0.0.1:10808}"
 
 # Лимиты одним местом. Переменные разворачиваются в момент вызова, а не в константе: hysteria.sh
 # временно урезает MB_FETCH_TIMEOUT на мелких файлах, и константа этого бы не увидела.
-mb_curl() { # <curl-args...>
-	curl -fsSL --connect-timeout "$MB_FETCH_CONNECT" -m "$MB_FETCH_TIMEOUT" \
-		--speed-limit "$MB_FETCH_MIN_RATE" --speed-time "$MB_FETCH_STALL" "$@"
+# URL is stdin data, never argv. curl is a required runtime dependency.
+MB_FETCH_MAX_BYTES="${MB_FETCH_MAX_BYTES:-67108864}"
+mb_curl() { # <url> <curl-options...>
+	_mb_url=$1; shift
+	printf '%s' "$_mb_url" | ucode -e '
+		import { readfile } from "fs";
+		let url = readfile("/dev/stdin", 8193);
+		if (url == null || length(url) > 8192 || match(url, /^https:\/\//i) == null ||
+			match(url, /[[:space:][:cntrl:]]/) != null) exit(1);
+		print("url = ", sprintf("%J", url), "\n");
+	' | curl --disable --globoff -fsSL --config - --proto '=https' --proto-redir '=https' \
+		--max-redirs 5 --max-filesize "$MB_FETCH_MAX_BYTES" \
+		--connect-timeout "$MB_FETCH_CONNECT" -m "$MB_FETCH_TIMEOUT" \
+		--speed-limit "$MB_FETCH_MIN_RATE" --speed-time "$MB_FETCH_STALL" "$@" 2>/dev/null
 }
 
 mb_fetch_direct() { # <url> <out>
-	# только curl умеет РАЗДЕЛЬНО connect-timeout (быстро отсечь мёртвое зеркало), порог скорости и
-	# общий лимит; у uclient-fetch/wget -T = общий таймаут операции, поэтому им оставляем полный
-	# MB_FETCH_TIMEOUT, иначе крупные списки (ruset.sh) рвались бы на медленном канале.
-	if command -v curl >/dev/null 2>&1; then mb_curl -o "$2" "$1"
-	elif command -v uclient-fetch >/dev/null 2>&1; then uclient-fetch -q -T "$MB_FETCH_TIMEOUT" -O "$2" "$1"
-	else wget -q -T "$MB_FETCH_TIMEOUT" -O "$2" "$1"; fi
+	command -v curl >/dev/null 2>&1 || return 1
+	mb_curl "$1" -o "$2"
 }
 
 # socks поднимает только живой xray; без него фолбэк бессмысленен
 mb_fetch_socks() { # <url> <out>
 	command -v curl >/dev/null 2>&1 || return 1
 	mb_xray_up || return 1
-	mb_curl -x "socks5h://$MB_FETCH_SOCKS" -o "$2" "$1"
+	mb_curl "$1" -x "socks5h://$MB_FETCH_SOCKS" -o "$2"
 }
 
 mb_fetch() { # <url> <out>
 	mb_fetch_direct "$1" "$2" && return 0
 	rm -f "$2" 2>/dev/null
 	mb_fetch_socks "$1" "$2" || { rm -f "$2" 2>/dev/null; return 1; }
-	echo "fetch: $1: direct failed, fetched via tunnel" >&2
+	echo "fetch: direct failed, fetched via tunnel" >&2
 	return 0
 }
 
@@ -70,9 +77,9 @@ mb_content_length() { # reads HTTP headers on stdin -> печатает байт
 }
 mb_remote_size() { # <url> -> байты или пусто
 	command -v curl >/dev/null 2>&1 || return 0
-	_sz="$(mb_curl -I "$1" 2>/dev/null | mb_content_length)"
+	_sz="$(mb_curl "$1" -I 2>/dev/null | mb_content_length)"
 	if [ -z "$_sz" ] && mb_xray_up; then
-		_sz="$(mb_curl -x "socks5h://$MB_FETCH_SOCKS" -I "$1" 2>/dev/null | mb_content_length)"
+		_sz="$(mb_curl "$1" -x "socks5h://$MB_FETCH_SOCKS" -I 2>/dev/null | mb_content_length)"
 	fi
 	[ -n "$_sz" ] && printf '%s' "$_sz"
 	return 0

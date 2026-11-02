@@ -1,5 +1,7 @@
 // Инбаунды xray: боевой TPROXY, локальный socks для проверки сплита, прозрачный DNS.
 
+import { diagnosticPort, diagnosticCredentials } from "../lib/diagnostic.uc";
+
 const SOCKS_TEST_PORT = 10808;
 const DNS_INBOUND_PORT = 5300;
 
@@ -15,7 +17,8 @@ function buildInbound(g) {
 }
 
 // Локальный SOCKS-inbound (только 127.0.0.1) для проверки сплита: запрос через него идёт по тем
-// же правилам маршрутизации, что и TPROXY-трафик. Включается флагом config.test_socks.
+// же общим правилам сплита, что и TPROXY-трафик, без LAN-only corporate overrides.
+// Не является health-путём. Включается флагом config.test_socks.
 function buildSocksTestInbound() {
 	return {
 		tag: "socks-test",
@@ -40,4 +43,11 @@ function buildDnsInbound(port, dns) {
 	};
 }
 
-export { buildInbound, buildSocksTestInbound, buildDnsInbound, DNS_INBOUND_PORT };
+function buildDiagnosticInbound(tag, port, credentials) {
+	if (!diagnosticPort(port) || !diagnosticCredentials(credentials)) die("invalid_diagnostic_inbound");
+	return { tag: tag, listen: "127.0.0.1", port: port, protocol: "socks",
+		settings: { auth: "password", accounts: [{ user: credentials.user, pass: credentials.pass }],
+			udp: true, ip: "127.0.0.1" } };
+}
+
+export { buildDiagnosticInbound, buildInbound, buildSocksTestInbound, buildDnsInbound, DNS_INBOUND_PORT };

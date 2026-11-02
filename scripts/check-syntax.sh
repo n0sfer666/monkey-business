@@ -14,6 +14,12 @@ set -u
 T=$(mktemp -d)
 trap 'rm -rf "$T"' EXIT
 
+# Compile device entry points too; the UCI stub is for symbol resolution only.
+LIB=/usr/share/rpcd/ucode/lib/monkey-business
+mkdir -p "$LIB"
+cp -R src/. "$LIB/"
+printf 'function cursor() {} export { cursor };\n' > "$T/uci.uc"
+printf 'function connect() {} export { connect };\n' > "$T/ubus.uc"
 rc=0
 found=0
 while IFS= read -r f; do
@@ -27,6 +33,16 @@ while IFS= read -r f; do
 	fi
 done <<EOF
 $(find src luci -name '*.uc' 2>/dev/null | sort)
+EOF
+
+while IFS= read -r f; do
+	[ -n "$f" ] || continue
+	found=$((found + 1))
+	if ! ucode -L "$T/*.uc" -c -o "$T/entry.ucb" "$f" 2>"$T/err"; then
+		echo "SYNTAX ERROR: $f"; cat "$T/err"; rc=1
+	fi
+done <<EOF
+$(find root test/native scripts -name '*.uc' 2>/dev/null | sort)
 EOF
 
 if [ "$rc" -eq 0 ]; then

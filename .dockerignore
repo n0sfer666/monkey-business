@@ -1,0 +1,5 @@
+# Test images install public packages and never COPY workspace files.
+**
+!Dockerfile.test
+!Dockerfile.integ
+!Dockerfile.rpc

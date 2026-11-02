@@ -1,151 +1,203 @@
 'use strict';
 'require view';
-'require form';
-'require rpc';
-'require ui';
-'require uci';
-'require view.monkey-business.serverfields as fields';
-'require view.monkey-business.serverlink as link';
-
-var callSubUpdate = rpc.declare({
-	object: 'monkey-business', method: 'subscription_update', params: ['url']
-});
-var callStatus = rpc.declare({ object: 'monkey-business', method: 'status' });
-var callApply = rpc.declare({ object: 'monkey-business', method: 'config_apply' });
-
-function notifyResult(res) {
-	if (res && res.error)
-		ui.addNotification(null, E('p', _('Subscription update failed: ') + res.error), 'warning');
-	else
-		ui.addNotification(null, E('p', _('Servers fetched: ') + ((res && res.added) || 0)), 'info');
-	return res;
-}
+'require view.monkey-business.api as api';
+'require view.monkey-business.model.requestid as requestid';
+'require view.monkey-business.srv.readonly as readonlyView';
+'require view.monkey-business.store as store';
+'require view.monkey-business.kit.tabs as tabs';
+'require view.monkey-business.kit.viewbar as viewbar';
+'require view.monkey-business.kit.notify as notice';
+'require view.monkey-business.kit.gesture as gesture';
+'require view.monkey-business.availability as availability';
+'require view.monkey-business.srv.subpanel as subpanel';
+'require view.monkey-business.srv.serverpanel as serverpanel';
 
 return view.extend({
-	render: function() {
-		var m = new form.Map('monkey-business', _('Servers'),
-			_('Subscription (VPNON) and manual servers.'));
+  handleSave: null,
+  handleSaveApply: null,
+  handleReset: null,
 
-		var sub = m.section(form.NamedSection, 'subscription', 'subscription',
-			_('Subscription'));
+  load: function () {
+    return Promise.all([
+      L.hasViewPermission() ? store.load() : Promise.resolve(null),
+      api.serversOrderGet(),
+      api.serversList().catch(function () {
+        return null;
+      }),
+    ]);
+  },
 
-		var url = sub.option(form.Value, 'url', _('Subscription URL'),
-			_('VPNON subscription link. Type it and press "Fetch subscription" — it is saved automatically when the fetch succeeds.'));
-		url.password = true;
+  render: function (data) {
+    if (!L.hasViewPermission()) return readonlyView.render(data[2]);
+    this.orderRevision = data[1].revision;
+    var self = this;
+    var readonly = !L.hasViewPermission();
+    var busy = false;
 
-		var auto = sub.option(form.Flag, 'auto_update', _('Auto-update'),
-			_('Refresh the server list on a schedule.'));
-		auto.default = '1';
-		// rmempty=false обязателен: значение, совпавшее с default, LuCI удаляет из UCI на каждом
-		// Save формы — и subupdate.sh читал бы пустоту вместо выбора пользователя.
-		auto.rmempty = false;
+    function usable(el) {
+      return !!(el && el.isConnected && !el.disabled);
+    }
 
-		var interval = sub.option(form.Value, 'update_interval', _('Interval (sec)'),
-			_('How often to refresh the subscription. Values below 300 are clamped to 300.'));
-		interval.depends('auto_update', '1');
-		interval.datatype = 'uinteger';
-		interval.default = '86400';
-		interval.rmempty = false;
-		// Выключенное автообновление прячет поле; без retain Save стёр бы заданный интервал,
-		// и обратное включение молча вернуло бы сутки.
-		interval.retain = true;
+    function hold(work, back, spare) {
+      busy = true;
+      self.sync();
 
-		var btn = sub.option(form.Button, '_update', _('Update now'));
-		btn.inputtitle = _('Fetch subscription');
-		btn.inputstyle = 'apply';
-		btn.onclick = function() {
-			var typed = url.formvalue('subscription') || '';
-			if (typed === '') {
-				ui.addNotification(null, E('p', _('Enter a subscription URL first.')), 'warning');
-				return Promise.resolve();
-			}
-			ui.showModal(_('Fetching subscription…'), [ E('p', { 'class': 'spinning' }, _('Contacting server')) ]);
-			return callSubUpdate(typed).then(function(res) {
-				ui.hideModal();
-				notifyResult(res);
-				if (!(res && res.error))
-					window.setTimeout(function() { window.location.reload(); }, 600);
-			}).catch(function(e) {
-				ui.hideModal();
-				ui.addNotification(null, E('p', _('Fetch error: ') + e), 'error');
-			});
-		};
+      return Promise.resolve()
+        .then(work)
+        .finally(function () {
+          busy = false;
+          self.sync();
+          var to = usable(back) ? back : spare && spare();
 
-		var srv = m.section(form.GridSection, 'server', _('Manual servers'),
-			_('Add servers by hand, or reorder fetched ones. Lower priority connects first; if unreachable, the next is used.'));
-		srv.addremove = true;
-		srv.anonymous = true;
-		srv.sortable = true;
+          if (usable(to)) to.focus();
+        });
+    }
 
-		// Порядок в модалке: переключатель -> ссылка -> сами поля. Разобранная ссылка раскрывается
-		// в те же поля, поэтому перед сохранением её видно и можно поправить.
-		fields.mode(srv);
-		link.create(srv, function(section, section_id, flat) {
-			var show = section.getOption('_show');
-			var el = show ? show.getUIElement(section_id) : null;
-			if (el != null)
-				el.setValue('1');
-			fields.fill(section, section_id, flat);
-		});
-		fields.create(srv);
+    function act(name) {
+      return function (ev) {
+        var back = ev.currentTarget;
 
-		// Клик по Save снимает фокус со ссылки и только ЗАПУСКАЕТ разбор на устройстве — ответ
-		// придёт позже самого сохранения. Без ожидания секция сохранилась бы с пустыми полями:
-		// «Name must not be empty» на ровном месте и второй Save, чтобы всё получилось.
-		srv.handleModalSave = function() {
-			var self = this, args = arguments;
-			var save = function() {
-				return form.GridSection.prototype.handleModalSave.apply(self, args);
-			};
-			var wait = link.pending();
-			return wait ? wait.then(save, save) : save();
-		};
+        if (busy) return;
+        back.classList.add('spinning');
 
-		return m.render().then(function(node) {
-			node.appendChild(E('style', { 'type': 'text/css' },
-				'#cbi-monkey-business-server .cbi-section-table-titles > * {' +
-				' position: sticky; top: 0; z-index: 2;' +
-				' background: var(--background-color-medium, var(--background-color, #2b2b2b)); }'));
+        return hold(
+          function () {
+            return self[name]();
+          },
+          back,
+          function () {
+            return self.apply;
+          },
+        ).finally(function () {
+          back.classList.remove('spinning');
+        });
+      };
+    }
 
-			function wrapTable() {
-				var sec = node.querySelector('#cbi-monkey-business-server');
-				if (!sec) return;
-				var tbl = sec.querySelector(':scope > table.cbi-section-table');
-				if (!tbl) return;
-				var wrap = E('div', { 'class': 'mb-scroll', 'style': 'max-height:55vh;overflow-y:auto' });
-				tbl.parentNode.insertBefore(wrap, tbl);
-				wrap.appendChild(tbl);
-			}
+    this.reset = E('button', { class: 'mb-btn', click: act('doReset') }, [_('Reset')]);
+    this.save = E('button', { class: 'mb-btn', click: act('doSave') }, [_('Save')]);
+    this.apply = E('button', { class: 'mb-btn mb-btn-primary', click: act('doApply') }, [_('Apply priority')]);
+    this.sync = function () {
+      var locked = readonly || busy;
+      var dirty = store.dirty();
 
-			wrapTable();
-			var sec = node.querySelector('#cbi-monkey-business-server');
-			if (sec)
-				new MutationObserver(wrapTable).observe(sec, { childList: true });
-			return node;
-		});
-	},
+      self.root.inert = busy;
+      self.reset.disabled = locked || !dirty;
+      self.save.disabled = locked || !dirty;
+      self.apply.disabled = locked;
+    };
 
-	// Save & Apply: commit формы (порядок/серверы/URL), и если VPN включён — переприменить конфиг,
-	// чтобы переключиться на новый первый-по-приоритету сервер. handleSave без apply раньше оставлял
-	// изменения в "Unsaved Changes".
-	handleSaveApply: function(ev, mode) {
-		return this.handleSave(ev).then(function() {
-			return uci.apply();
-		}).then(function() {
-			return callStatus();
-		}).then(function(st) {
-			if (st && st.running)
-				return callApply().then(function(res) {
-					if (res && res.error)
-						ui.addNotification(null, E('p', _('Apply failed: ') + res.error), 'warning');
-					else if (res && res.skipped == 'disabled')
-						ui.addNotification(null, E('p', _('Saved. The VPN is off — the new order will apply when you turn it on.')), 'info');
-					else
-						ui.addNotification(null, E('p', _('Applied — connected to: ') + ((res && res.server) || '?')), 'info');
-				});
-			ui.addNotification(null, E('p', _('Saved. Turn on to connect to the top-priority server.')), 'info');
-		}).catch(function(e) {
-			ui.addNotification(null, E('p', _('Save & Apply failed: ') + e), 'error');
-		});
-	}
+    this.servers = serverpanel.create({ list: data[2], readonly: readonly, onChange: this.sync });
+    this.subs = subpanel.create({
+      onChange: this.sync,
+      onRename: function () {
+        gesture.after(self.servers.relabel);
+        self.sync();
+      },
+      onRemove: function () {
+        self.servers.draw();
+        self.sync();
+      },
+      onFail: function () {
+        self.draw();
+      },
+      onReload: this.renew.bind(this),
+      onSaved: this.servers.saved,
+      readonly: readonly,
+      hold: function (work, spare) {
+        return hold(work, null, spare);
+      },
+      onPing: this.servers.onPing,
+    });
+    this.root = E('div', { class: 'mb mb-view' }, [
+      tabs.render('servers'),
+      viewbar.render(_('Servers'), _('Row order is the connect priority'), [this.reset, this.save, this.apply]),
+      this.subs.node,
+      this.servers.node,
+    ]);
+    this.sync();
+    window.addEventListener('beforeunload', function (event) {
+      if (store.dirty()) {
+        event.preventDefault();
+        event.returnValue = '';
+      }
+    });
+    this.root.querySelectorAll('a[href]').forEach(function (link) {
+      link.addEventListener('click', function (event) {
+        if (store.dirty() && !window.confirm(_('Discard draft changes and leave?'))) event.preventDefault();
+      });
+    });
+
+    return this.root;
+  },
+
+  draw: function () {
+    this.subs.draw();
+    this.servers.draw();
+    this.sync();
+  },
+
+  reload: function () {
+    var self = this;
+
+    return store.reset().then(function () {
+      self.servers.reset();
+      self.draw();
+    });
+  },
+
+  renew: function () {
+    var self = this;
+
+    this.servers.forget();
+
+    return this.reload().then(function () {
+      return self.servers.relist();
+    });
+  },
+
+  doReset: function () {
+    return this.reload().catch(function () {
+      window.location.reload();
+    });
+  },
+
+  doSave: function () {
+    return store
+      .saveFields(this.servers.saved)
+      .catch(notice.fail(_('Save failed: ')))
+      .then(this.draw.bind(this));
+  },
+
+  doApply: function () {
+    var self = this;
+    var groups = {},
+      list = [];
+
+    store.sections('server').forEach(function (server) {
+      var ref = availability.ref(server);
+      var group = JSON.stringify([ref.source, ref.sub || null]);
+
+      if (!groups[group]) {
+        groups[group] = [];
+        list.push(groups[group]);
+      }
+      groups[group].push(ref);
+    });
+    if (this.orderBody !== JSON.stringify(list)) this.orderRequest = null;
+    this.orderBody = JSON.stringify(list);
+    if (!this.orderRequest) this.orderRequest = requestid.create();
+
+    return api
+      .serversOrderApply(this.orderRevision, this.orderRequest, list)
+      .then(function (result) {
+        if (result.error) return notice.show(_('Apply failed: ') + result.error, 'warning');
+        self.orderRevision = result.revision;
+        self.orderRequest = null;
+        store.orderSaved();
+        self.sync();
+        notice.show(_('Priority saved. It applies on the next connection.'), 'info');
+      })
+      .catch(notice.fail(_('Apply failed: ')));
+  },
 });

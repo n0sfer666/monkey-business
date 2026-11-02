@@ -1,0 +1,32 @@
+import { readfile } from 'fs';
+import * as socket from 'socket';
+import * as sh from '/usr/share/rpcd/ucode/lib/monkey-business/runtime/shell.uc';
+import { loadApplied } from '/usr/share/rpcd/ucode/lib/monkey-business/runtime/applied.uc';
+import { declarations } from '/usr/share/rpcd/ucode/lib/monkey-business/generator/corporate-nft.uc';
+import { generateJson } from '/usr/share/rpcd/ucode/lib/monkey-business/generator/xray.uc';
+import { listenerOwner } from '/usr/share/rpcd/ucode/lib/monkey-business/runtime/engine-listener.uc';
+import { spawnOwned, stopOwned } from '/usr/share/rpcd/ucode/lib/monkey-business/runtime/owned-process.uc';
+import { atomicPrivate } from '/usr/share/rpcd/ucode/lib/monkey-business/runtime/private-store.uc';
+let applied = loadApplied(), config = applied.config;
+config.global.ipv6_block = '1';
+config.global.lan_iface = 'mb-lan-router'; config.global.routing_mode = 'global'; config.global.kill_switch = '0';
+config.corporate_rules = []; config.dns = { mode: 'doh', direct_dns: '10.19.0.1', doh_url: '10.19.0.1' }; config.dns_transparent = true; config.dns_port = 5300;
+let path = '/tmp/mb-runtime/lan.json'; atomicPrivate(path, generateJson(config));
+let child = spawnOwned(['/usr/share/monkey-business/engine-run.sh', '/usr/bin/xray', 'run', '-c', path], '/tmp/mb-runtime', 25);
+try {
+ for (let tick = 0; tick < 200 && listenerOwner('/sys/fs/cgroup/monkey-business-engines/live', 11800) == null; tick++) socket.poll(10);
+ atomicPrivate('/tmp/mb-runtime/corporate-sets.nft', declarations([], {}));
+ let installed = sh.runCapture('MB_LAN_IFACE=mb-lan-router MB_KILL_SWITCH=0 MB_DIRECT_BYPASS=0 sh /usr/share/monkey-business/firewall/apply.sh');
+ if (!installed.ok) die('LAN firewall failed');
+ let tcp = sh.runCapture('ip netns exec mb-lan-client curl --disable --noproxy \'*\' --cacert /tmp/mb-fixture-ca.pem -fsS --max-time 3 -o /dev/null -w \'%{http_code}\' https://8.8.8.8:18443/ok');
+ if (!tcp.ok || tcp.out != '204') die('LAN TCP failed: ' + tcp.out);
+ print('PASS: real LAN TLS through TPROXY, guarded Xray and VPN outbound\n');
+ let blocked = sh.runCapture('ip netns exec mb-lan-client curl --disable --noproxy \'*\' -sS --max-time 1 http://10.19.0.1:11800/ 2>/dev/null');
+ if (blocked.code != 28) die('LAN diagnostic ingress was not dropped: ' + blocked.code);
+ let counters = sh.runCapture('nft list chain inet monkey_business_diagnostics input').out;
+ if (match(counters, /10808-10811.*counter packets [1-9][0-9]*/) == null) die('LAN diagnostic guard counter did not increase');
+ print('PASS: non-loopback ingress to diagnostic pool is dropped by production guard\n');
+ let udp = sh.runCapture('ip netns exec mb-lan-client ucode /tmp/mb-native/test/native/lan-client.uc');
+ if (!udp.ok) die('LAN UDP failed'); print(udp.out);
+} catch (e) { stopOwned(child); die(e); }
+if (!stopOwned(child)) die('LAN engine cleanup failed');

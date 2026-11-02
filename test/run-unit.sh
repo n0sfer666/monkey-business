@@ -23,5 +23,14 @@ for f in test/unit/*_test.sh; do
 	fi
 done
 
+for f in test/js/*.test.js; do
+	[ -e "$f" ] || continue
+	count=$((count + 1))
+	printf '\n=== %s ===\n' "$f"
+	if ! node --test "$f"; then
+		fail=1
+	fi
+done
+
 printf '\n%d test file(s) run\n' "$count"
 exit "$fail"

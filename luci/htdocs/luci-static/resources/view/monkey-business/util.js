@@ -2,7 +2,9 @@
 'require baseclass';
 
 return baseclass.extend({
-	sleep: function(ms) {
-		return new Promise(function(r) { window.setTimeout(r, ms); });
-	}
+  sleep: function (ms) {
+    return new Promise(function (r) {
+      window.setTimeout(r, ms);
+    });
+  },
 });

@@ -27,4 +27,9 @@ if ! sh scripts/check-js.sh; then
 	rc=1
 fi
 
+echo "== js style =="
+if ! sh scripts/js-style.sh; then
+	rc=1
+fi
+
 exit "$rc"

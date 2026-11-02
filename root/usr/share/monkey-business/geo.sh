@@ -6,9 +6,13 @@
 #   geo.sh status                # JSON: updating/present/size/last_error
 # Фоновый запуск (download) пишет состояние в STATE, чтобы UI поллил без ubus-таймаута.
 set -u
+umask 077
+MB_PRIVATE_LIB="$(dirname "$0")"
+# shellcheck source=root/usr/share/monkey-business/private.sh disable=SC1091
+. "$MB_PRIVATE_LIB/private.sh"
 
 DEST="${MB_GEO_DIR:-/usr/share/xray}"
-STATE="${MB_GEO_STATE:-/tmp/mb-geo.state}"
+STATE="${MB_GEO_STATE:-/tmp/mb-runtime/geo.state}"
 # Зеркала как base-URL: к каждому добавляется /<which>.dat (+ .sha256sum). Перебор до первого, с
 # которого реально скачалось. CDN-зеркала (jsDelivr) идут ПЕРВЫМИ — GitHub у многих RU-провайдеров
 # заблокирован, а geo нужны ДО поднятия VPN (иначе тупик: нет geo -> нет direct-маршрутов -> нет
@@ -26,7 +30,8 @@ else
 fi
 
 uci_get() { uci -q get "monkey-business.geo.$1" 2>/dev/null || echo ""; }
-set_state() { echo "$1" >"$STATE"; }
+mb_private_dir "$(dirname "$STATE")" && mb_private_file "$STATE" || exit 1
+set_state() { mb_state_write "$STATE" "$1"; }
 
 # список зеркал: UCI -> env -> дефолт (все элементы через пробел)
 mirrors() {
@@ -79,7 +84,7 @@ validate() {
 	cat >"$dir/test.json" <<EOF
 {"inbounds":[{"port":10800,"protocol":"socks","settings":{}}],"outbounds":[{"protocol":"freedom"},{"tag":"blk","protocol":"blackhole"}],"routing":{"rules":[{"type":"field",$rule,"outboundTag":"blk"}]}}
 EOF
-	XRAY_LOCATION_ASSET="$dir" xray run -test -c "$dir/test.json" >"$dir/err" 2>&1
+	XRAY_LOCATION_ASSET="$dir" timeout 10 xray run -test -c "$dir/test.json" >"$dir/err" 2>&1
 	rc=$?
 	if [ "$rc" != 0 ]; then
 		# НЕ подставлять заглушку "invalid .dat": xray падает и по причинам, не связанным с файлом
@@ -97,9 +102,19 @@ EOF
 
 install_one() { # install_one <which> <src>
 	which="$1"; src="$2"
-	msg="$(validate "$which" "$src")" || { echo "$msg"; return 1; }
-	mkdir -p "$DEST"
-	mv -f "$src" "$DEST/$which.dat" || { echo "install move failed"; return 1; }
+ # Reject links/foreign files and cap the immutable installation candidate.
+ ucode -e 'let s = require("fs").lstat(ARGV[0]); exit(s != null && s.type == "file" && s.uid == 0 && s.size > 0 && s.size <= 67108864 ? 0 : 1);' "$src" || { echo "unsafe or oversized geo source"; return 1; }
+ mkdir -p "$DEST"
+ target="$(mktemp "$DEST/.$which.XXXXXX")" || return 1
+ if ! head -c 67108865 "$src" > "$target" || [ "$(wc -c < "$target")" -gt 67108864 ]; then
+  rm -f "$target"; echo "geo copy failed or exceeded limit"; return 1
+ fi
+ # Validate exactly these immutable bytes, then atomically publish that same file.
+ msg="$(validate "$which" "$target")" || { rm -f "$target"; echo "$msg"; return 1; }
+ if ! mv -f "$target" "$DEST/$which.dat"; then
+  rm -f "$target"; echo "atomic install failed"; return 1
+ fi
+	rm -f "$src"
 	return 0
 }
 
@@ -107,7 +122,7 @@ install_one() { # install_one <which> <src>
 sha_of() { sha256sum "$1" 2>/dev/null | awk '{print $1}'; }
 remote_sha() { # remote_sha <dat_url> -> печатает hash или пусто
 	t="$(mktemp "${TMPDIR:-/tmp}/mb-sum.XXXXXX")" || return 0
-	if mb_fetch "$1.sha256sum" "$t" 2>/dev/null && [ -s "$t" ]; then
+	if MB_FETCH_MAX_BYTES=65536 mb_fetch "$1.sha256sum" "$t" 2>/dev/null && [ -s "$t" ]; then
 		awk '{print $1; exit}' "$t"
 	fi
 	rm -f "$t"
@@ -142,7 +157,7 @@ cmd_download() {
 			if ! mb_fetch "$url" "$tmp"; then last_err="unreachable"; rm -f "$tmp"; continue; fi
 			if [ -n "$rsum" ] && [ "$rsum" != "$(sha_of "$tmp")" ]; then last_err="checksum"; rm -f "$tmp"; continue; fi
 			if ! err="$(install_one "$which" "$tmp")"; then last_err="$err"; rm -f "$tmp"; continue; fi
-			echo "$which: fetched from $url"; changed=1; done_one=1; break
+			echo "$which: fetched and verified"; changed=1; done_one=1; break
 		done
 		if [ "$done_one" = 0 ]; then
 			case "$last_err" in
@@ -174,10 +189,15 @@ cmd_install() { # install <which> <src>
 
 cmd_status() {
 	st="$(cat "$STATE" 2>/dev/null || echo idle)"
-	gip=0; gst=0
+	gip=0; gst=0; upd=0
+	for f in geoip geosite; do
+		[ -f "$DEST/$f.dat" ] || continue
+		t="$(date -r "$DEST/$f.dat" +%s 2>/dev/null || echo 0)"
+		[ "$t" -gt "$upd" ] && upd="$t"
+	done
 	[ -f "$DEST/geoip.dat" ] && gip="$(wc -c <"$DEST/geoip.dat")"
 	[ -f "$DEST/geosite.dat" ] && gst="$(wc -c <"$DEST/geosite.dat")"
-	printf '{"state":"%s","geoip":%s,"geosite":%s}\n' "$st" "$gip" "$gst"
+	ucode -e 'print(sprintf("%J\n", { state: ARGV[0], geoip: int(ARGV[1]), geosite: int(ARGV[2]), updated: int(ARGV[3]) }));' "$st" "$gip" "$gst" "$upd"
 }
 
 case "${1:-}" in

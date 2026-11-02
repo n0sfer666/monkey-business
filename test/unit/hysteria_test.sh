@@ -205,7 +205,7 @@ M="http://dead1 http://dead2 http://good.mirror"
 rc="$(install_run MB_HY_MIRRORS="$M" MB_TEST_OK=good.mirror MB_TEST_SHA=cafe MB_TEST_LOCAL_SHA=cafe)"
 check    "код возврата 0"        "$rc" "0"
 check    "статус ok"             "$(state)" "ok"
-contains "скачано с живого зеркала" "$(out)" "good.mirror"
+contains "скачано с живого зеркала" "$(out)" "installed and verified"
 check    "бинарь на месте"        "$([ -x "$BIN" ] && echo y || echo n)" "y"
 
 echo "=== status: JSON с installed/version ==="

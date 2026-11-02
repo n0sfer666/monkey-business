@@ -1,92 +1,112 @@
 'use strict';
 'require view';
-'require form';
-'require rpc';
+'require dom';
 'require ui';
-'require uci';
+'require view.monkey-business.api as api';
+'require view.monkey-business.store as store';
+'require view.monkey-business.kit.style as style';
+'require view.monkey-business.kit.tabs as tabs';
+'require view.monkey-business.kit.viewbar as viewbar';
+'require view.monkey-business.kit.notify as notice';
+'require view.monkey-business.set.sections as sections';
+'require view.monkey-business.set.availability as availabilitySettings';
 
-var callApply = rpc.declare({ object: 'monkey-business', method: 'config_apply' });
+style.add('set-view', style.MOBILE + '{.mb.mb-set .mb-vbar-acts .mb-btn-primary{padding-left:0;padding-right:0}}');
+
+function report(res) {
+  if (res && res.error) return notice.show(_('Apply failed: ') + res.error, 'warning');
+  if (res && res.skipped === 'disabled')
+    return notice.show(_('Saved. The VPN is off — settings will apply when you turn it on.'), 'info');
+  notice.show(_('Configuration applied.'), 'info');
+}
 
 return view.extend({
-	render: function() {
-		var m = new form.Map('monkey-business', _('Settings'),
-			_('Each option has a hint explaining what it does. Defaults are safe.'));
+  handleSave: null,
+  handleSaveApply: null,
+  handleReset: null,
 
-		// Режим маршрутизации и регион живут на дашборде: они меняют ещё и файрвол (ядерный обход
-		// в nft), а форма умеет только стейджить UCI — «сохранил, и ничего не произошло».
-		var g = m.section(form.NamedSection, 'global', 'global', _('General'),
-			_('Routing mode and local region are on the Dashboard — they change the firewall too, not just the Xray config.'));
+  load: function () {
+    return L.hasViewPermission() ? Promise.all([store.load(), api.availabilitySettingsGet()]) : Promise.resolve(null);
+  },
 
-		// rmempty=false обязателен обоим: LuCI УДАЛЯЕТ опцию из UCI, когда её значение совпало с
-		// default (form.js parse), а у обеих default='1' — то есть простое «Save & Apply» без единой
-		// правки стирало бы включённую защиту. Для kill_switch это безобидно (init.d читает его через
-		// `|| echo 1`), а вот ipv6_block читает генератор, и его пропажа снимала бы правило ::/0 и
-		// переводила DNS с UseIPv4 на UseIP — то есть утечку мимо IPv4-туннеля, молча.
-		var ks = g.option(form.Flag, 'kill_switch', _('Kill-switch'),
-			_('Fail-closed: LAN traffic to non-local destinations is dropped instead of leaking direct whenever it is not carried by the tunnel (Xray down, rule gap, or non-proxied traffic such as ICMP). Disable for a direct fallback when the tunnel is down (less safe). Local-region and private traffic are unaffected.'));
-		ks.default = '1';
-		ks.rmempty = false;
+  render: function (data) {
+    if (!L.hasViewPermission())
+      return E('div', { class: 'mb mb-view' }, [
+        tabs.render('settings'),
+        E('p', {}, [_('Configuration editors require write access. Status is available on the Dashboard.')]),
+      ]);
+    this.availabilitySettings = data && data[1];
+    this.root = E('div', { class: 'mb mb-view mb-set' });
+    this.draw();
+    this.root.appendChild(availabilitySettings.render(this.availabilitySettings));
 
-		var v6 = g.option(form.Flag, 'ipv6_block', _('Block IPv6'),
-			_('Disable IPv6 for clients so traffic cannot leak around the IPv4 tunnel.'));
-		v6.default = '1';
-		v6.rmempty = false;
+    return this.root;
+  },
 
-		var port = g.option(form.Value, 'tproxy_port', _('TPROXY port'),
-			_('Local transparent-proxy port for the Xray inbound. Change only on conflicts.'));
-		port.datatype = 'port';
-		port.default = '12345';
+  draw: function () {
+    var self = this;
+    var errors = {};
+    var readonly = !L.hasViewPermission();
+    var locked = readonly;
 
-		var log = g.option(form.ListValue, 'log_level', _('Log level'));
-		[ 'none', 'error', 'warning', 'info', 'debug' ].forEach(function(l) { log.value(l); });
-		log.default = 'warning';
+    function act(name) {
+      return ui.createHandlerFn(self, function () {
+        locked = true;
+        sync();
 
-		var d = m.section(form.NamedSection, 'dns', 'dns', _('DNS'));
+        return self[name]();
+      });
+    }
 
-		var dmode = d.option(form.ListValue, 'mode', _('DNS mode'),
-			_('"Split" resolves local domains directly and foreign ones over DoH in the tunnel — fast and leak-resistant.'));
-		dmode.value('split', _('Split (recommended)'));
-		dmode.value('doh', _('All over DoH'));
-		dmode.default = 'split';
+    var reset = E('button', { class: 'mb-btn', click: act('doReset') }, [_('Reset')]);
+    var save = E('button', { class: 'mb-btn', click: act('doSave') }, [_('Save')]);
+    var apply = E('button', { class: 'mb-btn mb-btn-primary', click: act('doApply') }, [_('Save & Apply')]);
 
-		var direct = d.option(form.Value, 'direct_dns', _('Direct DNS'),
-			_('Resolver for local-region domains (queried directly).'));
-		direct.default = '77.88.8.8';
+    function sync() {
+      var bad = locked || Object.keys(errors).length > 0;
+      var dirty = store.dirty();
 
-		var doh = d.option(form.Value, 'doh_url', _('DoH URL'),
-			_('DNS-over-HTTPS endpoint for everything routed through the VPN.'));
-		doh.default = 'https://1.1.1.1/dns-query';
+      reset.disabled = locked || !dirty;
+      save.disabled = bad || !dirty;
+      apply.disabled = bad;
+    }
 
-		var a = m.section(form.NamedSection, 'anti_dpi', 'anti_dpi', _('Anti-DPI'));
+    dom.content(this.root, [
+      tabs.render('settings'),
+      viewbar.render(_('Settings'), _('Defaults are safe'), [reset, save, apply]),
+      sections.render(errors, sync, readonly),
+    ]);
+    sync();
+  },
 
-		var fp = a.option(form.ListValue, 'default_fingerprint', _('TLS fingerprint'),
-			_('Mimic a real browser TLS fingerprint (uTLS) to evade DPI.'));
-		[ 'chrome', 'firefox', 'safari', 'edge', 'random' ].forEach(function(x) { fp.value(x); });
-		fp.default = 'chrome';
+  doReset: function () {
+    return store
+      .reset()
+      .then(this.draw.bind(this))
+      .catch(function () {
+        window.location.reload();
+      });
+  },
 
-		var pad = a.option(form.Flag, 'xhttp_padding', _('XHTTP padding'),
-			_('Add random padding to XHTTP packets to obscure traffic size patterns.'));
-		pad.default = '0';
+  doSave: function () {
+    return store
+      .save()
+      .catch(function (e) {
+        notice.show(_('Save failed: ') + e, 'error');
+      })
+      .then(this.draw.bind(this));
+  },
 
-		return m.render();
-	},
-
-	handleSaveApply: function(ev, mode) {
-		// handleSave только стейджит -> нужен uci.apply() (commit), иначе config_apply читает
-		// старый UCI и изменения висят в "Unsaved Changes".
-		return this.handleSave(ev).then(function() {
-			return uci.apply();
-		}).then(function() {
-			return callApply();
-		}).then(function(res) {
-			if (res && res.error)
-				ui.addNotification(null, E('p', _('Apply failed: ') + res.error), 'warning');
-			else if (res && res.skipped == 'disabled')
-				ui.addNotification(null, E('p', _('Saved. The VPN is off — settings will apply when you turn it on.')), 'info');
-			else
-				ui.addNotification(null, E('p', _('Configuration applied.')), 'info');
-		}).catch(function(e) {
-			ui.addNotification(null, E('p', _('Apply failed: ') + e), 'error');
-		});
-	}
+  doApply: function () {
+    return store
+      .apply()
+      .then(function () {
+        return api.configApply();
+      })
+      .then(report)
+      .catch(function (e) {
+        notice.show(_('Apply failed: ') + e, 'error');
+      })
+      .then(this.draw.bind(this));
+  },
 });

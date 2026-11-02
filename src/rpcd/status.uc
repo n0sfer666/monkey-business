@@ -1,9 +1,11 @@
 // Всё, что уходит в UI на чтение: сводный статус и список серверов. Тут же маскирование секретов —
 // эти два метода лежат в read-группе ACL, то есть доступны шире, чем управление.
 
+import { serverRef, refKey } from "../lib/availability.uc";
 import { isTrue } from "../lib/val.uc";
 import { directBypass } from "../lib/bypass.uc";
-import { orderedServers } from "./select.uc";
+import { grouped } from "./select.uc";
+import { serverSub, serverId, subId, findSub, activeSubId, subAlive } from "../lib/subs.uc";
 
 function maskUuid(u) {
 	if (u == null || length(u) < 12)
@@ -11,22 +13,41 @@ function maskUuid(u) {
 	return substr(u, 0, 4) + ".." + substr(u, length(u) - 4);
 }
 
+function subscriptionsView(subs, now) {
+	return map(subs, function(sub) {
+		return { id: subId(sub), name: sub.name || subId(sub), alive: subAlive(sub, now) };
+	});
+}
+
 // wd_phase: healthy|reconnecting|down|null(watchdog ещё не тикал / выключен). Фаза `down`
 // означает, что watchdog СНЯЛ туннель и LAN идёт напрямую — без этого UI показывал
 // «Starting…» и выглядел как «сейчас поднимется», хотя ничего уже не поднималось.
+
 function status(ctx) {
 	let g = ctx.getGlobal();
 	let s = ctx.getSelectedServer();
-	let sub = ctx.getSubscription();
+	let subs = ctx.getSubscriptions();
+	let active = activeSubId(subs, g.active_sub);
+	let via = (s != null) ? serverSub(s) : null;
+	let sub = findSub(subs, (via != null) ? via : active) || {};
 	// last_event читается только в проблемных фазах: UI показывает его лишь в плашке
 	// down/reconnecting, а status опрашивается раз в 5с — дампить за ним весь syslog постоянно
 	// значит жечь CPU роутера на строку, которую никто не видит.
 	let wd = ctx.watchdogPhase ? ctx.watchdogPhase() : null;
 	let noisy = (wd == "down" || wd == "reconnecting");
 	return {
+		api_version: 2,
+		health: ctx.healthStatus ? ctx.healthStatus() : null,
 		enabled: isTrue(g.enabled),
 		running: ctx.serviceRunning(),
 		server: (s != null) ? s.tag : null,
+		server_id: (s != null) ? serverId(s) : null,
+		server_ref: s != null ? serverRef(s) : null,
+		sub: via,
+		active_sub: active,
+		reserve: via != null && via != active,
+		subscriptions: subscriptionsView(subs, time()),
+		autoswitch: ctx.getAutoswitch ? ctx.getAutoswitch() : null,
 		protocol: (s != null) ? (s.protocol || "vless") : null,
 		routing_mode: g.routing_mode,
 		local_region: g.local_region,
@@ -48,9 +69,23 @@ function status(ctx) {
 function serversList(ctx) {
 	let out = [];
 	let i = 0;
-	for (let s in orderedServers(ctx)) {
+	let subs = ctx.getSubscriptions();
+	let active = activeSubId(subs, ctx.getGlobal().active_sub);
+	let records = ctx.availabilityRecords ? ctx.availabilityRecords() : {};
+	for (let s in grouped(ctx.getServers(), subs, active)) {
+		let sub = serverSub(s);
+		let record = records[refKey(serverRef(s))];
 		push(out, {
+			id: serverId(s),
+			server_ref: serverRef(s),
 			tag: s.tag,
+			sub: sub,
+			reserve: sub != null && sub != active,
+			disabled: isTrue(s.disabled),
+			auto_disabled: false,
+			availability: record || { state: 'unknown', fresh: false },
+			latency_ms: record != null ? record.latency_ms : null,
+			ping_na: false,
 			protocol: s.protocol || "vless",
 			address: s.address,
 			port: s.port,
@@ -62,11 +97,11 @@ function serversList(ctx) {
 			// живут в password, а uuid парсер оставляет пустым — но секция UCI правится и руками,
 			// и попавший в uuid пароль ушёл бы краями в браузер на каждый рендер дашборда
 			// (servers_list в read-группе ACL). Сам password наружу не отдаём вообще.
-			uuid_masked: (s.protocol == "hysteria2") ? "****" : maskUuid(s.uuid),
+			uuid_masked: "****",
 		});
 		i++;
 	}
-	return { servers: out };
+	return { api_version: 2, servers: out, active_sub: active };
 }
 
 export { status, serversList, maskUuid };

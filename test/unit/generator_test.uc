@@ -58,10 +58,22 @@ test("routing mode: global", function() {
 	assertEq(r.rules[length(r.rules) - 1].outboundTag, "proxy");
 });
 
-test("routing mode: gfwlist", function() {
-	let r = buildRouting({ routing_mode: "gfwlist", local_region: "ru", ipv6_block: "0" });
+test("routing mode: gfwlist cn proxies the gfw list", function() {
+	let r = buildRouting({ routing_mode: "gfwlist", local_region: "cn", ipv6_block: "0" });
 	assertEq(r.rules[length(r.rules) - 1].outboundTag, "direct");
-	assert(r.rules[1].domain[0] == "geosite:geolocation-!ru", "proxy by !region list");
+	assertEq(r.rules[1].domain, ["geosite:gfw"]);
+});
+
+test("routing mode: gfwlist ru/ir has no blocked list, only custom proxy", function() {
+	for (let region in ["ru", "ir"]) {
+		let r = buildRouting({ routing_mode: "gfwlist", local_region: region, ipv6_block: "0", custom_proxy: "x.com" });
+		assertEq(r.rules[0], { type: "field", domain: ["x.com"], outboundTag: "proxy" });
+		for (let rule in r.rules)
+			if (exists(rule, "domain"))
+				for (let v in rule.domain)
+					assert(index(v, "geosite:") < 0, "no geosite list for " + region);
+		assertEq(r.rules[length(r.rules) - 1].outboundTag, "direct");
+	}
 });
 
 test("routing mode: bypass-local default region ru", function() {
@@ -319,12 +331,16 @@ test("wildcard *.domain becomes xray domain: rule", function() {
 	assertEq(r.rules[1].outboundTag, "proxy");
 });
 
-test("degenerate '*.' is not converted to empty domain: rule", function() {
+test("invalid custom entries are skipped, valid neighbours kept", function() {
 	let r = buildRouting({
 		routing_mode: "bypass-local", local_region: "ru",
-		custom_direct: "*.\nkeep.com",
+		custom_direct: "*.\nkeep.com\nhttps://x.com\n10.0.0.0/33\nGEOSITE:Netflix",
+		custom_proxy: "localhost, 1.2.3.4, *.ru, Full:x.org, ::ffff:1.2.3.4",
 	});
-	assertEq(r.rules[0].domain, ["*.", "keep.com"]);
+	assertEq(r.rules[0].domain, ["keep.com", "geosite:Netflix"]);
+	assertEq(r.rules[1].domain, ["domain:ru", "full:x.org"]);
+	assertEq(r.rules[2].ip, ["1.2.3.4", "::ffff:1.2.3.4"]);
+	assertEq(r.rules[2].outboundTag, "proxy");
 });
 
 test("test_socks adds localhost socks inbound", function() {
