@@ -59,6 +59,7 @@ The app needs these packages on the router:
 **Recommended: `make deploy`.** From the repo checkout:
 
 ```sh
+npm ci                            # once: ESLint + Prettier for the JS checks
 make deploy HOST=root@<router-ip>
 ```
 
@@ -116,14 +117,14 @@ What this does:
   - firewall scripts → `/usr/share/monkey-business/firewall/`, geo script → `/usr/share/monkey-business/geo.sh`,
   - NIC firmware → `nicfw.sh` + `firmware/rtl8153b-2.fw`, its watchdog → `nicwatch.sh`,
     shared downloader → `fetch.sh`,
-  - watchdog → `/usr/share/monkey-business/watchdog.sh` + `probes.sh` + `recovery.sh` + `phases.sh`, bypass-set builder →
+  - watchdog → `/etc/init.d/monkey-business-observer` + observer/recovery/job helpers, bypass-set builder →
     `ruset.sh`.
-- **Checks runtime deps** (`xray-core`, `kmod-nft-tproxy`, `curl`, the ucode/rpcd modules) and
+- **Checks runtime deps** (`xray-core`, `kmod-nft-tproxy`, `kmod-nft-socket`, `ucode-mod-socket`, `coreutils-timeout`, `flock`, `conntrack`, `curl`, the ucode/rpcd modules) and
   installs missing ones one at a time. If a required package fails, **the deploy fails**: silently
   handing over a router without xray is worse than not deploying (override: `MB_ALLOW_MISSING=1`).
 - **Installs NIC firmware v1** (`nicfw.sh apply`) when the `r8152` driver is present — see Section 9.
-- **Registers two cron entries** and enables `cron` — idempotent, so re-deploys don't duplicate
-  them: `* * * * * …/watchdog.sh` (self-healing, Section 8) and `* * * * * …/nicwatch.sh` (USB NIC
+- **Registers NIC/subscription cron and enables the procd observer** and enables `cron` — idempotent, so re-deploys don't duplicate
+  them: `monkey-business-observer` (procd, Section 8) and `* * * * * …/nicwatch.sh` (USB NIC
   stall safety net, Section 9). It also enables the `mb-boothealth` init script and **deletes** the
   obsolete `*/5 … boothealth.sh beat` line if an older deploy left it behind — that heartbeat forced
   288 flushes a day into the same LBAs and wore SD cards out in about two weeks.
@@ -139,7 +140,7 @@ What this does:
 > non-zero, so there is no `.ipk` to build yet (the "Alternative" below is a placeholder for when
 > there is).
 
-> **Do not set `MB_UBUS_RESPAWN=1` for real hardware.** That flag (used only by `make dev-deploy`
+> **Do not set `MB_UBUS_RESPAWN=1` for real hardware.** That flag (used only by `make dev`
 > for the QEMU dev VM) force-respawns `ubusd`/`rpcd` to work around an emulator bug. The R2S doesn't
 > need it and you don't want to kill `ubusd` on a live router.
 
@@ -191,9 +192,11 @@ From the shell instead:
 
 In **LuCI → … → Servers**:
 
-- **Subscription:** paste your provider URL and press *Fetch*. Servers are imported (format
-  auto-detected: base64 list or URI list). The list order is your priority — drag to
+- **Subscription:** *+ Add subscription*, paste your provider URL, *Add & fetch*. Servers are
+  imported (format auto-detected: base64 list or URI list); if the fetch fails, nothing is saved. On a fresh
+  install the new subscription replaces the empty default one as the active one. The list order is your priority — drag to
   reorder; the first server is the active one. Re-fetch preserves your manual order.
+  More than one provider: add another — see [§10](#10-multiple-subscriptions).
 - **Manual:** add a `vless://…` (Reality/VLESS/XHTTP) or `hysteria2://…` (`hy2://` alias) server.
 
 Both protocols share one list — the protocol is a property of the server, so priority is the list
@@ -230,7 +233,10 @@ firewall as well as the Xray config; the panel lists what the current pair actua
 
 - **Routing mode** — `Bypass local`: your local region (RU/CN/IR) and private addresses go direct,
   everything else through the tunnel. Other modes: `Only blocked via VPN` (gfwlist) and
-  `Everything via VPN` (global). Outside `Bypass local` there is no `geoip:<region> → direct` rule
+  `Everything via VPN` (global). `Only blocked via VPN` uses a ready blocked list only for CN
+  (`geosite:gfw`, present in the default Loyalsoldier geosite.dat — keep it if you set a custom
+  geosite URL); for RU/IR/Other only your **Via VPN** list goes through the tunnel, the rest is
+  direct. Outside `Bypass local` there is no `geoip:<region> → direct` rule
   at all, and the kernel bypass sets are dropped with it.
 - **Local region** — which region is treated as "local" for direct routing and for the DNS split.
   Pick **`Other`** if your region has no geo preset: there is no predefined local geo-category, so
@@ -356,58 +362,32 @@ Verify the exit path:
 
 ---
 
-## 8. Self-healing (watchdog & failover)
+## 8. Shared VPN health and recovery
 
-`make deploy` installs a cron watchdog that runs every minute. It is what keeps a fail-closed
-kill-switch from turning a dead tunnel into a dead LAN.
+The procd `monkey-business-observer` service owns the sole HTTPS/UDP observer,
+asynchronous availability jobs and recovery. Installation enables it and removes
+the old cron watchdog entry. `watchdog.sh` remains a compatibility status command;
+editing its old environment variables no longer configures recovery.
 
-Each tick it checks liveness cheaply (a TLS handshake through the tunnel's SOCKS port) and, every
-few ticks, verifies that the exit IP still differs from your home IP — that catches traffic leaking
-*around* the tunnel, which a plain "is xray running" check misses. After **3 consecutive failures**
-it escalates:
+Rounds start every 15 seconds, finish within 12 seconds and use independent two-round
+HTTPS/UDP confirmation. Unknown interrupts streaks, stale evidence is not a new
+diagnosis, and UDP-only failure does not trigger general VPN recovery. Confirmed
+HTTPS failure uses soft restart, hard restart, confirmed failover and full stop/start;
+down retries back off from 60 to 600 seconds. Corporate fallback is independent of
+this recovery ladder and respects its own return cooldown.
 
-0. **Is the internet up at all?** If a probe *without* the proxy also fails, the problem is your
-   uplink, not the tunnel — reconnecting or switching servers would be pointless. The VPN is stopped
-   immediately (LAN falls back to direct) and retried every 10 minutes until the link returns.
-1. **Soft bounce** — otherwise, bounce Xray (`kill`; procd respawns it). Fixes a dead session under
-   a live process.
-2. **Hard restart** — SIGTERM, wait for the process to *actually* die, force it with SIGKILL if
-   needed, then bring it up via `init.d start`. This is what handles a wedged Xray that ignores
-   SIGTERM, and it rebuilds the nft table and policy routing along the way.
-3. **Failover** — ask the backend to re-apply the config, which re-probes the servers in list order
-   and selects the first working one.
-4. **Full cycle** — `stop` → re-select a server → `start`: exactly what Turn Off / Turn On in LuCI
-   does. It is the only step that drops the kill-switch (for a few seconds); on steps 1–3 it is
-   *held*, so nothing leaks while the tunnel is down.
-5. **Fall back to direct** — if nothing helped, stop the service. This flushes the firewall and
-   removes the kill-switch, so the LAN keeps working *without* the VPN. The watchdog then retries
-   every 10 minutes and restores the tunnel when it comes back.
+Routing Apply retains the actual outbound even if a subscription changed underneath
+it. Boot reconciliation uses that private snapshot and committed routing. The runtime
+requires cgroup v2/`cgroup.kill`, nft socket-cgroup and TPROXY modules, ucode socket/fs/uci,
+curl with CA certificates, GNU timeout, flock and conntrack. A missing dependency
+causes an explicit startup failure; an unsupported platform is not qualified by a
+successful file copy.
 
-Transitions (only transitions) go to syslog under the `monkey-business` tag — a RAM ring buffer, so
-an incident storm costs the SD card nothing:
-
-```sh
-# logread -f -e mb-event
-# cat /tmp/mb-watchdog/state          # phase, fail counters, exit/home IP
-```
-
-There are no UCI options and no LuCI switch. Tuning is env-only (`MB_WD_*`, defaults at the top of
-`watchdog.sh`), and since cron passes no environment, you tune it by editing the crontab line
-itself — e.g. to fail over sooner:
-
-```sh
-# sed -i 's#^\* \* \* \* \* /usr/share/monkey-business/watchdog.sh#* * * * * MB_WD_FAIL_LIMIT=2 /usr/share/monkey-business/watchdog.sh#' /etc/crontabs/root
-# /etc/init.d/cron restart
-```
-
-To disable it, delete the **`watchdog.sh`** line from `/etc/crontabs/root`.
-
----
-
-For everything else (architecture, development, the dev VM), see the main
-[README](../README.md).
-
----
+See the [user guide](routing-availability.md), [local/security evidence and hardware
+gate](routing-availability-acceptance.md). NanoPi installation and measurements require
+separate authorization. Runtime status is in `/tmp/mb-runtime/health.json`,
+`recovery.json` and `corporate.json`; do not copy private job definitions or applied
+configurations into reports. Use the public RPC status instead.
 
 ## 9. The RTL8153B USB NIC: firmware & watchdog
 
@@ -444,3 +424,117 @@ you're trying to fix it by hand.
 # cat /tmp/mb-nicwatch/state         # tx_errors tx_packets strikes
 # logread -e mb-nicwatch
 ```
+
+---
+
+## 10. Multiple subscriptions
+
+**Servers → Subscriptions → + Add subscription** adds a second (third, …) provider: a sheet asks for
+a name and the URL and fetches at once; a failed fetch leaves nothing behind. Each row edits *Name*,
+*URL* (masked until focused) and *Auto-update* in place — the interval is in minutes, 10–120, `0`
+turns it off (on a phone: a switch and a slider). *Fetch* and *Ping* act on that subscription; the
+trash button deletes it together with its servers after a confirmation (manual servers stay; deleting
+the active one makes the next one active). Edits are staged until *Save & Apply*; a changed URL is
+re-fetched then. *Fetch* and *+ Add subscription* commit pending edits first (*Reset* no longer undoes
+them) and block the page until the download ends. An existing single-subscription config keeps
+working as is — no migration.
+
+- **One subscription is active, the others are a reserve.** Candidates go in this order: servers of
+  the active subscription plus your manual servers (drag order), then the other subscriptions, in
+  their order. Failover may walk into the reserve on its own without changing the active one; the
+  next apply starts from the active one again. The active subscription changes by itself only when it
+  dies (below); switching back is manual.
+- **Switching:** with two or more subscriptions, **Dashboard → Status** shows a *Subscription*
+  selector. A choice is applied at once (with the VPN off it is only saved) and rolled back if the
+  apply fails. *now via reserve: B* means traffic currently goes through a reserve subscription.
+- **A dead subscription** (expired, or out of traffic per the provider's userinfo) is marked in the
+  selector and skipped as a reserve. If the **active** one dies, the next alive subscription becomes
+  active within a minute, and the Dashboard shows *Switched automatically: A expired.* Picking a dead
+  subscription by hand is refused while an alive one exists — refresh it first (*Fetch*), then pick.
+- **The traffic bar** shows the subscription the tunnel goes through.
+- **Ping:** *Test latency* (all), *Ping* per subscription group and per server row on the Dashboard,
+  *Ping* per subscription row on Servers. The Servers table has its own *Ping* column
+  (last results, refreshed by a subscription's *Ping* and *Ping all* above the table); *Sort by ping* moves the
+  fastest rows to the top, unreachable and unmeasured ones to the bottom — the row order is the connect
+  priority, so it takes effect on *Save & Apply*. A server slower than 1 s or unreachable is
+  marked *auto-off* and skipped when connecting until a later ping succeeds (the results live in
+  RAM). hysteria2 (UDP) cannot be TCP-pinged and shows *n/a*. The **Off** column in the Servers
+  table excludes a server for good; it is still listed and pinged.
+
+### Manual check on the router
+
+Run after deploying a change that touches subscriptions. `<A>` is the active subscription's section
+id, `<B>` the other one (`uci show monkey-business | grep =subscription`). Turn the VPN on first.
+
+0. **Fresh UI.** Open Servers with a plain reload, no cache clearing. Expect: Servers shows the
+   *Subscriptions* panel — one row per subscription with *Fetch*, *Ping* and a trash button, and
+   *+ Add subscription* in its header — and the table has *Subscription* and *Off* columns. A form
+   with *Fetch subscription* buttons means the browser served the old scripts from its cache: the deploy must touch
+   `/lib/apk/db/installed`, whose mtime is part of the `?v=` of every LuCI script.
+
+1. **Two subscriptions.** Add B and *Fetch*. Expect: the Dashboard shows the *Subscription* selector,
+   the server table is grouped into *Active: A* and *Reserve: B*.
+2. **Switching.** Pick B on the Dashboard. Expect: the page reloads connected, and
+
+   ```sh
+   # ubus call monkey-business status | grep -E '"(active_sub|sub|reserve)"'   # active_sub = <B>
+   # cat /etc/monkey-business/active                                            # <B>/<tag>
+   ```
+
+   A manual server placed above B's servers is picked first: then `active` holds a bare `<tag>` and
+   `sub` is null. Run this check with manual servers below or turned *Off*. Pick A again before the
+   next steps.
+3. **Automatic switch.** Make A expired and stop its refresh (a fetch would restore the real expiry):
+
+   ```sh
+   # uci set monkey-business.<A>.auto_update=0
+   # uci set monkey-business.<A>.expire=1
+   # uci commit monkey-business
+   # sh /usr/share/monkey-business/subupdate.sh      # or wait for the next cron minute
+   # logread -e mb-subupdate | tail -n 3
+   # uci get monkey-business.global.active_sub       # <B>
+   # cat /tmp/mb-runtime/autoswitch.json                           # JSON: from/reason
+   ```
+
+   Expect the log line `подписка <A> expired: активной стала <B>`, the Dashboard banner
+   *Switched automatically: A expired.*, and the selector showing B with A marked dead. Out of traffic
+   works the same way — `uci set monkey-business.<A>.total=1` and
+   `uci set monkey-business.<A>.used_download=1` instead of `expire`; the banner then says *ran out of
+   traffic*.
+4. **No repeated writes.** Run `subupdate.sh` again: no new `mb-subupdate` line, and
+   `date -r /etc/config/monkey-business` does not change.
+5. **Dead pick refused.** Pick A on the Dashboard. Expect the warning *Subscription not switched:
+   subscription is expired: update it or pick an alive one*; the selector returns to B.
+6. **Restore A.**
+
+   ```sh
+   # uci set monkey-business.<A>.expire=''
+   # uci set monkey-business.<A>.total=''
+   # uci set monkey-business.<A>.used_download=''
+   # uci set monkey-business.<A>.auto_update=1
+   # uci commit monkey-business
+   ```
+
+   *Fetch* A on Servers, pick A on the Dashboard. Expect the banner to disappear
+   (`/tmp/mb-runtime/autoswitch.json` is gone).
+7. **Subscription-switch serialization.** Hold the subscription worker's lock, then expire A as in step 3:
+
+   ```sh
+   # flock /tmp/mb-runtime/subupdate-switch.lock sleep 60 &          # without flock: mkdir /tmp/mb-runtime/subupdate-switch.lock.d
+   # uci set monkey-business.<A>.auto_update=0
+   # uci set monkey-business.<A>.expire=1
+   # uci commit monkey-business
+   # sh /usr/share/monkey-business/subupdate.sh
+   # logread -e mb-subupdate | tail -n 1
+   ```
+
+   Expect, after about 30 s, `автопереключение подписки отложено: watchdog занят` and `active_sub`
+   still `<A>`. Release the lock (wait for `sleep`, or `rmdir /tmp/mb-runtime/subupdate-switch.lock.d`) and run
+   `subupdate.sh` again — now it switches to B. Restore A as in step 6.
+   The log wording above is historical; the active observer does not use this lock.
+8. **Availability and Off.** Availability buttons start asynchronous HTTPS/UDP checks,
+   including Hysteria and disabled nodes. A failure never changes manual Off. Results show
+   independent UDP state, age and base latency. Sort prepares a draft within group positions;
+   **Apply priority** saves it for the next connection and leaves the running VPN intact.
+   Node field edits use their regular configuration flow. See the
+   [user guide](routing-availability.md) for freshness and cancellation rules.

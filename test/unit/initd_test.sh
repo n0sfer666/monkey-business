@@ -41,9 +41,11 @@ MB_ENABLED=1
 MB_MODE=bypass-local
 MB_REGION=ru
 MB_LEGACY_BYPASS=""
+MB_CUSTOM_PROXY=""
 uci() {
 	case "$*" in
 		*delete*|*commit*) echo "uci $*" >> "$CALLS";;
+		*.custom_proxy) echo "$MB_CUSTOM_PROXY";;
 		*.enabled) [ "$MB_ENABLED" = missing ] && return 1; echo "$MB_ENABLED";;
 		*.routing_mode) [ "$MB_MODE" = missing ] && return 1; echo "$MB_MODE";;
 		*.local_region) [ "$MB_REGION" = missing ] && return 1; echo "$MB_REGION";;
@@ -55,6 +57,18 @@ uci() {
 # Аргументы пишем в $CALLS: часть отказов (неисполняемый бинарь hysteria) видна ТОЛЬКО в логе.
 logger() { echo "logger $*" >> "$CALLS"; }
 sh() { echo "sh $*" >> "$CALLS"; }
+ucode() {
+	echo "ucode $*" >> "$CALLS"
+	case "$1" in
+		*runtime-option.uc) case "$2" in
+			routing_mode) [ "$MB_MODE" = missing ] || printf '%s' "$MB_MODE" ;;
+			local_region) [ "$MB_REGION" = missing ] || printf '%s' "$MB_REGION" ;;
+			custom_proxy) printf '%s' "$MB_CUSTOM_PROXY" ;;
+			*) printf '%s' "$3" ;;
+		esac; return 0 ;;
+	esac
+	return "${MB_RECONCILE_RC:-0}"
+}
 
 # shellcheck source=/dev/null
 . "$SELF_DIR/../../root/etc/init.d/monkey-business"
@@ -66,14 +80,14 @@ FW="$T/firewall"
 
 # 1. reload_service переобъявляет инстанс через procd (иначе xray не перезапустится).
 : > "$CALLS"
-reload_service
+(reload_service)
 has "reload.open_service" "$CALLS" "open_service monkey-business"
 has "reload.close_set" "$CALLS" "close_service set"
 has "reload.instance" "$CALLS" "open_instance"
 
 # 2. Инстанс объявлен с боевой командой и с $CONF как файлом-триггером: по смене его хеша
 #    procd бьёт процесс xray. Без param file перезапуска не будет никогда.
-has "reload.command" "$CALLS" "param command /usr/bin/xray run -c $CONF"
+has "reload.command" "$CALLS" "param command /usr/share/monkey-business/engine-run.sh /usr/bin/xray run -c $CONF"
 has "reload.file" "$CALLS" "param file $CONF"
 has "reload.respawn" "$CALLS" "param respawn"
 
@@ -84,21 +98,21 @@ has "reload.apply_fw" "$CALLS" "sh $FW/apply.sh"
 
 # 4. stop_service снимает правила (обратная сторона: его зовёт только реальный stop).
 : > "$CALLS"
-stop_service
+(stop_service)
 has "stop.flush" "$CALLS" "sh $FW/flush.sh"
 no "stop.no_apply" "$CALLS" "apply.sh"
 
 # 5. Нет конфига — сервис не объявляется (нечего запускать).
 : > "$CALLS"
 rm -f "$CONF"
-start_service || true
+(start_service) || true
 no "noconf.no_instance" "$CALLS" "open_instance"
 
 # 6. Нет конфига + reload: ubus-вызова set быть НЕ должно. Без guard'а rc_procd отправил бы
 #    set с пустыми instances -> procd снёс бы инстанс и убил живой xray, а kill-switch остался
 #    бы поднят (LAN заперт без туннеля). Проверено на железе: pid исчезал, instances=0.
 : > "$CALLS"
-reload_service || true
+(reload_service) || true
 no "noconf.no_set" "$CALLS" "close_service"
 no "noconf.no_open" "$CALLS" "open_service"
 
@@ -109,7 +123,7 @@ no "noconf.no_open" "$CALLS" "open_service"
 : > "$CALLS"
 : > "$CONF"
 MB_ENABLED=0
-start_service || true
+(start_service) || true
 no "off.no_instance" "$CALLS" "open_instance"
 no "off.no_apply" "$CALLS" "$FW/apply.sh"
 has "off.flush" "$CALLS" "sh $FW/flush.sh"
@@ -119,7 +133,7 @@ has "off.flush" "$CALLS" "sh $FW/flush.sh"
 #    Правила reload при этом НЕ снимает: снятие — дело stop, а reload при живом туннеле не должен
 #    ронять kill-switch (это разница с кейсом 7, где start иначе убил бы xray, оставив правила).
 : > "$CALLS"
-reload_service || true
+(reload_service) || true
 no "off.no_set" "$CALLS" "close_service"
 no "off.no_open" "$CALLS" "open_service"
 no "off.no_flush" "$CALLS" "flush.sh"
@@ -127,7 +141,7 @@ no "off.no_flush" "$CALLS" "flush.sh"
 # 9. Тумблер включён обратно — сервис снова объявляется (гейт не залипает).
 : > "$CALLS"
 MB_ENABLED=1
-reload_service
+(reload_service)
 has "on.instance" "$CALLS" "open_instance"
 has "on.close_set" "$CALLS" "close_service set"
 
@@ -136,11 +150,11 @@ has "on.close_set" "$CALLS" "close_service set"
 #     а watchdog за ним не следит: умри xray — LAN заперт kill-switch'ем без самолечения.
 : > "$CALLS"
 MB_ENABLED=missing
-start_service || true
+(start_service) || true
 no "nodefault.no_instance" "$CALLS" "open_instance"
 has "nodefault.flush" "$CALLS" "sh $FW/flush.sh"
 : > "$CALLS"
-reload_service || true
+(reload_service) || true
 no "nodefault.no_set" "$CALLS" "close_service"
 
 # 11. MB_INTENT=1 обходит гейт: путь включения (service_toggle) поднимает туннель ДО commit'а
@@ -149,7 +163,7 @@ no "nodefault.no_set" "$CALLS" "close_service"
 : > "$CALLS"
 MB_ENABLED=0
 MB_INTENT=1
-reload_service
+(reload_service)
 unset MB_INTENT
 has "intent.instance" "$CALLS" "open_instance"
 has "intent.close_set" "$CALLS" "close_service set"
@@ -160,7 +174,7 @@ no "intent.no_flush" "$CALLS" "flush.sh"
 #     потому что читают переменную, а не команду. Пиним обе половины склейки.
 RT="$SELF_DIR/../../src/runtime/apply.uc"
 has "intent.runtime_prefix" "$RT" "intentOn ? 'MB_INTENT=1 ' : ''"
-has "intent.runtime_cmd" "$RT" "+ '/etc/init.d/monkey-business reload"
+has "intent.runtime_cmd" "$RT" "/etc/init.d/monkey-business reload"
 
 # 13. Ядерный обход (MB_DIRECT_BYPASS для apply.sh) — производная режима, а не отдельный тумблер:
 #     RU-CIDR минуют туннель в ядре только там, где регион гонит в direct и сам xray (bypass-local),
@@ -187,12 +201,12 @@ eq "bypass.empty_mode" "$(bypass_for '' cn)" 0
 MB_MODE=bypass-local; MB_REGION=ru; MB_ENABLED=1
 : > "$CALLS"
 MB_LEGACY_BYPASS=0
-start_service
+(start_service)
 has "migrate.delete" "$CALLS" "uci .*delete monkey-business.global.direct_bypass"
 has "migrate.commit" "$CALLS" "uci .*commit monkey-business"
 : > "$CALLS"
 MB_LEGACY_BYPASS=""
-start_service
+(start_service)
 no "migrate.clean" "$CALLS" "uci .*delete"
 
 # 15. hysteria поднимается вторым инстансом того же сервиса — но только когда есть И конфиг клиента
@@ -204,26 +218,34 @@ HPROG="$T/hysteria"; HCONF="$T/hysteria.json"
 printf '#!/bin/sh\nexit 0\n' > "$HPROG"; chmod +x "$HPROG"
 : > "$HCONF"
 : > "$CALLS"
-start_service
-has "hy.command"    "$CALLS" "param command $HPROG client -c $HCONF"
+(start_service)
+has "hy.command"    "$CALLS" "param command /usr/share/monkey-business/engine-run.sh $HPROG client -c $HCONF"
 has "hy.file"       "$CALLS" "param file $HCONF"
 has "hy.respawn"    "$CALLS" "param respawn"
-has "hy.xray_stays" "$CALLS" "param command /usr/bin/xray run -c $CONF"
+has "hy.xray_stays" "$CALLS" "param command /usr/share/monkey-business/engine-run.sh /usr/bin/xray run -c $CONF"
 
 : > "$CALLS"
 rm -f "$HCONF"
-start_service
+(start_service)
 no  "hy.noconf.no_instance" "$CALLS" "hysteria"
-has "hy.noconf.xray_stays"  "$CALLS" "param command /usr/bin/xray run -c $CONF"
+has "hy.noconf.xray_stays"  "$CALLS" "param command /usr/share/monkey-business/engine-run.sh /usr/bin/xray run -c $CONF"
 
 : > "$CALLS"
 : > "$HCONF"; chmod 644 "$HPROG"
-start_service
+(start_service)
 no  "hy.nobin.no_instance" "$CALLS" "client -c"
-has "hy.nobin.xray_stays"  "$CALLS" "param command /usr/bin/xray run -c $CONF"
+has "hy.nobin.xray_stays"  "$CALLS" "param command /usr/share/monkey-business/engine-run.sh /usr/bin/xray run -c $CONF"
 # Молчать тут нельзя: xray уже смотрит аутбаундом в socks клиента, которого не будет, и снаружи
 # это выглядит как «интернет пропал» — в логе обязана остаться причина.
 has "hy.nobin.logged"      "$CALLS" "logger .*not executable"
+
+# 16. custom_proxy уезжает в файрвол СЫРЫМ (MB_FORCE_PROXY): разбор и валидация — в apply.sh, он
+#     единственный потребитель и единственный, кто знает, что примет nft (разбор пинится в
+#     firewall_test.sh). Здесь пинится только сшивка окружения: без неё force-сеты остались бы
+#     пустыми, а RU-адрес из «через туннель» — уходить напрямую мимо туннеля.
+INITD="$SELF_DIR/../../root/etc/init.d/monkey-business"
+has "force.env_wired" "$INITD" 'MB_FORCE_PROXY=.*mb_runtime_opt custom_proxy'
+no  "force.no_parser" "$INITD" "grep -E .*0-9A-Fa-f"
 
 printf 'initd_test: %d passed, %d failed\n' "$PASS" "$FAIL"
 [ "$FAIL" -eq 0 ]

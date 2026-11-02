@@ -8,6 +8,8 @@
 // hysteriaConfig(server, opts) -> object      hysteriaConfigJson(server, opts) -> string
 // hysteriaOutbound(opts) -> аутбаунд xray     isHysteria(server) -> bool
 
+import { diagnosticCredentials } from "../lib/diagnostic.uc";
+
 const SOCKS_PORT = 10810;
 
 function isHysteria(s) {
@@ -45,6 +47,11 @@ function hysteriaConfig(s, opts) {
 		fastOpen: true,
 	};
 
+	if (opts.credentials != null) {
+		if (!diagnosticCredentials(opts.credentials)) die("invalid_bridge_credentials");
+		cfg.socks5.username = opts.credentials.user; cfg.socks5.password = opts.credentials.pass;
+	}
+
 	if (s.obfs != null && s.obfs.type == "salamander")
 		cfg.obfs = { type: "salamander", salamander: { password: s.obfs.password || "" } };
 
@@ -59,11 +66,12 @@ function hysteriaConfigJson(s, opts) {
 
 function hysteriaOutbound(opts) {
 	opts = opts || {};
-	return {
-		tag: "proxy",
-		protocol: "socks",
-		settings: { servers: [{ address: "127.0.0.1", port: opts.socksPort || SOCKS_PORT }] },
-	};
+	let server = { address: "127.0.0.1", port: opts.socksPort || SOCKS_PORT };
+	if (opts.socksCredentials != null) {
+		if (!diagnosticCredentials(opts.socksCredentials)) die("invalid_bridge_credentials");
+		server.users = [{ user: opts.socksCredentials.user, pass: opts.socksCredentials.pass }];
+	}
+	return { tag: "proxy", protocol: "socks", settings: { servers: [server] } };
 }
 
 export { isHysteria, hysteriaConfig, hysteriaConfigJson, hysteriaOutbound, serverAddress, SOCKS_PORT };

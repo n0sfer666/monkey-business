@@ -5,7 +5,7 @@
 # Запускать только через `make test-integ` (docker run --privileged).
 FROM alpine:edge
 
-RUN apk add --no-cache nftables iproute2 iputils ucode curl unzip
+RUN apk add --no-cache nftables iproute2 iputils ucode curl unzip python3 openssl conntrack-tools
 
 ARG XRAY_VER=latest
 RUN set -eu; \
@@ -30,3 +30,14 @@ RUN set -eu; mkdir -p /usr/local/share/xray; \
 		-o /usr/local/share/xray/geosite.dat
 
 WORKDIR /w
+
+# Synthetic Hysteria upstreams and client qualification; no production installation.
+ARG HYSTERIA_VER=app/v2.13.0
+RUN set -eu; \
+ case "$(uname -m)" in aarch64) asset=hysteria-linux-arm64 ;; x86_64) asset=hysteria-linux-amd64 ;; *) exit 1 ;; esac; \
+ curl -fsSL --max-time 60 "https://github.com/HyNetworks/hysteria/releases/download/${HYSTERIA_VER}/${asset}" -o /tmp/hysteria; \
+ curl -fsSL --max-time 20 "https://github.com/HyNetworks/hysteria/releases/download/${HYSTERIA_VER}/hashes.txt" -o /tmp/hashes; \
+ expected="$(awk -v name="$asset" '$2 == "build/" name { print $1 }' /tmp/hashes)"; \
+ test -n "$expected"; echo "$expected  /tmp/hysteria" | sha256sum -c -; \
+ mv /tmp/hysteria /usr/local/bin/hysteria; chmod 755 /usr/local/bin/hysteria; \
+ rm /tmp/hashes; hysteria version

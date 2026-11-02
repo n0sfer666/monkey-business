@@ -11,10 +11,19 @@ function shq(s) {
 }
 
 function runCapture(cmd) {
-	let p = popen(cmd + '; echo "MB_EXIT:$?"');
+	let p = popen(cmd);
 	let out = p ? p.read('all') : '';
-	if (p) p.close();
-	return { out: (out != null) ? out : '', ok: index(out != null ? out : '', 'MB_EXIT:0') >= 0 };
+	let code = p ? p.close() : null;
+	// Exit status is taken from waitpid, never from untrusted command output.
+	return { out: out != null ? out : '', ok: code === 0, code: code };
+}
+
+function runBounded(cmd, limit) {
+	let pipe = popen(cmd);
+	if (pipe == null) return { ok: false, code: null, out: '' };
+	let out = pipe.read(limit + 1) || '', code = pipe.close();
+	return { ok: code === 0 && length(out) <= limit, code: code, out: length(out) <= limit ? out : '',
+		too_large: length(out) > limit };
 }
 
 // Служебный маркер runCapture — не часть вывода команды. Без вычистки команда, ничего не
@@ -41,4 +50,24 @@ function firstLine(s) {
 	return length(parts) > 0 ? trim(parts[0]) : '';
 }
 
-export { shq, runCapture, stripExit, noSelfMatch, firstLine };
+function xrayError(out) {
+	for (let l in split((out != null) ? out : '', '\n')) {
+		let at = index(l, 'Failed to start:');
+		if (at < 0)
+			continue;
+		let parts = map(split(substr(l, at + 16), ' > '), function(p) {
+			return trim(replace(trim(p), /^[a-z0-9_\/]+: /, ''));
+		});
+		let tail = (length(parts) > 2) ? slice(parts, -2) : slice(parts, -1);
+		return 'xray rejected the config: ' + join(' — ', tail);
+	}
+	let last = '';
+	for (let l in split(stripExit(out), '\n')) {
+		l = trim(l);
+		if (l != '' && match(l, /^(Xray [0-9]|A unified platform)/) == null)
+			last = l;
+	}
+	return last;
+}
+
+export { shq, runCapture, runBounded, stripExit, noSelfMatch, firstLine, xrayError };

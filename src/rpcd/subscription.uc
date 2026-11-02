@@ -2,6 +2,7 @@
 
 import { parse } from "../parser/subscription.uc";
 import { selectBest } from "./select.uc";
+import { LEGACY_SUB, isManual, serverSub, activeSubId } from "../lib/subs.uc";
 
 // "upload=0; download=123; total=456; expire=789" -> объект (значения строками)
 function parseUserinfo(s) {
@@ -49,12 +50,6 @@ function serverKey(s) {
 	return (s.tag || "") + "|" + connectionKey(s);
 }
 
-// Заведён руками (форма LuCI), а не подпиской. Секция, созданная в форме, может вообще не иметь
-// source — подписка же проставляет его всегда, поэтому «не subscription» и есть признак ручного.
-function isManual(s) {
-	return s.source != "subscription";
-}
-
 // СОХРАНИТЬ РУЧНОЙ ПОРЯДОК: выдать существующие серверы в их текущем порядке (матч по ключу,
 // данные обновляются из свежей подписки), новые — в конец. Иначе re-fetch (Save&Apply/
 // автообновление) сбрасывал бы drag-сортировку к порядку подписки.
@@ -63,10 +58,12 @@ function isManual(s) {
 // автообновление раз в сутки молча стирало бы всё, что добавлено ссылкой или руками. Совпавший по
 // ключу сервер подписки при этом не добавляется вторым — данные у них одинаковы по определению
 // ключа, а приоритет задаёт ручная позиция.
-function mergeKeepingOrder(existing, fresh) {
+function mergeKeepingOrder(existing, fresh, id) {
 	let byKey = {};
-	for (let sv in fresh)
+	for (let sv in fresh) {
+		sv.sub = id;
 		byKey[serverKey(sv)] = sv;
+	}
 	let ordered = [];
 	let used = {};
 	let manual = {};
@@ -80,7 +77,13 @@ function mergeKeepingOrder(existing, fresh) {
 			manual[connectionKey(old)] = true;
 			continue;
 		}
+		if (serverSub(old) != id) {
+			push(ordered, old);
+			continue;
+		}
 		if (byKey[k] != null && used[k] == null) {
+			if (old.disabled != null)
+				byKey[k].disabled = old.disabled;
 			push(ordered, byKey[k]);
 			used[k] = true;
 		}
@@ -95,31 +98,102 @@ function mergeKeepingOrder(existing, fresh) {
 	return ordered;
 }
 
+const NAME_MAX = 64;
+
+function validUrl(url) {
+	return match(url, /^https:\/\/[^ \t\r\n]+$/i) != null;
+}
+
 function subscriptionUpdate(ctx, args) {
-	let url = (args != null && args.url != null && args.url != "") ? args.url : ctx.getSubscription().url;
+	let id = (args != null && args.sub != null && args.sub != "") ? args.sub : LEGACY_SUB;
+	let sub = ctx.getSubscription(id);
+	if (sub == null)
+		return { error: "unknown subscription" };
+	let url = (args != null && args.url != null && args.url != "") ? args.url : sub.url;
 	if (url == null || url == "")
 		return { error: "no subscription url" };
+	if (!validUrl(url))
+		return { error: "invalid subscription url" };
 
 	let resp = ctx.fetchSubscription(url);
 	if (resp == null || resp.body == null)
 		return { error: "fetch failed", kept: length(ctx.getServers()) };
 
 	let res = parse(resp.body);
+	if (length(res.servers) > 2000) return { error: "subscription_too_large", max: 2000 };
 	if (length(res.servers) == 0)
 		return { error: "no servers parsed", format: res.format, kept: length(ctx.getServers()) };
 
-	ctx.setServers(mergeKeepingOrder(ctx.getServers(), res.servers));
-	ctx.setSubscriptionUrl(url);
-	if (resp.userinfo != null && resp.userinfo != "")
-		ctx.setUserinfo(parseUserinfo(resp.userinfo));
-	// Перевыбираем активный ТОЛЬКО если прежнего в списке больше нет. Обновление подписки идёт и по
-	// крону (subupdate.sh, config_apply он намеренно не зовёт), а безусловный selectBest возвращал бы
-	// указатель на servers[0] раз в сутки: failover, уведший трафик на живой сервер, оказывался бы
-	// отменён на бумаге — дашборд показывал бы не тот сервер, через который идёт трафик, а watchdog
-	// принял бы смену тега за ручной выбор человека, сбросил фазу и обнулил backoff посреди инцидента.
-	if (ctx.getSelectedServer() == null)
-		selectBest(ctx);
-	return { format: res.format, added: length(res.servers), errors: res.errors };
+	let publish = function() {
+		if (ctx.refresh != null) ctx.refresh();
+		let current = ctx.getSubscription(id);
+		if (current == null || current.url != sub.url) return { error: 'subscription_conflict' };
+		let merged = mergeKeepingOrder(ctx.getServers(), res.servers, id);
+		let info = resp.userinfo != null && resp.userinfo != '' ? parseUserinfo(resp.userinfo) : null;
+		if (ctx.storeSubscription != null) {
+			if (!ctx.storeSubscription(id, url, merged, info)) return { error: 'subscription_commit_failed' };
+		} else {
+			if (ctx.setServers(merged) === false) return { error: 'subscription_commit_failed' };
+			ctx.setSubscriptionUrl(id, url);
+			if (info != null) ctx.setUserinfo(id, info);
+		}
+		// The applied snapshot remains authoritative after provider changes/removals.
+		if (ctx.getSelectedServer() == null) selectBest(ctx);
+		return { format: res.format, added: length(res.servers), errors: res.errors };
+	};
+	return ctx.withMutation != null ? ctx.withMutation(publish) : publish();
 }
 
-export { subscriptionUpdate, parseUserinfo, serverKey, connectionKey };
+function newSubId(ctx) {
+	for (let i = 0; i < 8; i++) {
+		let id = "sub_" + ctx.randomHex();
+		if (ctx.getSubscription(id) == null)
+			return id;
+	}
+	return null;
+}
+
+function textArg(args, key) {
+	return (args != null && type(args[key]) == "string") ? trim(args[key]) : "";
+}
+
+function cleanName(name) {
+	return trim(substr(replace(name, /[[:cntrl:]]/g, ""), 0, NAME_MAX));
+}
+
+function emptyActive(ctx) {
+	let id = activeSubId(ctx.getSubscriptions(), ctx.getGlobal().active_sub);
+	let sub = (id != null) ? ctx.getSubscription(id) : null;
+	if (sub == null || (sub.url != null && sub.url != ""))
+		return null;
+	for (let sv in ctx.getServers())
+		if (serverSub(sv) == id)
+			return null;
+	return id;
+}
+
+function subscriptionAdd(ctx, args) {
+	let url = textArg(args, "url");
+	if (url == "")
+		return { error: "no subscription url" };
+	if (!validUrl(url))
+		return { error: "invalid subscription url" };
+	let id = newSubId(ctx);
+	if (id == null)
+		return { error: "no free subscription id" };
+	let empty = emptyActive(ctx);
+	if (ctx.addSubscription(id, cleanName(textArg(args, "name")) || "Subscription", url) === false) return { error: "subscription_commit_failed" };
+	let res = subscriptionUpdate(ctx, { sub: id, url: url });
+	if (res.error != null) {
+		ctx.removeSubscription(id, url);
+		return { error: res.error };
+	}
+	res.sub = id;
+	if (empty != null && ctx.setActiveSub(id)) {
+		ctx.removeSubscription(empty, "");
+		res.active_sub = id;
+	}
+	return res;
+}
+
+export { subscriptionUpdate, subscriptionAdd, parseUserinfo, serverKey, connectionKey, mergeKeepingOrder };

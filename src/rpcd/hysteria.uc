@@ -21,7 +21,7 @@ function prepareHysteria(ctx, server) {
 	// kill-switch — снаружи это неотличимо от «интернет пропал».
 	if (!ctx.hysteriaInstalled())
 		return "hysteria is not installed — install the client on the dashboard first";
-	return ctx.applyHysteria(hysteriaConfigJson(server));
+	return ctx.applyHysteria(hysteriaConfigJson(server, { credentials: ctx.bridgeCredentials ? ctx.bridgeCredentials(server) : null }));
 }
 
 function hysteriaStatus(ctx) {

@@ -5,7 +5,9 @@ import * as hsub from "../../src/rpcd/subscription.uc";
 import * as hping from "../../src/rpcd/ping.uc";
 import { directBypass } from "../../src/lib/bypass.uc";
 import * as hsel from "../../src/rpcd/select.uc";
+import { routingCheck, setRouting } from "../../src/rpcd/routing.uc";
 import { readfile } from "fs";
+import { findSelected, serverId } from "../../src/lib/subs.uc";
 
 const SUB = readfile("test/fixtures/sub_urilist.txt");
 const SUB_HOPS = readfile("test/fixtures/sub_hop_dupes.txt");
@@ -16,25 +18,27 @@ function mockCtx(state) {
 		getGlobal: function() { return state.global; },
 		getDns: function() { return state.dns; },
 		getAntiDpi: function() { return state.anti_dpi; },
-		getSubscription: function() { return state.subscription; },
+		getSubscriptions: function() {
+			state.subscription[".name"] = "subscription";
+			return [ state.subscription ];
+		},
+		getSubscription: function(_id) { return state.subscription; },
 		getServers: function() { return state.servers; },
 		setServers: function(a) { state.servers = a; },
-		getSelectedServer: function() {
-			for (let s in state.servers)
-				if (s.tag == state.selected)
-					return s;
-			return null;
-		},
+		getSelectedServer: function() { return findSelected(state.servers, state.selected); },
 		setSelected: function(tag) { state.selected = tag; },
-		setSubscriptionUrl: function(u) { state.subscription.url = u; },
-		setUserinfo: function(o) {
+		setSubscriptionUrl: function(_id, u) { state.subscription.url = u; },
+		setUserinfo: function(_id, o) {
 			state.subscription.used_upload = o.used_upload;
 			state.subscription.used_download = o.used_download;
 			state.subscription.total = o.total;
 			state.subscription.expire = o.expire;
 		},
 		fetchSubscription: function(_url) { return state.fetchResult; },
-		pingServer: function(s) { return state.pings[s.tag]; },
+		pingServers: function(list) { return map(list, function(s) { return state.pings[s.tag]; }); },
+		getPings: function() { return state.pingStore || {}; },
+		setPings: function(p) { state.pingStore = p; },
+		now: function() { return 0; },
 		probeServer: function(s) { return (state.probeFail == null) || (state.probeFail[s.tag] !== true); },
 		failoverCap: function() { return state.failoverCap || 0; },
 		// enabledAtApply + applyIntent пинят ПОРЯДОК: туннель поднимается ДО commit'а тумблера, а
@@ -47,7 +51,12 @@ function mockCtx(state) {
 			state.enabledAtApply = state.global.enabled;
 			return state.applyErr;
 		},
-		setCustomRouting: function(d, p) { state.custom = { direct: d, proxy: p }; },
+		setCustomRouting: function(d, p) {
+			state.custom = { direct: d, proxy: p };
+			state.global.custom_direct = d;
+			state.global.custom_proxy = p;
+		},
+		warn: function(m) { push(state.warns, m); },
 		setMode: function(mode, region) {
 			if (state.setModeFail)
 				return false;
@@ -83,6 +92,7 @@ function freshState() {
 		applyErr: null,
 		applied: null,
 		stopped: false,
+		warns: [],
 	};
 }
 
@@ -310,7 +320,7 @@ test("serversList masks uuid and exposes priority sorted", function() {
 	hsub.subscriptionUpdate(ctx, {});
 	let r = hstatus.serversList(ctx);
 	assertEq(length(r.servers), 2);
-	assertEq(r.servers[0].uuid_masked, "1111..5555");
+	assertEq(r.servers[0].uuid_masked, "****");
 	assertEq(r.servers[0].priority, 0);
 	assert(!exists(r.servers[0], "uuid"), "raw uuid not leaked");
 });
@@ -463,7 +473,7 @@ test("configApply re-selects first server by order (reorder switches active)", f
 	st.selected = st.servers[1].tag;   // активен пока старый первый
 	st.pings = {};                      // никто не пингуется -> fallback на первый по порядку
 	h.configApply(ctx);
-	assertEq(st.selected, st.servers[0].tag);
+	assertEq(st.selected, serverId(st.servers[0]));
 });
 
 test("configApply errors with no servers", function() {
@@ -496,11 +506,11 @@ test("configApply fails over past unreachable server to next working", function(
 	let r = h.configApply(ctx);
 	assertEq(r.probed, true);
 	assertEq(r.server, st.servers[1].tag);
-	assertEq(st.selected, st.servers[1].tag);
+	assertEq(st.selected, serverId(st.servers[1]));
 	assert(index(st.applied, st.servers[1].address) >= 0, "applied uses second server");
 });
 
-test("configApply falls back to top when all probes fail (kill-switch preserved)", function() {
+test("configApply preserves the predecessor when no candidate is confirmed", function() {
 	let st = freshState();
 	st.global.enabled = "1";
 	st.fetchResult = { body: SUB, userinfo: "" };
@@ -510,9 +520,8 @@ test("configApply falls back to top when all probes fail (kill-switch preserved)
 	for (let s in st.servers)
 		st.probeFail[s.tag] = true;
 	let r = h.configApply(ctx);
-	assertEq(r.probed, false);
-	assertEq(r.server, st.servers[0].tag);
-	assert(index(st.applied, st.servers[0].address) >= 0, "applied uses top server as fallback");
+	assertEq(r.error, "no_working_server");
+	assertEq(st.applied, null);
 });
 
 // Сохранение настроек при выключенном VPN не должно ни поднимать туннель, ни трогать активный
@@ -535,10 +544,68 @@ test("configApply skips runtime work while disabled", function() {
 // иначе правки молча терялись бы, а при включении применился бы старый сплит.
 test("setRouting persists lists while disabled", function() {
 	let st = freshState();
-	let r = h.setRouting(mockCtx(st), { direct: "a.example", proxy: "b.example" });
+	let r = setRouting(mockCtx(st), { direct: "a.example", proxy: "b.example" });
 	assertEq(r.skipped, "disabled");
 	assertEq(st.custom.direct, "a.example");
 	assertEq(st.custom.proxy, "b.example");
+});
+
+test("setRouting refuses invalid lines and writes nothing", function() {
+	let st = freshState();
+	st.global.enabled = "1";
+	let r = setRouting(mockCtx(st), { direct: "a.example\nlocalhost", proxy: "b.example" });
+	assertEq(r.error, "invalid_rules");
+	assertEq(r.items, [ { list: "direct", line: 2, code: "not_full", arg: "localhost" } ]);
+	assertEq(st.custom, null);
+	assertEq(st.applied, null);
+});
+
+test("setRouting rolls the lists back when xray rejects the config", function() {
+	let st = freshState();
+	st.global.enabled = "1";
+	st.fetchResult = { body: SUB, userinfo: "" };
+	let ctx = mockCtx(st);
+	hsub.subscriptionUpdate(ctx, {});
+	st.global.custom_direct = "old.example";
+	st.global.custom_proxy = "";
+	st.applyErr = "xray rejected the config: code not found in geosite.dat: NOSUCH";
+	let r = setRouting(ctx, { direct: "a.example", proxy: "geosite:nosuch" });
+	assertEq(r.error, st.applyErr);
+	assertEq(st.custom, { direct: "old.example", proxy: "" });
+});
+
+test("setRouting rolls the lists back on any apply error", function() {
+	let st = freshState();
+	st.global.enabled = "1";
+	st.fetchResult = { body: SUB, userinfo: "" };
+	let ctx = mockCtx(st);
+	hsub.subscriptionUpdate(ctx, {});
+	st.global.custom_direct = "old.example";
+	st.global.custom_proxy = "old.proxy";
+	st.applyErr = "geo databases missing — press \"Update geo databases\" on the Dashboard first";
+	let r = setRouting(ctx, { direct: "a.example", proxy: "b.example" });
+	assertEq(r.error, st.applyErr);
+	assertEq(st.custom, { direct: "old.example", proxy: "old.proxy" });
+});
+
+test("routingCheck returns items and tolerates missing args", function() {
+	assertEq(routingCheck({ direct: "ok.com", proxy: "geoip:" }).items,
+		[ { list: "proxy", line: 1, code: "geo_empty", arg: "geoip" } ]);
+	assertEq(routingCheck({}).items, []);
+	assertEq(routingCheck(null).items, []);
+});
+
+test("configApply warns about stored invalid custom lines", function() {
+	let st = freshState();
+	st.global.enabled = "1";
+	st.fetchResult = { body: SUB, userinfo: "" };
+	let ctx = mockCtx(st);
+	hsub.subscriptionUpdate(ctx, {});
+	st.global.custom_direct = "ok.com\nbad entry";
+	st.global.custom_proxy = "localhost";
+	st.warns = [];
+	h.configApply(ctx);
+	assertEq(uniq(st.warns), [ "rpcd: custom rules skipped: direct line 2 (space), proxy line 1 (not_full)" ]);
 });
 
 // Ядерный обход перестал быть отдельным тумблером: единственный источник истины — режим. Иначе
@@ -564,12 +631,12 @@ test("setMode commits the pair, applies it and reports the derived bypass", func
 	let ctx = mockCtx(st);
 	hsub.subscriptionUpdate(ctx, {});
 	st.applied = null;
-	let r = h.setMode(ctx, { mode: "gfwlist", region: "ru" });
+	let r = h.setMode(ctx, { mode: "gfwlist", region: "cn" });
 	assertEq(st.global.routing_mode, "gfwlist");
-	assertEq(st.global.local_region, "ru");
+	assertEq(st.global.local_region, "cn");
 	assertEq(r.direct_bypass, false);
 	assert(st.applied != null, "config re-applied");
-	assert(index(st.applied, "geolocation-!ru") >= 0, "new mode is in the applied config");
+	assert(index(st.applied, "geosite:gfw") >= 0, "new mode is in the applied config");
 });
 
 // Мусор отсюда попадает в конфиг именем geo-категории (geoip:<region>) -> `xray -test` валится,
@@ -657,8 +724,7 @@ test("selectWorking honours an explicit cap", function() {
 	st.probeFail = {};
 	st.probeFail[st.servers[0].tag] = true;
 	let r = hsel.selectWorking(ctx);
-	assertEq(r.probed, false);
-	assertEq(r.server.tag, st.servers[0].tag);
+	assertEq(r.error, "no_working_server");
 });
 
 test("serviceToggle on connects (selects+applies+enables)", function() {
@@ -723,15 +789,8 @@ test("serviceToggle off stops and disables", function() {
 	assertEq(st.stopped, true);
 });
 
-test("serversPing picks best latency", function() {
-	let st = freshState();
-	st.fetchResult = { body: SUB, userinfo: "" };
-	let ctx = mockCtx(st);
-	hsub.subscriptionUpdate(ctx, {});
-	st.pings = { "Server A": 120, "Server B": 45 };
-	let r = hping.serversPing(ctx);
-	assertEq(r.best, "Server B");
-	assertEq(length(r.results), 2);
+test("legacy ping explicitly requests API migration", function() {
+	assertEq(hping.serversPing({}).error, "deprecated");
 });
 
 test("geoUpdate returns status", function() {

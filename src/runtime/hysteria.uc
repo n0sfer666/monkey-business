@@ -59,7 +59,6 @@ function writeConf(path, jsonStr) {
 
 function hysteriaRuntime(run) {
 	return {
-		PROBE_SOCKS: PROBE_SOCKS,
 		installed: installed,
 		// jsonStr == null -> сервер не hysteria: конфиг снимается, init перестаёт поднимать инстанс.
 		apply: function(jsonStr) {
@@ -92,26 +91,9 @@ function hysteriaRuntime(run) {
 		// Фон: ~15МБ по медленному/проксированному каналу дольше ubus-таймаута. UI поллит hysteria_status.
 		// Замок от повторных нажатий держит сам hysteria.sh — второй запуск выходит сразу.
 		install: function() {
-			system('sh ' + SCRIPT + ' install >/tmp/mb-hysteria.log 2>&1 &');
+			if (!privateDirectory('/tmp/mb-runtime')) return { error: 'unsafe_runtime_directory' };
+			system('umask 077; sh ' + SCRIPT + ' install >/tmp/mb-runtime/hysteria.log 2>&1 &');
 			return { status: 'started' };
-		},
-		// Ждём именно ПОРТ, а не время: холодный старт Go-бинаря с SD на R2S не укладывается в общий
-		// sleep пробы, и живой hysteria-кандидат объявлялся бы мёртвым — failover уводил бы с рабочего
-		// сервера. Слушающий сокет виден в /proc/net/tcp (порт в hex), внешних утилит для этого не надо.
-		probeStart: function(server) {
-			if (!installed())
-				return false;
-			system('pkill -f ' + PROBE_MATCH + ' 2>/dev/null');
-			if (writeConf(PROBE_CONF, hysteriaConfigJson(server, { socksPort: PROBE_SOCKS })) != null)
-				return false;
-			system(BIN + ' client -c ' + PROBE_CONF + ' >/dev/null 2>&1 &');
-			system(sprintf("i=0; while [ $i -lt 20 ]; do grep -qi ':%04X ' /proc/net/tcp && break; " +
-				"usleep 100000 2>/dev/null || sleep 1; i=$((i+1)); done", PROBE_SOCKS));
-			return true;
-		},
-		probeStop: function() {
-			system('pkill -f ' + PROBE_MATCH + ' 2>/dev/null');
-			system('rm -f ' + PROBE_CONF);
 		},
 	};
 }

@@ -13,7 +13,10 @@ PORT="${MB_VM_SSH_PORT:-2222}"
 HOST="${MB_VM_SSH_HOST:-root@localhost}"
 PASS="${MB_VM_SSH_PASS:-}"
 HTTP_PORT="${MB_HTTP_PORT:-8090}"
-SSH_OPTS="-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null"
+case "$HOST" in
+	root@localhost|root@127.0.0.1) SSH_OPTS="-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null" ;;
+	*) SSH_OPTS="-o StrictHostKeyChecking=yes" ;;
+esac
 
 command -v ssh >/dev/null 2>&1 || { echo "ssh required" >&2; exit 1; }
 
@@ -38,7 +41,14 @@ case "$ALLOW_MISSING" in 0|1) ;; *) ALLOW_MISSING=0 ;; esac
 
 stage=$(mktemp -d)
 tarball=$(mktemp)
-cleanup() { rm -rf "$stage" "$tarball"; }
+remote_stage=''
+cleanup() {
+ rm -rf "$stage" "$tarball"
+ if [ -n "$remote_stage" ]; then
+  # shellcheck disable=SC2086
+  $SSH $SSH_OPTS -p "$PORT" "$HOST" "rm -rf '$remote_stage'" >/dev/null 2>&1 || true
+ fi
+}
 trap cleanup EXIT
 
 echo ">> assembling install layout"
@@ -55,6 +65,15 @@ cp -R src/. "$stage/usr/share/rpcd/ucode/lib/monkey-business/"
 cpf root/etc/config/monkey-business "$stage/etc/config/monkey-business"
 cpf root/etc/init.d/monkey-business "$stage/etc/init.d/monkey-business"
 chmod 755 "$stage/etc/init.d/monkey-business"
+cpf root/etc/init.d/monkey-business-observer "$stage/etc/init.d/monkey-business-observer"
+chmod 755 "$stage/etc/init.d/monkey-business-observer"
+chmod 600 "$stage/etc/config/monkey-business"
+
+# Shared guard/reconciliation helpers. Installation remains an explicitly invoked action.
+for helper in diagnostic-guard.sh engine-run.sh guard-setup.uc reconcile.uc private.sh private-state.uc runtime-option.uc startup-ready.uc stopped.uc availability-daemon.uc observer-daemon.uc recovery-daemon.uc recovery-action.uc health-round.uc leak-round.uc exit-one.uc job-engine.sh job-node.uc https-one.uc; do
+	cpf "root/usr/share/monkey-business/$helper" "$stage/usr/share/monkey-business/$helper"
+done
+chmod 755 "$stage/usr/share/monkey-business/diagnostic-guard.sh" "$stage/usr/share/monkey-business/engine-run.sh" "$stage/usr/share/monkey-business/job-engine.sh"
 
 # firewall-скрипты + geo-апдейтер
 mkdir -p "$stage/usr/share/monkey-business/firewall"
@@ -79,6 +98,8 @@ cpf root/usr/share/monkey-business/recovery.sh "$stage/usr/share/monkey-business
 chmod 644 "$stage/usr/share/monkey-business/recovery.sh"
 cpf root/usr/share/monkey-business/phases.sh "$stage/usr/share/monkey-business/phases.sh"
 chmod 644 "$stage/usr/share/monkey-business/phases.sh"
+cpf root/usr/share/monkey-business/wdlock.sh "$stage/usr/share/monkey-business/wdlock.sh"
+chmod 644 "$stage/usr/share/monkey-business/wdlock.sh"
 cpf root/usr/share/monkey-business/watchdog.sh "$stage/usr/share/monkey-business/watchdog.sh"
 chmod 755 "$stage/usr/share/monkey-business/watchdog.sh"
 cpf root/usr/share/monkey-business/boothealth.sh "$stage/usr/share/monkey-business/boothealth.sh"
@@ -97,7 +118,7 @@ chmod 755 "$stage/etc/init.d/mb-boothealth"
 
 # LuCI views + menu + acl
 mkdir -p "$stage/www/luci-static/resources/view/monkey-business"
-cp luci/htdocs/luci-static/resources/view/monkey-business/*.js \
+cp -R luci/htdocs/luci-static/resources/view/monkey-business/. \
 	"$stage/www/luci-static/resources/view/monkey-business/"
 cpf luci/root/usr/share/luci/menu.d/luci-app-monkey-business.json \
 	"$stage/usr/share/luci/menu.d/luci-app-monkey-business.json"
@@ -122,20 +143,49 @@ for top in "$stage"/*; do
 done
 COPYFILE_DISABLE=1 tar --exclude '.DS_Store' --exclude '._*' -C "$stage" -czf "$tarball" ./etc ./usr ./www
 
+# The only remote cleanup target comes from this validated mktemp result.
+# shellcheck disable=SC2086
+remote_stage=$($SSH $SSH_OPTS -p "$PORT" "$HOST" 'umask 077; mktemp -d /tmp/mb-deploy.XXXXXXXXXX')
+case "$remote_stage" in
+ /tmp/mb-deploy.??????????) ;;
+ *) echo "invalid remote staging directory" >&2; remote_stage=''; exit 1 ;;
+esac
+suffix=${remote_stage#/tmp/mb-deploy.}
+case "$suffix" in *[!a-zA-Z0-9]*) remote_stage=''; exit 1 ;; esac
+
 echo ">> copying to $HOST:$PORT"
 # shellcheck disable=SC2086
-$SCP -O $SSH_OPTS -P "$PORT" "$tarball" "$HOST:/tmp/mb-deploy.tgz"
+$SCP -O $SSH_OPTS -P "$PORT" "$tarball" "$HOST:$remote_stage/archive.tgz"
 
 echo ">> installing files + runtime deps + reloading rpcd"
 # MB_RESPAWN передаётся в удалённый шелл (значение раскрывается ЛОКАЛЬНО), сам скрипт — через
 # stdin-heredoc <<'REMOTE' (без локального раскрытия $ внутри).
 # shellcheck disable=SC2086
-$SSH $SSH_OPTS -p "$PORT" "$HOST" "MB_RESPAWN='$RESPAWN' MB_ALLOW_MISSING='$ALLOW_MISSING' sh -s" <<'REMOTE'
+$SSH $SSH_OPTS -p "$PORT" "$HOST" "MB_REMOTE_STAGE='$remote_stage' MB_RESPAWN='$RESPAWN' MB_ALLOW_MISSING='$ALLOW_MISSING' sh -s" <<'REMOTE'
 	set -e
+ umask 077
+ case "$MB_REMOTE_STAGE" in /tmp/mb-deploy.??????????) ;; *) exit 1 ;; esac
+ suffix=${MB_REMOTE_STAGE#/tmp/mb-deploy.}
+ case "$suffix" in *[!a-zA-Z0-9]*) exit 1 ;; esac
+ [ -d "$MB_REMOTE_STAGE" ] && [ ! -L "$MB_REMOTE_STAGE" ] || exit 1
+ # Bootstrap must work before ucode/stat packages are installed. The path is
+ # validated ASCII; numeric ls metadata checks owner and exact directory mode.
+ # shellcheck disable=SC2046
+ set -- $(LC_ALL=C ls -ldn "$MB_REMOTE_STAGE")
+ [ "$#" -ge 4 ] && [ "$1" = drwx------ ] && [ "$3" = 0 ] || exit 1
+ trap 'rm -rf "$MB_REMOTE_STAGE"' EXIT
 	# сохранить пользовательский UCI-конфиг (url/серверы/выбор) между деплоями — как conffile
-	[ -f /etc/config/monkey-business ] && cp /etc/config/monkey-business /tmp/mb-cfg.keep
-	tar -C / -xzf /tmp/mb-deploy.tgz
-	[ -f /tmp/mb-cfg.keep ] && mv /tmp/mb-cfg.keep /etc/config/monkey-business
+ tar -tzf "$MB_REMOTE_STAGE/archive.tgz" >/dev/null
+	rm -rf /www/luci-static/resources/view/monkey-business
+ if [ -e /etc/config/monkey-business ] || [ -L /etc/config/monkey-business ]; then
+  [ -f /etc/config/monkey-business ] && [ ! -L /etc/config/monkey-business ] || exit 1
+  # Never overwrite the original, even when extraction fails half way through.
+  printf './etc/config/monkey-business\n' > "$MB_REMOTE_STAGE/excludes"
+  tar -C / -X "$MB_REMOTE_STAGE/excludes" -xzf "$MB_REMOTE_STAGE/archive.tgz"
+ else
+  tar -C / -xzf "$MB_REMOTE_STAGE/archive.tgz"
+ fi
+	chmod 600 /etc/config/monkey-business
 	# подчистить возможные macOS AppleDouble-остатки (BusyBox find без -delete, поэтому rm по glob)
 	rm -f /usr/share/rpcd/ucode/._* /usr/share/rpcd/ucode/lib/monkey-business/._* 2>/dev/null || true
 	# macOS tar сохраняет локальные uid/gid и режим НЕ только на наших файлах, но и на
@@ -166,7 +216,8 @@ $SSH $SSH_OPTS -p "$PORT" "$HOST" "MB_RESPAWN='$RESPAWN' MB_ALLOW_MISSING='$ALLO
 		/usr/share/monkey-business/watchdog.sh /usr/share/monkey-business/boothealth.sh \
 		/usr/share/monkey-business/nicwatch.sh /usr/share/monkey-business/nicfw.sh \
 		/usr/share/monkey-business/subupdate.sh
-	rm -f /tmp/mb-deploy.tgz /tmp/luci-indexcache* 2>/dev/null || true
+	rm -f "$MB_REMOTE_STAGE/archive.tgz" /tmp/luci-indexcache* 2>/dev/null || true
+	touch -c /lib/apk/db/installed /usr/lib/opkg/status 2>/dev/null || true
 	# распакованное должно дойти до карты ДО рестартов ниже: если rpcd подвесит ubusd и роутер
 	# уедет в жёсткий сброс, недописанные файлы останутся обрезанными в журнале ext4.
 	sync
@@ -209,11 +260,9 @@ $SSH $SSH_OPTS -p "$PORT" "$HOST" "MB_RESPAWN='$RESPAWN' MB_ALLOW_MISSING='$ALLO
 	# продолжала бы жечь карту — 288 принудительных сбросов в сутки в одни и те же LBA.
 	mkdir -p /etc/crontabs
 	sed -i '\#monkey-business/boothealth\.sh#d' /etc/crontabs/root 2>/dev/null || true
-	WD_LINE='* * * * * /usr/share/monkey-business/watchdog.sh >/dev/null 2>&1'
+	sed -i '\#monkey-business/watchdog\.sh#d' /etc/crontabs/root 2>/dev/null || true
 	NW_LINE='* * * * * /usr/share/monkey-business/nicwatch.sh >/dev/null 2>&1'
 	SU_LINE='* * * * * /usr/share/monkey-business/subupdate.sh >/dev/null 2>&1'
-	grep -q 'monkey-business/watchdog.sh' /etc/crontabs/root 2>/dev/null \
-		|| printf '%s\n' "$WD_LINE" >> /etc/crontabs/root
 	grep -q 'monkey-business/nicwatch.sh' /etc/crontabs/root 2>/dev/null \
 		|| printf '%s\n' "$NW_LINE" >> /etc/crontabs/root
 	grep -q 'monkey-business/subupdate.sh' /etc/crontabs/root 2>/dev/null \
@@ -225,7 +274,7 @@ $SSH $SSH_OPTS -p "$PORT" "$HOST" "MB_RESPAWN='$RESPAWN' MB_ALLOW_MISSING='$ALLO
 	# молча отдать роутер без xray/tproxy хуже, чем не задеплоить вовсе. curl тоже REQUIRED:
 	# probes.sh/watchdog/failover и socks-фолбэк fetch.sh умеют ТОЛЬКО его — без curl пробы
 	# всегда падают и watchdog зациклится на reconnect/failover.
-	REQUIRED="ucode-mod-uci ucode-mod-fs rpcd-mod-ucode xray-core kmod-nft-tproxy curl"
+	REQUIRED="ucode-mod-uci ucode-mod-fs rpcd-mod-ucode xray-core kmod-nft-tproxy kmod-nft-socket ucode-mod-socket coreutils-timeout conntrack curl flock"
 
 	if command -v apk >/dev/null 2>&1; then PM=apk
 	elif command -v opkg >/dev/null 2>&1; then PM=opkg
@@ -243,8 +292,8 @@ $SSH $SSH_OPTS -p "$PORT" "$HOST" "MB_RESPAWN='$RESPAWN' MB_ALLOW_MISSING='$ALLO
 	# на месте — иначе деплой печатает голое «установка не удалась» и диагностировать нечем
 	pkg_add() {
 		case "$PM" in
-			apk)  apk add "$1" >/tmp/mb-pkg.log 2>&1 ;;
-			opkg) opkg install "$1" >/tmp/mb-pkg.log 2>&1 ;;
+			apk)  apk add "$1" >"$MB_REMOTE_STAGE/pkg.log" 2>&1 ;;
+			opkg) opkg install "$1" >"$MB_REMOTE_STAGE/pkg.log" 2>&1 ;;
 			*)    return 1 ;;
 		esac
 	}
@@ -271,7 +320,7 @@ $SSH $SSH_OPTS -p "$PORT" "$HOST" "MB_RESPAWN='$RESPAWN' MB_ALLOW_MISSING='$ALLO
 			echo ">> installing $p"
 			if ! pkg_add "$p"; then
 				echo "   ! $p: установка не удалась"
-				head -n 5 /tmp/mb-pkg.log 2>/dev/null | while read -r l; do echo "     $l"; done
+				head -n 5 "$MB_REMOTE_STAGE/pkg.log" 2>/dev/null | while read -r l; do echo "     $l"; done
 			fi
 		done
 
@@ -285,6 +334,9 @@ $SSH $SSH_OPTS -p "$PORT" "$HOST" "MB_RESPAWN='$RESPAWN' MB_ALLOW_MISSING='$ALLO
 			if [ "${MB_ALLOW_MISSING:-0}" != 1 ]; then exit 1; fi
 		fi
 	fi
+
+	/etc/init.d/monkey-business-observer enable
+	/etc/init.d/monkey-business-observer restart
 
 	# Прошивка USB-сетевухи: OpenWrt везёт rtl8153b-2 v2, подвешивающую TX-очередь на R2S
 	# (openwrt#22130). Скрипт сам решает, наше ли это железо, и идемпотентен.

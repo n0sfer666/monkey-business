@@ -1,34 +1,30 @@
 #!/bin/sh
-# Разовый захват реального ответа VPNON для мок-фикстуры (этап 3).
-#
-# BLOCKED в автономном режиме: подписка содержит СЕКРЕТНЫЙ ТОКЕН (email+ts) и боевые
-# UUID/ключи Reality. Запускать вручную; сырой ответ сохраняется ВНЕ репозитория.
-# Перед использованием как фикстуры — санитизировать секреты (UUID/pbk/sid → синтетические).
-#
-# usage: scripts/capture-sub.sh <subscription-url>
+# Manual capture only. Supply the URL on stdin; credentials never enter curl argv.
 set -eu
-
-URL="${1:-}"
-[ -n "$URL" ] || { echo "usage: $0 <subscription-url>" >&2; exit 2; }
-
-OUT="${MB_CAPTURE_OUT:-/tmp/vpnon-sub.raw}"
-
-command -v curl >/dev/null 2>&1 || { echo "curl required" >&2; exit 1; }
-
-echo ">> fetching subscription (token NOT logged)"
-curl -fsSL "$URL" >"$OUT"
-bytes=$(wc -c <"$OUT")
-echo ">> saved $bytes bytes to $OUT (OUTSIDE repo)"
-
-cat <<'EOF'
-
-Дальше ВРУЧНУЮ:
-  1) Если ответ base64 — раскодировать.
-  2) Заменить в каждом vless://-URI боевые секреты на синтетические:
-       UUID -> 11111111-2222-3333-4444-555555555555
-       pbk  -> PUBKEYA   sid -> ab12
-     (host/port/sni/type/path можно оставить — это не секреты).
-  3) Сохранить как test/fixtures/sub_vpnon_sanitized.txt и только тогда коммитить.
-
-НИКОГДА не коммитить файл с боевым токеном/UUID/ключами.
-EOF
+umask 077
+[ "$#" = 0 ] || { echo 'Supply the subscription URL on stdin, without command-line arguments.' >&2; exit 2; }
+mode=''
+if [ -t 0 ]; then
+	printf 'Subscription URL: ' >&2
+	mode=$(stty -g)
+	stty -echo
+fi
+trap '[ -z "$mode" ] || stty "$mode"' EXIT INT TERM
+IFS= read -r URL
+[ -z "$mode" ] || { stty "$mode"; mode=''; printf '\n' >&2; }
+work=$(mktemp -d)
+OUT="${MB_CAPTURE_OUT:-$work/subscription.raw}"
+# An open exclusive descriptor prevents both pre-existing symlinks and path swaps.
+set -C
+exec 3>"$OUT"
+set +C
+printf '%s' "$URL" | python3 -c '
+import json, sys
+url = sys.stdin.read(8193)
+if len(url) > 8192 or not url.lower().startswith("https://") or any(ord(c) <= 32 or ord(c) == 127 for c in url):
+    sys.exit(1)
+print("url = " + json.dumps(url, ensure_ascii=False))
+' | curl --disable --globoff -fsSL --config - --proto '=https' --proto-redir '=https' \
+	--max-redirs 5 --max-time 25 --max-filesize 2097152 --output /dev/fd/3
+exec 3>&-
+printf 'Saved private raw subscription to %s. Sanitize credentials before using it as a fixture.\n' "$OUT"

@@ -23,7 +23,7 @@ MIN_VOTES="${MB_HY_MIN_VOTES:-2}"
 fetch_timed() { # <секунды> <url> <out>
 	_t="${MB_FETCH_TIMEOUT:-120}"
 	MB_FETCH_TIMEOUT="$1"
-	mb_fetch "$2" "$3"; _rc=$?
+	MB_FETCH_MAX_BYTES=65536 mb_fetch "$2" "$3"; _rc=$?
 	MB_FETCH_TIMEOUT="$_t"
 	return "$_rc"
 }

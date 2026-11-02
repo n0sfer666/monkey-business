@@ -77,10 +77,13 @@ ip netns exec "$NS_R" env \
 	MB_LAN_IFACE=vr MB_KILL_SWITCH=0 MB_NFT_COUNTER=counter \
 	sh scripts/firewall/apply.sh >/dev/null
 
-if has_forward_hook; then
-	echo "  FAIL: forward leak-guard present with kill_switch=0 (should be fail-open)"
+# Corporate proxy traffic remains fail-closed even with the general switch off.
+# Unmatched traffic has no blanket drop and keeps the existing fail-open policy.
+has_forward_hook || { echo 'FAIL: scoped corporate guard missing'; exit 1; }
+if ip netns exec "$NS_R" nft list chain inet monkey_business forward | grep -E 'drop' | grep -v 'corp_'; then
+	echo 'FAIL: unscoped drop with kill_switch=0'
 	exit 1
 fi
-echo "  [kill=0] no forward leak-guard (fail-open)"
+echo '  [kill=0] only scoped corporate proxy drops; unmatched traffic fail-open'
 
 echo "kill-switch leak-guard: OK"

@@ -1,0 +1,4 @@
+# Disposable native OpenWrt RPC/UCI/ACL integration, no router deployment.
+FROM openwrt/rootfs:aarch64_generic-openwrt-25.12
+RUN (apk update || apk update) && apk add --no-cache ucode ucode-mod-uci ucode-mod-socket rpcd rpcd-mod-ucode uhttpd uhttpd-mod-ubus curl ucode-mod-ubus
+WORKDIR /w

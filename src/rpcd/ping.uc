@@ -1,20 +1,6 @@
-// Замер latency по всему списку серверов (кнопка «Test latency» в UI). Это не выбор сервера:
-// результат никуда не применяется, порядок и активный сервер не меняются.
-
-import { orderedServers } from "./select.uc";
-
-function serversPing(ctx) {
-	let results = [];
-	let best = null, bestMs = null;
-	for (let s in orderedServers(ctx)) {
-		let ms = ctx.pingServer(s);
-		push(results, { tag: s.tag, latency_ms: ms });
-		if (ms != null && (bestMs == null || ms < bestMs)) {
-			bestMs = ms;
-			best = s.tag;
-		}
-	}
-	return { results: results, best: best };
-}
-
-export { serversPing };
+// Compatibility for cached clients. Only write-authorized availability_start starts jobs.
+function deprecated() { return { api_version: 2, error: 'deprecated', replacement: 'availability_start' }; }
+function serversPing(ctx) { return deprecated(); }
+function subscriptionPing(ctx, args) { return deprecated(); }
+function serverPing(ctx, args) { return deprecated(); }
+export { serversPing, subscriptionPing, serverPing };
